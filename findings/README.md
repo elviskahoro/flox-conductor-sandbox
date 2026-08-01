@@ -20,6 +20,7 @@ and stages mean, and how to produce a new run.
 | `20260801-121814Z` | macOS (Darwin, developer machine) | No | H1 PASS; Stage 3a PASS but 3b FAIL (`tar` extraction error, never root-caused) |
 | `20260801-123329Z` | Amazon Linux 2023 / Vercel / Conductor cloud | **Yes** | H1 + H3 (all sub-stages) PASS — first clean pass on the real target class |
 | `20260801-125246Z` | Same sandbox as above, deliberate re-run with `FLAKE_REPRO=1` | **Yes** | Reproduces the prior run exactly (confirms idempotency) + H2 control PASS |
+| `20260801-160419Z` | Fresh Conductor cloud sandbox, never authenticated to FloxHub | **Yes** | H1 + H3 PASS again; **H4 SKIP** — `flox show elvis/conductor-workspace-floxhub-01` fails unauthenticated even though PR #7/#8 confirm it's published for both platforms; `flox search` also can't find it. Leans "auth-gated" but doesn't conclusively rule out "not actually published" |
 
 ## Current bottom line (as of the last run above)
 
@@ -32,13 +33,22 @@ and stages mean, and how to produce a new run.
   class genuinely has the defect #445 describes, which is what makes the
   H1/H3 passes meaningful evidence rather than "the bug just doesn't exist
   here."
-- **H4** (unauthenticated FloxHub fetch): still untested end-to-end, but no
-  longer blocked on publishing — `elvis/conductor-workspace-floxhub-01` is
-  now published for both `aarch64-darwin` (PR #7) and `x86_64-linux` (see
+- **H4** (unauthenticated FloxHub fetch): run on a genuinely fresh,
+  never-authenticated sandbox (`20260801-160419Z`), and it came back
+  **SKIP, not PASS or FAIL** — `flox show
+  elvis/conductor-workspace-floxhub-01` fails unauthenticated
+  ("no packages matched"), even though the package is confirmed published
+  for both `aarch64-darwin` (PR #7) and `x86_64-linux` (see
   [`floxhub-x86_64-linux-publish-20260801.md`](floxhub-x86_64-linux-publish-20260801.md)).
-  Needs a genuinely fresh, never-authenticated sandbox to run
-  `FLOXHUB_TEST_PKG=elvis/conductor-workspace-floxhub-01 bash scripts/sandbox-test.sh`
-  and get a real PASS/FAIL.
+  `flox search` also can't surface it unauthenticated. This rules out
+  "package isn't published" as the cause and leans toward "auth-gated,"
+  but a SKIP result can't fully confirm that on its own. **Phase D' scope
+  is still undecided.** A conclusive answer needs checking the catalog's
+  public/private visibility from an already-authenticated context (e.g.
+  does an *authenticated* `flox show` on someone else's account see it, or
+  is it scoped private to the publishing account?) — not another
+  fresh-sandbox run, since every fresh sandbox will hit the same
+  `flox show` wall before ever reaching `flox install`.
 - Still unexplained: the macOS `tar` extraction failure in the second run —
   worth root-causing if `bd`/`roborev` provisioning needs to work on
   developer Macs, not just cloud sandboxes.
