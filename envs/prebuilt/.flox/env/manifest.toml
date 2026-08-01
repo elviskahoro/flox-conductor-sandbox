@@ -1,0 +1,18 @@
+schema-version = "1.13.0"
+
+# H1 (gtm-sdk#445): the exact five prebuilt catalog packages from
+# gtm-sdk/.flox/env/manifest.toml, with the two flake source builds
+# (bd.flake / roborev.flake) removed. Hypothesis: this materializes cleanly
+# via a single atomic `flox activate --mode run -- true` on the Vercel-class
+# Conductor sandbox, because nothing needs a local Nix build.
+[install]
+uv.pkg-path = "uv"
+uv.version = "0.11.26"
+dolt.pkg-path = "dolt"
+infisical.pkg-path = "infisical"
+gh.pkg-path = "gh"
+git.pkg-path = "git"
+
+[options]
+# Mirrors gtm-sdk: uv 0.11.26 is not published for Intel macOS.
+systems = ["aarch64-darwin", "aarch64-linux", "x86_64-linux"]

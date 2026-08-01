@@ -1,0 +1,2 @@
+# flox build output symlinks (created next to the env that ran the build)
+result-*

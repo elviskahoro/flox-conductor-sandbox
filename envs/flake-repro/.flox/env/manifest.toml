@@ -1,0 +1,13 @@
+schema-version = "1.13.0"
+
+# H2 control (gtm-sdk#445): the failing flake source build, in isolation.
+# Same pin as gtm-sdk's manifest. Expected on the Vercel-class sandbox
+# (single-user Nix, sandbox = false): the build aborts with
+#   error: home directory '/homeless-shelter' exists; please remove it to
+#   assure purity of builds without sandboxing
+# Run only via FLAKE_REPRO=1 — a doomed Go build costs real minutes.
+[install]
+bd.flake = "github:gastownhall/beads/v1.1.0"
+
+[options]
+systems = ["aarch64-darwin", "aarch64-linux", "x86_64-linux"]

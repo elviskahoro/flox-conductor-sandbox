@@ -1,0 +1,85 @@
+# flox-conductor-sandbox
+
+Minimal-scope test bed for [elviskahoro/gtm-sdk#445](https://github.com/elviskahoro/gtm-sdk/issues/445):
+*"Publish bd/roborev to FloxHub as prebuilt binaries — flake source builds
+break on Vercel sandbox."*
+
+This repo isolates the load-bearing unknowns of that issue's plan into the
+smallest possible harness, so a fresh Conductor cloud sandbox can answer
+"is the proposed fix even possible?" in one provisioning run — before any
+real FloxHub publishing work is invested in gtm-sdk itself.
+
+## Hypotheses under test
+
+| Stage | Hypothesis | Maps to #445 |
+|---|---|---|
+| 1 | Flox itself bootstraps on this sandbox class (rpm/deb install, `/dev/fd` shim, hand-started `nix-daemon`) | precondition for everything |
+| 2 | **H1 (core):** a manifest containing *only* prebuilt catalog packages (`pkg-path`) — the exact five gtm-sdk uses (`uv` pinned 0.11.26, `dolt`, `infisical`, `gh`, `git`) — materializes cleanly via one atomic `flox activate`, with every tool resolving under `.flox/run/.../bin` | "Why this should fix dolt/infisical/gh/git provisioning too" |
+| 3 | **H3:** `flox build` manifest builds work here — a trivial no-network build, then the real Option-A shape: repackage the official `beads` v1.1.2 release binary (pinned URL + sha256) into `$out/bin`, then verify the CLI flag surface the gtm-sdk setup script depends on | Phase B "Option 1" + Phase C flag-surface check |
+| 4 | **H4 (the fork in the road):** an unauthenticated sandbox can fetch a package from a project-controlled FloxHub catalog (`flox install <owner>/<pkg>`) | Phase A preflight — decides whether token plumbing (§6) is needed |
+| 5 | **H2 (control, opt-in):** the `bd.flake = "github:gastownhall/beads/v1.1.0"` source build reproduces the `/homeless-shelter` purity failure on this sandbox, confirming root-cause attribution | "Problem" section repro |
+
+## Layout
+
+```
+envs/prebuilt/     H1: gtm-sdk's five catalog packages, zero flake pins
+envs/repackage/    H3: [build.hello-conductor] + [build.bd] (upstream-binary repackage)
+envs/flake-repro/  H2: the failing bd flake pin, nothing else (opt-in stage)
+scripts/sandbox-test.sh   the harness — runs all stages, never hard-fails
+findings/          harness output: report-*.md (summary + evidence) and full-log-*.txt
+```
+
+Each env is a self-contained Flox environment (own `.flox/env.json` +
+`manifest.toml`) so stages are isolated: a failing stage cannot poison the
+others the way the atomic activation in gtm-sdk does today.
+
+`manifest.lock` files are deliberately **not** committed: catalog resolution
+happening in-sandbox is itself part of the test (gtm-sdk commits locks; if
+in-sandbox locking proves slow or flaky, that's a finding — the fix is to
+commit Mac-generated locks, and the report will say so).
+
+## Running
+
+A Conductor sandbox runs everything automatically via
+`.conductor/settings.toml` → `scripts/sandbox-test.sh`, logging to
+`$HOME/.conductor-setup.log`. Manually:
+
+```bash
+bash scripts/sandbox-test.sh                      # stages 0–4
+FLAKE_REPRO=1 bash scripts/sandbox-test.sh        # also run the H2 failure repro (slow: real Go build attempt)
+FLOXHUB_TEST_PKG=elviskahoro/hello-conductor bash scripts/sandbox-test.sh  # (default shown)
+```
+
+The harness writes `findings/report-<UTC timestamp>.md` with a PASS/FAIL/SKIP
+table plus evidence, and a full transcript alongside. Commit the findings back
+(or paste the report into #445).
+
+## Interpreting outcomes
+
+- **Stage 2 PASS** → #445's central claim holds: remove the flake pins and the
+  whole gtm-sdk manifest materializes; the curl fallbacks stop firing.
+- **Stage 3 PASS** → the Option-A `[build]` shape (repackage upstream release
+  binaries) is viable as the publish source, and bd v1.1.2's flag surface is
+  compatible with `conductor-workspace-setup.sh`.
+- **Stage 4** needs a throwaway package published first (`flox publish` from a
+  Mac — #445 Phase A3). Until then it reports SKIP with the exact command to
+  re-run. If it fails with an auth error once the package exists, FloxHub
+  token plumbing becomes a hard requirement (#445 §6) — the single biggest
+  potential blocker.
+- **Stage 5 PASS (opt-in)** = the repro fails with `/homeless-shelter`,
+  confirming this sandbox has the same single-user/no-sandbox Nix defect the
+  issue describes. If it *succeeds*, this sandbox class differs from the one
+  in #445 and Stage 2's PASS is weaker evidence.
+
+## Known scope reductions
+
+- `roborev` is omitted: same mechanism as `bd` (Go flake pin → repackaged
+  release binary), so one tool proves the path. The repackage build's shape
+  transfers 1:1.
+- No DoltHub/beads-DB bootstrap, no Infisical secrets, no uv sync — tool
+  *provisioning* is the only thing under test.
+- The repackage env carries `curl`/`gnutar`/`gzip`/`coreutils`/`cacert` as
+  build-time deps because `sandbox = "off"` builds run inside the activated
+  env. If gtm-sdk adopts this shape, those deps land in whatever env hosts
+  the `[build]` sections (or the builds move to a dedicated publish env) —
+  a real tradeoff this test is meant to surface.

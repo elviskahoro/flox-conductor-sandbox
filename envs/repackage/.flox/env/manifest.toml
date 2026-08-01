@@ -1,0 +1,76 @@
+schema-version = "1.13.0"
+
+# H3 (gtm-sdk#445 Phase B "Option 1"): manifest builds that repackage the
+# official upstream release binaries instead of compiling from source.
+# `sandbox = "off"` builds run inside the activated environment, so the tools
+# the build command needs are installed here explicitly rather than assumed
+# from the host. cacert: nixpkgs curl needs a CA bundle it can find.
+[install]
+curl.pkg-path = "curl"
+cacert.pkg-path = "cacert"
+gnutar.pkg-path = "gnutar"
+gzip.pkg-path = "gzip"
+coreutils.pkg-path = "coreutils"
+
+# Trivial no-network build: proves `flox build` mechanics work at all on this
+# sandbox class before blaming anything on the network/repackage specifics.
+# Also the exact throwaway-package shape #445 Phase A3 wants published to
+# FloxHub to test catalog fetch.
+[build.hello-conductor]
+description = "Trivial flox build smoke test (gtm-sdk#445 preflight)"
+version = "0.0.1"
+command = '''
+  mkdir -p "$out/bin"
+  {
+    echo '#!/usr/bin/env bash'
+    echo 'echo "hello from a flox-built package (gtm-sdk#445 preflight)"'
+  } > "$out/bin/hello-conductor"
+  chmod +x "$out/bin/hello-conductor"
+'''
+
+# The real Option-A shape: fetch the pinned beads release tarball for the
+# current platform, verify its official sha256 (from the release's
+# checksums.txt — fail closed), install the binary into $out/bin.
+# Bit-identical to what gtm-sdk's curl fallback installs today.
+[build.bd]
+description = "beads (bd) CLI repackaged from official upstream release binaries"
+version = "1.1.2"
+sandbox = "off"
+command = '''
+  set -euo pipefail
+  version="1.1.2"
+  case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64)
+      asset="beads_${version}_linux_amd64.tar.gz"
+      sha256="a72d71ed374955dc9f83a0f90b54bd7b6a0016709dd1676ae2e368651ed401c2"
+      ;;
+    Linux-aarch64)
+      asset="beads_${version}_linux_arm64.tar.gz"
+      sha256="a134015faf4be0a43f8681a8d602eaf0b7c255c957f09d3c933257c8c92fdd10"
+      ;;
+    Darwin-arm64)
+      asset="beads_${version}_darwin_arm64.tar.gz"
+      sha256="9b0137a83a2afd343e2abd2a506be72ea032721000f76669c2cf81729e78501d"
+      ;;
+    *)
+      echo "error: no pinned beads asset for $(uname -s)-$(uname -m)" >&2
+      exit 1
+      ;;
+  esac
+  # nixpkgs curl does not fall back to distro CA paths; point it at the
+  # cacert package installed in this env unless the caller already set one.
+  if [ -z "${SSL_CERT_FILE:-}" ] && [ -f "${FLOX_ENV}/etc/ssl/certs/ca-bundle.crt" ]; then
+    export SSL_CERT_FILE="${FLOX_ENV}/etc/ssl/certs/ca-bundle.crt"
+  fi
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "${tmp}"' EXIT
+  curl -fsSL -o "${tmp}/${asset}" \
+    "https://github.com/gastownhall/beads/releases/download/v${version}/${asset}"
+  echo "${sha256}  ${tmp}/${asset}" | sha256sum --check -
+  tar -xzf "${tmp}/${asset}" -C "${tmp}" bd
+  mkdir -p "$out/bin"
+  install -m755 "${tmp}/bd" "$out/bin/bd"
+'''
+
+[options]
+systems = ["aarch64-darwin", "aarch64-linux", "x86_64-linux"]
