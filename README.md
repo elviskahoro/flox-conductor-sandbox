@@ -19,8 +19,12 @@ artifact of an easier environment. **H4 was run on a genuinely fresh,
 never-authenticated sandbox and came back SKIP, not PASS/FAIL**: the
 published package is confirmed to exist, but `flox show` itself fails
 unauthenticated, so the harness never reaches the `flox install` step.
-Whether Phase D' (FloxHub auth-token plumbing, §6) is actually needed is
-still an open question.
+**Resolved (issue #11): SKIP is the correct, expected result.**
+`flox publish` (no `--org`) always publishes to the publisher's private
+catalog — there is no flag to make a package publicly fetchable, per `flox
+publish --help` and https://flox.dev/docs/concepts/publishing/. Phase D'
+(FloxHub auth-token plumbing, §6) **is needed** for any real unauthenticated
+consumption of a FloxHub-hosted package.
 
 Five runs exist so far across three environments (a non-target container,
 macOS, and the target class three times). For the full run-by-run breakdown, see
@@ -34,7 +38,7 @@ macOS, and the target class three times). For the full run-by-run breakdown, see
 | 1 | Flox itself bootstraps on this sandbox class (rpm/deb install, `/dev/fd` shim, hand-started `nix-daemon`) | precondition for everything | **PASS** on target class |
 | 2 | **H1 (core):** a manifest containing *only* prebuilt catalog packages (`pkg-path`) — the exact five gtm-sdk uses (`uv` pinned 0.11.26, `dolt`, `infisical`, `gh`, `git`) — materializes cleanly via one atomic `flox activate`, with every tool resolving under `.flox/run/.../bin` | "Why this should fix dolt/infisical/gh/git provisioning too" | **PASS** — all 3 environments tested |
 | 3 | **H3:** `flox build` manifest builds work here — a trivial no-network build, then the real Option-A shape: repackage the official `beads` v1.1.2 release binary (pinned URL + sha256) into `$out/bin`, then verify the CLI flag surface the gtm-sdk setup script depends on | Phase B "Option 1" + Phase C flag-surface check | **PASS** on target class (2 non-target environments hit unrelated, environment-specific issues) |
-| 4 | **H4 (the fork in the road):** an unauthenticated sandbox can fetch a package from a project-controlled FloxHub catalog (`flox install <owner>/<pkg>`) | Phase A preflight — decides whether token plumbing (§6) is needed | **SKIP** — `flox show` fails unauthenticated even though the package is published; can't yet distinguish "not visible" from "needs auth" |
+| 4 | **H4 (the fork in the road):** an unauthenticated sandbox can fetch a package from a project-controlled FloxHub catalog (`flox install <owner>/<pkg>`) | Phase A preflight — decides whether token plumbing (§6) is needed | **SKIP** — resolved (#11): expected. Bare `flox publish` is private-by-default; §6 token plumbing is needed |
 | 5 | **H2 (control, opt-in):** the `bd.flake = "github:gastownhall/beads/v1.1.0"` source build reproduces the `/homeless-shelter` purity failure on this sandbox, confirming root-cause attribution | "Problem" section repro | **PASS** — target class confirmed to share the defect |
 
 ## Layout
@@ -124,11 +128,21 @@ into a publisher:
   `aarch64-darwin` and `x86_64-linux` (see
   `findings/floxhub-x86_64-linux-publish-20260801.md`), but `flox show`
   itself fails to find it unauthenticated — the harness never reaches the
-  `flox install` step PASS/FAIL depends on. This rules out "not published"
-  but doesn't yet confirm "auth required": that needs checking catalog
-  visibility from an already-authenticated context, since every fresh
-  sandbox will hit the same `flox show` wall. Phase D' (#445 §6 token
-  plumbing) scope is still an open question.
+  `flox install` step PASS/FAIL depends on. **Resolved (issue #11):** this
+  is expected, not a misconfiguration. `flox publish` (the bare form used in
+  PR #7/#8, no `-o`/`--org`) always lands in the publisher's **private**
+  catalog — per `flox publish --help` and
+  https://flox.dev/docs/concepts/publishing/, "individual users will not be
+  able to share packages they've published with other users," and the only
+  visibility knob (`--org`) is a paid feature that shares with an
+  organization, never the general public. There is no way to make a
+  `flox publish`-ed package fetchable unauthenticated. Phase D' (#445 §6
+  token plumbing) **is required** for real unauthenticated/CI usage. (A
+  later, uncommitted-until-now run, `20260801-201328Z`, logged this stage as
+  PASS with a "no token plumbing needed" conclusion — that run's own log
+  shows it executed on an already-authenticated machine, so its PASS does
+  not test unauthenticated access and that conclusion is superseded by the
+  above.)
 - **Stage 5 PASS (opt-in)** = the repro fails with `/homeless-shelter`,
   confirming this sandbox has the same single-user/no-sandbox Nix defect the
   issue describes. If it *succeeds*, this sandbox class differs from the one
