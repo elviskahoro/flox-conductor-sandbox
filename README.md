@@ -15,12 +15,15 @@ On the actual target sandbox class (Amazon Linux 2023 / Vercel / Conductor
 cloud), flox bootstraps cleanly, **H1 and H3 both PASS**, and **H2's control
 repro also PASSes** — confirming this sandbox genuinely has the defect #445
 describes, which is what makes the H1/H3 passes real evidence rather than an
-artifact of an easier environment. **H4 remains untested**: it needs a
-throwaway package published from an authenticated Mac first (`flox
-publish`), a step nothing in a cloud sandbox can complete on its own.
+artifact of an easier environment. **H4 was run on a genuinely fresh,
+never-authenticated sandbox and came back SKIP, not PASS/FAIL**: the
+published package is confirmed to exist, but `flox show` itself fails
+unauthenticated, so the harness never reaches the `flox install` step.
+Whether Phase D' (FloxHub auth-token plumbing, §6) is actually needed is
+still an open question.
 
-Four runs exist so far across three environments (a non-target container,
-macOS, and the target class twice). For the full run-by-run breakdown, see
+Five runs exist so far across three environments (a non-target container,
+macOS, and the target class three times). For the full run-by-run breakdown, see
 [`findings/README.md`](findings/README.md); for the narrative writeup, see
 [PR #3](https://github.com/elviskahoro/flox-conductor-sandbox/pull/3).
 
@@ -31,7 +34,7 @@ macOS, and the target class twice). For the full run-by-run breakdown, see
 | 1 | Flox itself bootstraps on this sandbox class (rpm/deb install, `/dev/fd` shim, hand-started `nix-daemon`) | precondition for everything | **PASS** on target class |
 | 2 | **H1 (core):** a manifest containing *only* prebuilt catalog packages (`pkg-path`) — the exact five gtm-sdk uses (`uv` pinned 0.11.26, `dolt`, `infisical`, `gh`, `git`) — materializes cleanly via one atomic `flox activate`, with every tool resolving under `.flox/run/.../bin` | "Why this should fix dolt/infisical/gh/git provisioning too" | **PASS** — all 3 environments tested |
 | 3 | **H3:** `flox build` manifest builds work here — a trivial no-network build, then the real Option-A shape: repackage the official `beads` v1.1.2 release binary (pinned URL + sha256) into `$out/bin`, then verify the CLI flag surface the gtm-sdk setup script depends on | Phase B "Option 1" + Phase C flag-surface check | **PASS** on target class (2 non-target environments hit unrelated, environment-specific issues) |
-| 4 | **H4 (the fork in the road):** an unauthenticated sandbox can fetch a package from a project-controlled FloxHub catalog (`flox install <owner>/<pkg>`) | Phase A preflight — decides whether token plumbing (§6) is needed | **Untested** — blocked on a Mac-side `flox publish` |
+| 4 | **H4 (the fork in the road):** an unauthenticated sandbox can fetch a package from a project-controlled FloxHub catalog (`flox install <owner>/<pkg>`) | Phase A preflight — decides whether token plumbing (§6) is needed | **SKIP** — `flox show` fails unauthenticated even though the package is published; can't yet distinguish "not visible" from "needs auth" |
 | 5 | **H2 (control, opt-in):** the `bd.flake = "github:gastownhall/beads/v1.1.0"` source build reproduces the `/homeless-shelter` purity failure on this sandbox, confirming root-cause attribution | "Problem" section repro | **PASS** — target class confirmed to share the defect |
 
 ## Layout
@@ -115,13 +118,17 @@ into a publisher:
 - **Stage 3 PASS** → the Option-A `[build]` shape (repackage upstream release
   binaries) is viable as the publish source, and bd v1.1.2's flag surface is
   compatible with `conductor-workspace-setup.sh`.
-- **Stage 4** — `elvis/conductor-workspace-floxhub-01` is now published for
-  both `aarch64-darwin` and `x86_64-linux` (see
-  `findings/floxhub-x86_64-linux-publish-20260801.md`), so a genuinely fresh,
-  never-authenticated sandbox can now get a real PASS/FAIL by running with
-  `FLOXHUB_TEST_PKG=elvis/conductor-workspace-floxhub-01`. If it fails with an
-  auth error, FloxHub token plumbing becomes a hard requirement (#445 §6) —
-  the single biggest potential blocker.
+- **Stage 4** — run on a genuinely fresh, never-authenticated sandbox
+  (`20260801-160419Z`): result is **SKIP, not PASS/FAIL**.
+  `elvis/conductor-workspace-floxhub-01` is confirmed published for both
+  `aarch64-darwin` and `x86_64-linux` (see
+  `findings/floxhub-x86_64-linux-publish-20260801.md`), but `flox show`
+  itself fails to find it unauthenticated — the harness never reaches the
+  `flox install` step PASS/FAIL depends on. This rules out "not published"
+  but doesn't yet confirm "auth required": that needs checking catalog
+  visibility from an already-authenticated context, since every fresh
+  sandbox will hit the same `flox show` wall. Phase D' (#445 §6 token
+  plumbing) scope is still an open question.
 - **Stage 5 PASS (opt-in)** = the repro fails with `/homeless-shelter`,
   confirming this sandbox has the same single-user/no-sandbox Nix defect the
   issue describes. If it *succeeds*, this sandbox class differs from the one
