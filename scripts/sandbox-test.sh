@@ -76,6 +76,19 @@ note_cmd() {
 
 elapsed() { printf '%ds' "$(($(date +%s) - $1))"; }
 
+# note_excerpt <logfile>: embed a readable failure excerpt in the report.
+# flox prints its error message FIRST and then a long Rust backtrace, so
+# `tail` alone captures only backtrace frames — keep the head plus any
+# error-looking lines, and drop numbered backtrace frames.
+note_excerpt() {
+  note '```'
+  {
+    head -15 "$1"
+    grep -iE 'error|warning|fail' "$1" | grep -vE '^\s*[0-9]+:' | head -10
+  } | awk '!seen[$0]++' >>"${BODY}"
+  note '```'
+}
+
 # ---------------------------------------------------------------------------
 # Stage 0: environment fingerprint
 # ---------------------------------------------------------------------------
@@ -217,9 +230,7 @@ EOF
       record "2 H1 prebuilt activate" "FAIL" "activation OK but no run bin dir found"
     fi
   else
-    note '```'
-    tail -40 "${ACT_LOG}" >>"${BODY}"
-    note '```'
+    note_excerpt "${ACT_LOG}"
     record "2 H1 prebuilt activate" "FAIL" "flox activate failed — see report body"
   fi
 fi
@@ -240,9 +251,7 @@ else
     "${BUILD_DIR}/result-hello-conductor/bin/hello-conductor" >/dev/null 2>&1; then
     record "3a hello build" "PASS" "trivial no-network build + run OK ($(elapsed "${STAGE3_START}"))"
   else
-    note '```'
-    tail -40 "${HELLO_LOG}" >>"${BODY}"
-    note '```'
+    note_excerpt "${HELLO_LOG}"
     record "3a hello build" "FAIL" "trivial build failed — flox build mechanics broken here; see body"
   fi
 
@@ -271,9 +280,7 @@ else
       record "3c bd flag surface" "SKIP" "no runnable bd binary"
     fi
   else
-    note '```'
-    tail -40 "${BD_LOG}" >>"${BODY}"
-    note '```'
+    note_excerpt "${BD_LOG}"
     record "3b bd repackage build" "FAIL" "repackage build failed — see body"
     record "3c bd flag surface" "SKIP" "no bd build"
   fi
@@ -297,15 +304,11 @@ else
       record "4 FloxHub fetch" "PASS" "unauthenticated install of ${FLOXHUB_TEST_PKG} works — no token plumbing needed (#445 §6 is dead code)"
     else
       cat "${FETCH_LOG}" >>"${FULL_LOG}"
-      note '```'
-      tail -20 "${FETCH_LOG}" >>"${BODY}"
-      note '```'
+      note_excerpt "${FETCH_LOG}"
       record "4 FloxHub fetch" "FAIL" "package visible but install failed — likely auth; token plumbing (#445 §6) required"
     fi
   else
-    note '```'
-    tail -20 "${SHOW_LOG}" >>"${BODY}"
-    note '```'
+    note_excerpt "${SHOW_LOG}"
     record "4 FloxHub fetch" "SKIP" "'flox show ${FLOXHUB_TEST_PKG}' failed — publish a throwaway pkg from a Mac (#445 Phase A3: flox publish from envs/repackage covers hello-conductor), then re-run with FLOXHUB_TEST_PKG=<owner>/<pkg>. NOTE: not-found here is ambiguous between 'not published' and 'published but private/auth-gated' — check which."
   fi
 fi
@@ -330,9 +333,7 @@ else
     note '```'
     record "5 H2 flake repro" "PASS" "reproduced the exact /homeless-shelter purity failure ($(elapsed "${STAGE5_START}"))"
   else
-    note '```'
-    tail -40 "${REPRO_LOG}" >>"${BODY}"
-    note '```'
+    note_excerpt "${REPRO_LOG}"
     record "5 H2 flake repro" "FAIL" "flake build failed but NOT with /homeless-shelter — different failure mode, see body ($(elapsed "${STAGE5_START}"))"
   fi
 fi
