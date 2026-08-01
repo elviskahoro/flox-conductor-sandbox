@@ -38,7 +38,7 @@ macOS, and the target class twice). For the full run-by-run breakdown, see
 
 ```
 envs/prebuilt/     H1: gtm-sdk's five catalog packages, zero flake pins
-envs/repackage/    H3: [build.hello-conductor] + [build.bd] (upstream-binary repackage)
+envs/repackage/    H3: [build.conductor-workspace-floxhub-01] + [build.bd] (upstream-binary repackage)
 envs/flake-repro/  H2: the failing bd flake pin, nothing else (opt-in stage)
 scripts/sandbox-test.sh   the harness — runs all stages, never hard-fails
 findings/          harness output: report-*.md (summary + evidence) and full-log-*.txt
@@ -67,7 +67,7 @@ A Conductor sandbox runs everything automatically via
 ```bash
 bash scripts/sandbox-test.sh                      # stages 0–4
 FLAKE_REPRO=1 bash scripts/sandbox-test.sh        # also run the H2 failure repro (slow: real Go build attempt)
-FLOXHUB_TEST_PKG=elviskahoro/hello-conductor bash scripts/sandbox-test.sh  # (default shown)
+FLOXHUB_TEST_PKG=elviskahoro/conductor-workspace-floxhub-01 bash scripts/sandbox-test.sh  # (default shown)
 ```
 
 The harness writes `findings/report-<UTC timestamp>.md` with a PASS/FAIL/SKIP
