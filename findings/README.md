@@ -32,10 +32,13 @@ and stages mean, and how to produce a new run.
   class genuinely has the defect #445 describes, which is what makes the
   H1/H3 passes meaningful evidence rather than "the bug just doesn't exist
   here."
-- **H4** (unauthenticated FloxHub fetch): still untested. Blocked on a human
-  publishing a throwaway package from an authenticated Mac (`flox publish`,
-  #445 Phase A3) — nothing in a cloud sandbox can complete this step. Re-run
-  with `FLOXHUB_TEST_PKG=<owner>/<pkg>` once one exists.
+- **H4** (unauthenticated FloxHub fetch): still untested end-to-end, but no
+  longer blocked on publishing — `elvis/conductor-workspace-floxhub-01` is
+  now published for both `aarch64-darwin` (PR #7) and `x86_64-linux` (see
+  [`floxhub-x86_64-linux-publish-20260801.md`](floxhub-x86_64-linux-publish-20260801.md)).
+  Needs a genuinely fresh, never-authenticated sandbox to run
+  `FLOXHUB_TEST_PKG=elvis/conductor-workspace-floxhub-01 bash scripts/sandbox-test.sh`
+  and get a real PASS/FAIL.
 - Still unexplained: the macOS `tar` extraction failure in the second run —
   worth root-causing if `bd`/`roborev` provisioning needs to work on
   developer Macs, not just cloud sandboxes.

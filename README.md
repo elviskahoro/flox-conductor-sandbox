@@ -115,11 +115,13 @@ into a publisher:
 - **Stage 3 PASS** → the Option-A `[build]` shape (repackage upstream release
   binaries) is viable as the publish source, and bd v1.1.2's flag surface is
   compatible with `conductor-workspace-setup.sh`.
-- **Stage 4** needs a throwaway package published first (`flox publish` from a
-  Mac — #445 Phase A3). Until then it reports SKIP with the exact command to
-  re-run. If it fails with an auth error once the package exists, FloxHub
-  token plumbing becomes a hard requirement (#445 §6) — the single biggest
-  potential blocker.
+- **Stage 4** — `elvis/conductor-workspace-floxhub-01` is now published for
+  both `aarch64-darwin` and `x86_64-linux` (see
+  `findings/floxhub-x86_64-linux-publish-20260801.md`), so a genuinely fresh,
+  never-authenticated sandbox can now get a real PASS/FAIL by running with
+  `FLOXHUB_TEST_PKG=elvis/conductor-workspace-floxhub-01`. If it fails with an
+  auth error, FloxHub token plumbing becomes a hard requirement (#445 §6) —
+  the single biggest potential blocker.
 - **Stage 5 PASS (opt-in)** = the repro fails with `/homeless-shelter`,
   confirming this sandbox has the same single-user/no-sandbox Nix defect the
   issue describes. If it *succeeds*, this sandbox class differs from the one
