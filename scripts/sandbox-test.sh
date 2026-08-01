@@ -16,6 +16,13 @@
 #   3  H3: flox build conductor-workspace-floxhub-01 + bd repackage, then bd flag surface
 #   4  H4: fetch a package from FloxHub unauthenticated (needs Phase A3 publish)
 #   5  H2: opt-in (FLAKE_REPRO=1) flake source-build failure repro
+#   6  Phase D' prototype: opt-in (TEST_AUTH_PLUMBING=1) — authenticate via
+#      scripts/floxhub-login.sh, then activate envs/floxhub-consume (a real
+#      pkg-path manifest, not the ad hoc `flox install` Stage 4 uses) to
+#      prove the FloxHub auth-token recipe works end to end. NEVER wired
+#      into .conductor/settings.toml's default path, same as
+#      floxhub-login.sh itself: authenticating a sandbox must stay opt-in so
+#      Stage 4 can keep testing genuinely unauthenticated sandboxes.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -26,6 +33,7 @@ export FLOX_DISABLE_METRICS=true
 FLOXHUB_TEST_PKG="${FLOXHUB_TEST_PKG:-elvis/conductor-workspace-floxhub-01}"
 FLAKE_REPRO="${FLAKE_REPRO:-0}"
 FLAKE_REPRO_TIMEOUT="${FLAKE_REPRO_TIMEOUT:-1800}"
+TEST_AUTH_PLUMBING="${TEST_AUTH_PLUMBING:-0}"
 
 STAMP="$(date -u +%Y%m%d-%H%M%SZ)"
 mkdir -p findings
@@ -335,6 +343,44 @@ else
   else
     note_excerpt "${REPRO_LOG}"
     record "5 H2 flake repro" "FAIL" "flake build failed but NOT with /homeless-shelter — different failure mode, see body ($(elapsed "${STAGE5_START}"))"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# Stage 6 (opt-in): Phase D' prototype — authenticated FloxHub consumption
+# ---------------------------------------------------------------------------
+section "Stage 6 — Phase D' prototype: authenticated FloxHub consumption"
+if [[ ${TEST_AUTH_PLUMBING} != 1 ]]; then
+  record "6 auth plumbing" "SKIP" "opt-in: re-run with TEST_AUTH_PLUMBING=1 FLOXHUB_TOKEN=<token> (permanently authenticates this sandbox — never run on the one testing Stage 4)"
+elif ! command -v flox >/dev/null 2>&1; then
+  record "6 auth plumbing" "SKIP" "no flox"
+else
+  STAGE6_START=$(date +%s)
+  LOGIN_LOG="$(mktemp)"
+  if run_logged "${LOGIN_LOG}" bash "${SCRIPT_DIR}/floxhub-login.sh"; then
+    ACT6_LOG="$(mktemp)"
+    if run_logged "${ACT6_LOG}" flox activate --dir "${REPO_ROOT}/envs/floxhub-consume" --mode run -- true; then
+      DUR6="$(elapsed "${STAGE6_START}")"
+      SYSTEM6="$(uname -m | sed s/arm64/aarch64/)-$(uname -s | tr '[:upper:]' '[:lower:]')"
+      FLOX_BIN6="${REPO_ROOT}/envs/floxhub-consume/.flox/run/${SYSTEM6}.floxhub-consume-run/bin"
+      if [[ ! -d ${FLOX_BIN6} ]]; then
+        for d in "${REPO_ROOT}/envs/floxhub-consume/.flox/run/"*"/bin"; do
+          [[ -d "${d}" ]] && FLOX_BIN6="${d}" && break
+        done
+      fi
+      if [[ -x "${FLOX_BIN6}/conductor-workspace-floxhub-01" ]]; then
+        note "Authenticated activation succeeded in ${DUR6}; pkg-path resolved under \`${FLOX_BIN6}\`."
+        record "6 auth plumbing" "PASS" "flox auth login --token-file + flox activate against a pkg-path manifest works end to end (${DUR6})"
+      else
+        record "6 auth plumbing" "FAIL" "activation OK but conductor-workspace-floxhub-01 not found under run bin dir"
+      fi
+    else
+      note_excerpt "${ACT6_LOG}"
+      record "6 auth plumbing" "FAIL" "authenticated but 'flox activate --dir envs/floxhub-consume' failed — see body"
+    fi
+  else
+    note_excerpt "${LOGIN_LOG}"
+    record "6 auth plumbing" "FAIL" "scripts/floxhub-login.sh failed — see body (likely FLOXHUB_TOKEN unset/invalid)"
   fi
 fi
 

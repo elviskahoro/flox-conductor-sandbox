@@ -22,6 +22,7 @@ and stages mean, and how to produce a new run.
 | `20260801-125246Z` | Same sandbox as above, deliberate re-run with `FLAKE_REPRO=1` | **Yes** | Reproduces the prior run exactly (confirms idempotency) + H2 control PASS |
 | `20260801-160419Z` | Fresh Conductor cloud sandbox, never authenticated to FloxHub | **Yes** | H1 + H3 PASS again; **H4 SKIP** — `flox show elvis/conductor-workspace-floxhub-01` fails unauthenticated even though PR #7/#8 confirm it's published for both platforms; `flox search` also can't find it. Resolved by issue #11: expected — private-by-default catalog, not a visibility bug |
 | `20260801-201328Z` | macOS, developer machine, **already authenticated to FloxHub** | No | Stage 3b bd repackage FAIL (`tar` extraction, unrelated); Stage 4 logged **PASS** with "no token plumbing needed" — **invalid**, see issue #11 resolution below: this run's own `flox auth status` shows it was logged in, so it never tested unauthenticated access |
+| `20260801-220017Z` | macOS, developer machine, deliberately re-authenticated for `TEST_AUTH_PLUMBING=1` | No | New **Stage 6 (Phase D' prototype) PASS** — `flox auth login --token-file` + `flox activate` against a `pkg-path` manifest (`envs/floxhub-consume`) works end to end. Stage 4's "PASS" here is contaminated for the same reason as `20260801-201328Z` and should be ignored |
 
 ## Current bottom line (as of the last run above)
 
@@ -68,6 +69,19 @@ and stages mean, and how to produce a new run.
   machine ("You are logged in as elvis... Credential stored in your system
   keyring"), so its `flox show` success proves nothing about unauthenticated
   visibility. Kept in the runs table above for the record, not as evidence.
+
+- **Phase D' prototype (Stage 6, new, opt-in):** issue #11's follow-up —
+  prove the auth-token recipe works, not just that it's needed. Run
+  `20260801-220017Z` authenticated via `scripts/floxhub-login.sh` and then
+  `flox activate --dir envs/floxhub-consume` — a manifest whose
+  `[install]` references the real published `pkg-path`
+  (`elvis/conductor-workspace-floxhub-01`), the actual gtm-sdk consumption
+  pattern, not Stage 4's ad hoc `flox install`. **Result: PASS** — the
+  binary resolves under `.flox/run/.../bin` after authenticated activation.
+  This is the concrete recipe to port into
+  `gtm-sdk/scripts/conductor-workspace-setup.sh`: mint/obtain a token (via
+  Infisical in real gtm-sdk provisioning) → `flox auth login
+  --token-file=...` → `flox activate` against a `pkg-path` manifest.
 - Still unexplained: the macOS `tar` extraction failure in the second run —
   worth root-causing if `bd`/`roborev` provisioning needs to work on
   developer Macs, not just cloud sandboxes.
