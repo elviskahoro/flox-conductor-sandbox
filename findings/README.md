@@ -20,18 +20,19 @@ and stages mean, and how to produce a new run.
 | `20260801-121814Z` | macOS (Darwin, developer machine) | No | H1 PASS; Stage 3a PASS but 3b FAIL (`tar` extraction error, never root-caused) |
 | `20260801-123329Z` | Amazon Linux 2023 / Vercel / Conductor cloud | **Yes** | H1 + H3 (all sub-stages) PASS — first clean pass on the real target class |
 | `20260801-125246Z` | Same sandbox as above, deliberate re-run with `FLAKE_REPRO=1` | **Yes** | Reproduces the prior run exactly (confirms idempotency) + H2 control PASS |
+| `20260801-141525Z` | Same Amazon Linux 2023 / Vercel / Conductor cloud sandbox | **Yes** | H1 + H3 PASS again; H4 and opt-in H2 skipped |
 
 ## Current bottom line (as of the last run above)
 
 - **H1** (prebuilt-catalog manifest activates atomically): PASS on every
   environment tested.
 - **H3** (`flox build` repackage shape): PASS on the real target class,
-  twice. The two earlier failures are understood/explained, not open
+  three times. The two earlier failures are understood/explained, not open
   questions (see table above).
 - **H2** (control repro of the original bug): PASS — the target sandbox
-  class genuinely has the defect #445 describes, which is what makes the
-  H1/H3 passes meaningful evidence rather than "the bug just doesn't exist
-  here."
+  class genuinely has the defect #445 describes (from the prior opt-in run),
+  which makes the H1/H3 passes meaningful evidence rather than "the bug just
+  doesn't exist here." The latest run left this opt-in stage skipped.
 - **H4** (unauthenticated FloxHub fetch): still untested. Blocked on a human
   publishing a throwaway package from an authenticated Mac (`flox publish`,
   #445 Phase A3) — nothing in a cloud sandbox can complete this step. Re-run
