@@ -27,6 +27,7 @@ envs/repackage/    H3: [build.hello-conductor] + [build.bd] (upstream-binary rep
 envs/flake-repro/  H2: the failing bd flake pin, nothing else (opt-in stage)
 scripts/sandbox-test.sh   the harness — runs all stages, never hard-fails
 findings/          harness output: report-*.md (summary + evidence) and full-log-*.txt
+                   — see findings/README.md for a run-by-run index
 ```
 
 Each env is a self-contained Flox environment (own `.flox/env.json` +
