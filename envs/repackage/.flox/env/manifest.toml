@@ -16,7 +16,7 @@ coreutils.pkg-path = "coreutils"
 # sandbox class before blaming anything on the network/repackage specifics.
 # Also the exact throwaway-package shape #445 Phase A3 wants published to
 # FloxHub to test catalog fetch.
-[build.hello-conductor]
+[build.conductor-workspace-floxhub-01]
 description = "Trivial flox build smoke test (gtm-sdk#445 preflight)"
 version = "0.0.1"
 command = '''
@@ -24,8 +24,8 @@ command = '''
   {
     echo '#!/usr/bin/env bash'
     echo 'echo "hello from a flox-built package (gtm-sdk#445 preflight)"'
-  } > "$out/bin/hello-conductor"
-  chmod +x "$out/bin/hello-conductor"
+  } > "$out/bin/conductor-workspace-floxhub-01"
+  chmod +x "$out/bin/conductor-workspace-floxhub-01"
 '''
 
 # The real Option-A shape: fetch the pinned beads release tarball for the

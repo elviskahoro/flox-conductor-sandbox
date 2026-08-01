@@ -13,7 +13,7 @@
 #   0  environment fingerprint (Nix sandbox/build-users state, /dev/fd, ...)
 #   1  flox bootstrap (rpm via dnf like gtm-sdk, deb via apt as fallback)
 #   2  H1: activate envs/prebuilt (catalog packages only) atomically
-#   3  H3: flox build hello-conductor + bd repackage, then bd flag surface
+#   3  H3: flox build conductor-workspace-floxhub-01 + bd repackage, then bd flag surface
 #   4  H4: fetch a package from FloxHub unauthenticated (needs Phase A3 publish)
 #   5  H2: opt-in (FLAKE_REPRO=1) flake source-build failure repro
 set -uo pipefail
@@ -23,7 +23,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 export FLOX_DISABLE_METRICS=true
-FLOXHUB_TEST_PKG="${FLOXHUB_TEST_PKG:-elviskahoro/hello-conductor}"
+FLOXHUB_TEST_PKG="${FLOXHUB_TEST_PKG:-elvis/conductor-workspace-floxhub-01}"
 FLAKE_REPRO="${FLAKE_REPRO:-0}"
 FLAKE_REPRO_TIMEOUT="${FLAKE_REPRO_TIMEOUT:-1800}"
 
@@ -247,8 +247,8 @@ else
   STAGE3_START=$(date +%s)
   BUILD_DIR="${REPO_ROOT}/envs/repackage"
   HELLO_LOG="$(mktemp)"
-  if run_logged "${HELLO_LOG}" flox build --dir "${BUILD_DIR}" hello-conductor &&
-    "${BUILD_DIR}/result-hello-conductor/bin/hello-conductor" >/dev/null 2>&1; then
+  if run_logged "${HELLO_LOG}" flox build --dir "${BUILD_DIR}" conductor-workspace-floxhub-01 &&
+    "${BUILD_DIR}/result-conductor-workspace-floxhub-01/bin/conductor-workspace-floxhub-01" >/dev/null 2>&1; then
     record "3a hello build" "PASS" "trivial no-network build + run OK ($(elapsed "${STAGE3_START}"))"
   else
     note_excerpt "${HELLO_LOG}"
@@ -309,7 +309,7 @@ else
     fi
   else
     note_excerpt "${SHOW_LOG}"
-    record "4 FloxHub fetch" "SKIP" "'flox show ${FLOXHUB_TEST_PKG}' failed — publish a throwaway pkg from a Mac (#445 Phase A3: flox publish from envs/repackage covers hello-conductor), then re-run with FLOXHUB_TEST_PKG=<owner>/<pkg>. NOTE: not-found here is ambiguous between 'not published' and 'published but private/auth-gated' — check which."
+    record "4 FloxHub fetch" "SKIP" "'flox show ${FLOXHUB_TEST_PKG}' failed — publish a throwaway pkg from a Mac (#445 Phase A3: flox publish from envs/repackage covers conductor-workspace-floxhub-01), then re-run with FLOXHUB_TEST_PKG=<owner>/<pkg>. NOTE: not-found here is ambiguous between 'not published' and 'published but private/auth-gated' — check which."
   fi
 fi
 

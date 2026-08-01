@@ -33,8 +33,8 @@
         "version": "1.1.2",
         "description": "beads (bd) CLI repackaged from official upstream release binaries"
       },
-      "hello-conductor": {
-        "command": "  mkdir -p \"$out/bin\"\n  {\n    echo '#!/usr/bin/env bash'\n    echo 'echo \"hello from a flox-built package (gtm-sdk#445 preflight)\"'\n  } > \"$out/bin/hello-conductor\"\n  chmod +x \"$out/bin/hello-conductor\"\n",
+      "conductor-workspace-floxhub-01": {
+        "command": "  mkdir -p \"$out/bin\"\n  {\n    echo '#!/usr/bin/env bash'\n    echo 'echo \"hello from a flox-built package (gtm-sdk#445 preflight)\"'\n  } > \"$out/bin/conductor-workspace-floxhub-01\"\n  chmod +x \"$out/bin/conductor-workspace-floxhub-01\"\n",
         "version": "0.0.1",
         "description": "Trivial flox build smoke test (gtm-sdk#445 preflight)"
       }
