@@ -1,0 +1,79 @@
+Darwin 25.5.0 arm64
+no /etc/os-release
+
+build-users-group = nixbld
+include flox.conf
+sh: getent: command not found
+no nixbld group
+dr-xr-xr-x  1 root  wheel  0 Jul 26 14:36 /dev/fd
+absent (good)
+srw-rw-rw-  1 root  nixbld  0 Jul 26 14:53 /nix/var/nix/daemon-socket/socket
+/usr/local/bin/flox
+/usr/local/bin/nix
+==> [0 fingerprint] PASS — recorded (see report body)
+==> [1 flox bootstrap] SKIP — non-Linux host; install flox manually
+$ flox activate --dir /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/honolulu/envs/prebuilt --mode run -- true
+==> [2 H1 prebuilt activate] PASS — all 5 tools resolve under .flox/run and execute (2s)
+$ flox build --dir /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/honolulu/envs/repackage hello-conductor
+Rendering hello-conductor build script to /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T//17116b98/hello-conductor/build.bash
+Building hello-conductor-0.0.1 in local mode
+[36m00:00:00.007881 [0m[1m[33m+ mkdir -p /tmp/store_0ca40e99ae97e470b999c10b3a59c979-hello-conductor-0.0.1/bin[0m
+[36m00:00:00.023695 [0m[1m[33m+ echo '#!/usr/bin/env bash'[0m
+[36m00:00:00.023835 [0m[1m[33m+ echo 'echo "hello from a flox-built package (gtm-sdk#445 preflight)"'[0m
+[36m00:00:00.023926 [0m[1m[33m+ chmod +x /tmp/store_0ca40e99ae97e470b999c10b3a59c979-hello-conductor-0.0.1/bin/hello-conductor[0m
+2 blocks
+this derivation will be built:
+  /nix/store/qc6idlcmjgw3q6vfbb51w25g8xhqr5x1-hello-conductor-0.0.1.drv
+building '/nix/store/qc6idlcmjgw3q6vfbb51w25g8xhqr5x1-hello-conductor-0.0.1.drv'...
+hello-conductor> 2 blocks
+hello-conductor> patching script interpreter paths in /nix/store/fpv53nzhf1mkf1wwgjcmydy258vzwgnm-hello-conductor-0.0.1/bin/hello-conductor
+hello-conductor> /nix/store/fpv53nzhf1mkf1wwgjcmydy258vzwgnm-hello-conductor-0.0.1/bin/hello-conductor: interpreter directive changed from "#!/usr/bin/env bash" to "/nix/store/s0psayl7zvkvwdcqc8fy1sbv8rlf1yq8-bash-5.3p9/bin/bash"
+hello-conductor> signing /nix/store/fpv53nzhf1mkf1wwgjcmydy258vzwgnm-hello-conductor-0.0.1
+Completed build of hello-conductor-0.0.1 in local mode
+
+⚡︎ Built output: /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/honolulu/envs/repackage/result-hello-conductor
+==> [3a hello build] PASS — trivial no-network build + run OK (5s)
+$ flox build --dir /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/honolulu/envs/repackage bd
+Rendering bd build script to /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T//17116b98/bd/build.bash
+Building bd-1.1.2 in local mode
+[36m00:00:00.005665 [0m[1m[33m+ set -euo pipefail[0m
+[36m00:00:00.005670 [0m[1m[33m+ version=1.1.2[0m
+[36m00:00:00.005695 [0m[1m[33m+ case "$(uname -s)-$(uname -m)" in[0m
+[36m00:00:00.006073 [0m[1m[33m++ uname -s[0m
+[36m00:00:00.009862 [0m[1m[33m++ uname -m[0m
+[36m00:00:00.012838 [0m[1m[33m+ asset=beads_1.1.2_darwin_arm64.tar.gz[0m
+[36m00:00:00.012871 [0m[1m[33m+ sha256=9b0137a83a2afd343e2abd2a506be72ea032721000f76669c2cf81729e78501d[0m
+[36m00:00:00.012874 [0m[1m[33m+ '[' -z /nix/store/j5bh1bwmvddn749z7hkxkrlladyrn7rg-nss-cacert-3.121/etc/ssl/certs/ca-bundle.crt ']'[0m
+[36m00:00:00.013315 [0m[1m[33m++ mktemp -d[0m
+[36m00:00:00.016306 [0m[1m[33m+ tmp=/var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.cQMMfWSbTh[0m
+[36m00:00:00.016319 [0m[1m[33m+ trap 'rm -rf "${tmp}"' EXIT[0m
+[36m00:00:00.016347 [0m[1m[33m+ curl -fsSL -o /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.cQMMfWSbTh/beads_1.1.2_darwin_arm64.tar.gz https://github.com/gastownhall/beads/releases/download/v1.1.2/beads_1.1.2_darwin_arm64.tar.gz[0m
+[36m00:00:01.197315 [0m[1m[33m+ echo '9b0137a83a2afd343e2abd2a506be72ea032721000f76669c2cf81729e78501d  /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.cQMMfWSbTh/beads_1.1.2_darwin_arm64.tar.gz'[0m
+[36m00:00:01.197578 [0m[1m[33m+ sha256sum --check -[0m
+[36m00:00:01.343974 [0m/var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.cQMMfWSbTh/beads_1.1.2_darwin_arm64.tar.gz: OK[0m
+[36m00:00:01.344437 [0m[1m[33m+ tar -xzf /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.cQMMfWSbTh/beads_1.1.2_darwin_arm64.tar.gz -C /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.cQMMfWSbTh bd[0m
+[36m00:00:01.964748 [0m[1m[33mtar: bd: Not found in archive[0m
+[36m00:00:01.964748 [0m[1m[33mtar: Exiting with failure status due to previous errors[0m
+[36m00:00:01.965298 [0m[1m[33m+ rm -rf /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.cQMMfWSbTh[0m
+make: *** [/nix/store/17yp27b2kg1fgy5pngi987j1krhrh4fa-package-builder-1.0.0/libexec/flox-build.mk:849: /tmp/store_bd8e352faa7df7096102214cc5ad3f8e-bd-1.1.2] Error 2
+✘ ERROR: Build failed
+==> [3b bd repackage build] FAIL — repackage build failed — see body
+==> [3c bd flag surface] SKIP — no bd build
+! You are not currently logged in to FloxHub.
+$ flox show elviskahoro/hello-conductor
+✘ ERROR: no packages matched this pkg-path: 'elviskahoro/hello-conductor'
+==> [4 FloxHub fetch] SKIP — 'flox show elviskahoro/hello-conductor' failed — publish a throwaway pkg from a Mac (#445 Phase A3: flox publish from envs/repackage covers hello-conductor), then re-run with FLOXHUB_TEST_PKG=<owner>/<pkg>. NOTE: not-found here is ambiguous between 'not published' and 'published but private/auth-gated' — check which.
+==> [5 H2 flake repro] SKIP — opt-in: re-run with FLAKE_REPRO=1 (costs a doomed Go build, ~minutes)
+
+Report: findings/report-20260801-134157Z.md
+Full log: findings/full-log-20260801-134157Z.txt
+
+| Stage | Result | Detail |
+| 0 fingerprint | **PASS** | recorded (see report body) |
+| 1 flox bootstrap | **SKIP** | non-Linux host; install flox manually |
+| 2 H1 prebuilt activate | **PASS** | all 5 tools resolve under .flox/run and execute (2s) |
+| 3a hello build | **PASS** | trivial no-network build + run OK (5s) |
+| 3b bd repackage build | **FAIL** | repackage build failed — see body |
+| 3c bd flag surface | **SKIP** | no bd build |
+| 4 FloxHub fetch | **SKIP** | 'flox show elviskahoro/hello-conductor' failed — publish a throwaway pkg from a Mac (#445 Phase A3: flox publish from envs/repackage covers hello-conductor), then re-run with FLOXHUB_TEST_PKG=<owner>/<pkg>. NOTE: not-found here is ambiguous between 'not published' and 'published but private/auth-gated' — check which. |
+| 5 H2 flake repro | **SKIP** | opt-in: re-run with FLAKE_REPRO=1 (costs a doomed Go build, ~minutes) |
