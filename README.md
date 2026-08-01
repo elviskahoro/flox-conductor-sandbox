@@ -9,15 +9,30 @@ smallest possible harness, so a fresh Conductor cloud sandbox can answer
 "is the proposed fix even possible?" in one provisioning run — before any
 real FloxHub publishing work is invested in gtm-sdk itself.
 
+## Current status
+
+On the actual target sandbox class (Amazon Linux 2023 / Vercel / Conductor
+cloud), flox bootstraps cleanly, **H1 and H3 both PASS**, and **H2's control
+repro also PASSes** — confirming this sandbox genuinely has the defect #445
+describes, which is what makes the H1/H3 passes real evidence rather than an
+artifact of an easier environment. **H4 remains untested**: it needs a
+throwaway package published from an authenticated Mac first (`flox
+publish`), a step nothing in a cloud sandbox can complete on its own.
+
+Four runs exist so far across three environments (a non-target container,
+macOS, and the target class twice). For the full run-by-run breakdown, see
+[`findings/README.md`](findings/README.md); for the narrative writeup, see
+[PR #3](https://github.com/elviskahoro/flox-conductor-sandbox/pull/3).
+
 ## Hypotheses under test
 
-| Stage | Hypothesis | Maps to #445 |
-|---|---|---|
-| 1 | Flox itself bootstraps on this sandbox class (rpm/deb install, `/dev/fd` shim, hand-started `nix-daemon`) | precondition for everything |
-| 2 | **H1 (core):** a manifest containing *only* prebuilt catalog packages (`pkg-path`) — the exact five gtm-sdk uses (`uv` pinned 0.11.26, `dolt`, `infisical`, `gh`, `git`) — materializes cleanly via one atomic `flox activate`, with every tool resolving under `.flox/run/.../bin` | "Why this should fix dolt/infisical/gh/git provisioning too" |
-| 3 | **H3:** `flox build` manifest builds work here — a trivial no-network build, then the real Option-A shape: repackage the official `beads` v1.1.2 release binary (pinned URL + sha256) into `$out/bin`, then verify the CLI flag surface the gtm-sdk setup script depends on | Phase B "Option 1" + Phase C flag-surface check |
-| 4 | **H4 (the fork in the road):** an unauthenticated sandbox can fetch a package from a project-controlled FloxHub catalog (`flox install <owner>/<pkg>`) | Phase A preflight — decides whether token plumbing (§6) is needed |
-| 5 | **H2 (control, opt-in):** the `bd.flake = "github:gastownhall/beads/v1.1.0"` source build reproduces the `/homeless-shelter` purity failure on this sandbox, confirming root-cause attribution | "Problem" section repro |
+| Stage | Hypothesis | Maps to #445 | Result |
+|---|---|---|---|
+| 1 | Flox itself bootstraps on this sandbox class (rpm/deb install, `/dev/fd` shim, hand-started `nix-daemon`) | precondition for everything | **PASS** on target class |
+| 2 | **H1 (core):** a manifest containing *only* prebuilt catalog packages (`pkg-path`) — the exact five gtm-sdk uses (`uv` pinned 0.11.26, `dolt`, `infisical`, `gh`, `git`) — materializes cleanly via one atomic `flox activate`, with every tool resolving under `.flox/run/.../bin` | "Why this should fix dolt/infisical/gh/git provisioning too" | **PASS** — all 3 environments tested |
+| 3 | **H3:** `flox build` manifest builds work here — a trivial no-network build, then the real Option-A shape: repackage the official `beads` v1.1.2 release binary (pinned URL + sha256) into `$out/bin`, then verify the CLI flag surface the gtm-sdk setup script depends on | Phase B "Option 1" + Phase C flag-surface check | **PASS** on target class (2 non-target environments hit unrelated, environment-specific issues) |
+| 4 | **H4 (the fork in the road):** an unauthenticated sandbox can fetch a package from a project-controlled FloxHub catalog (`flox install <owner>/<pkg>`) | Phase A preflight — decides whether token plumbing (§6) is needed | **Untested** — blocked on a Mac-side `flox publish` |
+| 5 | **H2 (control, opt-in):** the `bd.flake = "github:gastownhall/beads/v1.1.0"` source build reproduces the `/homeless-shelter` purity failure on this sandbox, confirming root-cause attribution | "Problem" section repro | **PASS** — target class confirmed to share the defect |
 
 ## Layout
 
@@ -27,6 +42,7 @@ envs/repackage/    H3: [build.hello-conductor] + [build.bd] (upstream-binary rep
 envs/flake-repro/  H2: the failing bd flake pin, nothing else (opt-in stage)
 scripts/sandbox-test.sh   the harness — runs all stages, never hard-fails
 findings/          harness output: report-*.md (summary + evidence) and full-log-*.txt
+                   — see findings/README.md for a run-by-run index
 ```
 
 Each env is a self-contained Flox environment (own `.flox/env.json` +
