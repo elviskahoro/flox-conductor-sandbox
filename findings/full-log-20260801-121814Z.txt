@@ -1,0 +1,168 @@
+Darwin 25.5.0 arm64
+no /etc/os-release
+
+build-users-group = nixbld
+include flox.conf
+sh: getent: command not found
+no nixbld group
+dr-xr-xr-x  1 root  wheel  0 Jul 26 14:36 /dev/fd
+absent (good)
+srw-rw-rw-  1 root  nixbld  0 Jul 26 14:53 /nix/var/nix/daemon-socket/socket
+/usr/local/bin/flox
+/usr/local/bin/nix
+==> [0 fingerprint] PASS — recorded (see report body)
+==> [1 flox bootstrap] SKIP — non-Linux host; install flox manually
+$ flox activate --dir /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/bucharest/envs/prebuilt --mode run -- true
+==> [2 H1 prebuilt activate] PASS — all 5 tools resolve under .flox/run and execute (2s)
+$ flox build --dir /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/bucharest/envs/repackage hello-conductor
+Rendering hello-conductor build script to /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T//a8b7b9a6/hello-conductor/build.bash
+Building hello-conductor-0.0.1 in local mode
+[36m00:00:00.006788 [0m[1m[33m+ mkdir -p /tmp/store_6424b020b476f1547e9f8b5f3ef62111-hello-conductor-0.0.1/bin[0m
+[36m00:00:00.462136 [0m[1m[33m+ echo '#!/usr/bin/env bash'[0m
+[36m00:00:00.462170 [0m[1m[33m+ echo 'echo "hello from a flox-built package (gtm-sdk#445 preflight)"'[0m
+[36m00:00:00.462222 [0m[1m[33m+ chmod +x /tmp/store_6424b020b476f1547e9f8b5f3ef62111-hello-conductor-0.0.1/bin/hello-conductor[0m
+2 blocks
+this derivation will be built:
+  /nix/store/cl4sc3rxv8bvqxl5qyl5g3n97yglvrmm-hello-conductor-0.0.1.drv
+these 44 paths will be fetched (156.77 MiB download, 1195.42 MiB unpacked):
+  /nix/store/q2dccg26bm7bn6ia1q30qkl5jck7wwgb-apple-sdk-14.4
+  /nix/store/v2hlj404vr2ssylzrqq5ba1na0q6n997-auto-sign-darwin-binaries-hook
+  /nix/store/4rqfrsyqp53wavnk86k4flm35vhagwjk-bzip2-1.0.8-bin
+  /nix/store/dxk52da28ap6qmmqyppa454iz8wqqpv2-cctools-1010.6
+  /nix/store/lawy0qykzxczbxwg68xbarl0na643l3q-cctools-1010.6-libtool
+  /nix/store/yppcv1v8rdm3086ykynmf7w5yy61v30b-cctools-binutils-darwin-1010.6
+  /nix/store/hwn7mviydmcdr2gw3zx30rcc0xi7k40c-cctools-binutils-darwin-wrapper-1010.6
+  /nix/store/6adskryjj6g2p508xjxp2x4iwyy15gsr-clang-21.1.8
+  /nix/store/57zdfv1z7r4d73aw70q5agpjg6wpkncx-clang-21.1.8-lib
+  /nix/store/s7qlr26bmc6n4r607scz8iiwcg6yg4ic-clang-wrapper-21.1.8
+  /nix/store/hnb6cg3cfrsnhfppiaa6zzpk1i57wzm3-compiler-rt-libc-21.1.8
+  /nix/store/pnazzar06qzgcbsln5shjnmrq0krryww-compiler-rt-libc-21.1.8-dev
+  /nix/store/xrnhc1bsbqb2bwc8zjds4al8jwqd9qy1-cups-headers-2.4.16
+  /nix/store/r1ql0pxrxlf68qzj312h2n7b5m31xph8-die-hook
+  /nix/store/hrkhhbx6v8fzwnizwvqh9h0yff5vcp75-diffutils-3.12
+  /nix/store/04z936yhx1bf003gba7z3q3cjv864sm7-ed-1.22.5
+  /nix/store/fqlha9avsvckrqnaq4y6syw8icgjdgc5-expand-response-params
+  /nix/store/5n5ynvylwkjrblm2lpj3ns2qc821fvmi-file-5.45
+  /nix/store/bvrbfzyimpjxwn679252bhbbccnb43nr-gawk-5.3.2
+  /nix/store/wr33c2hmpj37sly95dzmy8b5jzpdm5gq-gnu-config-2024-01-01
+  /nix/store/fx6qvxgcvfpjhy5wr9hsvpkpjqw5zgf0-gzip-1.14
+  /nix/store/as71q3x2cqxyg953x0zym7zrvh8g7xpf-ld64-954.16
+  /nix/store/4nwha4jp6rckbr4kk6k52w75l9yhbis3-ld64-954.16-lib
+  /nix/store/q3m24zzwbg0f2xjd4900hycpfs3aigfq-libSystem-B
+  /nix/store/qvvfglczwvxbhrx6ssmq1y6qgr8ld0f9-libffi-40
+  /nix/store/4l8729yjln4zhnry763pklqb75dwmrd2-libiconv-109.100.2-dev
+  /nix/store/d6dh7sdypw64lf74iv0gwgphvs1dq3fa-libresolv-91-dev
+  /nix/store/3kl23yrdmyy7c8m4fvzg2kilks9ca83s-libsbuf-14.1.0
+  /nix/store/ykwz6395vf4gn185zfvkx30avzmap11y-libsbuf-14.1.0-dev
+  /nix/store/22mhkcy5mpkgsa7k1d04qkxybnkwhqc4-libutil-72
+  /nix/store/grm8zrhz3zmb5in5d2n5rblfsy9cg5nq-llvm-21.1.8
+  /nix/store/im0zmk31mvcxm7v7sxnr7fcpsmnwhbik-llvm-21.1.8-lib
+  /nix/store/4wghrxpzaa1hfi12z8xz5yyg4hwr6g79-make-shell-wrapper-hook
+  /nix/store/27isw1415xpv8j8nphr5xpzvh92w1cka-ncurses-6.6-dev
+  /nix/store/15kykfhv72fy4bhnkg0h9sid1g70i5af-ncurses-6.6-man
+  /nix/store/jqcdmxsh8zk7bn1qcxwq3dwjjx4p7i0f-patch-2.8
+  /nix/store/blbw3qcsgk5gw90zarb2chnyi94ygx08-signing-utils
+  /nix/store/vhpk9kva46zqsxi75g1q87gmylcy7cv7-sigtool-0.1.3
+  /nix/store/n2x56qqqs07kmkfnjgk7fi5l6d9kvk5j-stdenv-darwin
+  /nix/store/avjzyij6c5vbva2pqvfp7y9ch4aii05g-update-autotools-gnu-config-scripts-hook
+  /nix/store/i9m41jhzxcvayy6c14iy1gf4qwv5bs5q-xar-minimal-501-lib
+  /nix/store/03c37dqdsycrr8d3wl5s71vlxhj99h8h-xcbuild-0.1.1-unstable-2019-11-20
+  /nix/store/930py6p7h4xw7fwys7y3hx7rkyqnpvqq-xcbuild-0.1.1-unstable-2019-11-20-xcrun
+  /nix/store/fc6w1zkl1klj979isgaag8a66jmpq1qs-xz-5.8.2-bin
+copying path '/nix/store/hnb6cg3cfrsnhfppiaa6zzpk1i57wzm3-compiler-rt-libc-21.1.8' from 'https://cache.nixos.org'...
+copying path '/nix/store/r1ql0pxrxlf68qzj312h2n7b5m31xph8-die-hook' from 'https://cache.nixos.org'...
+copying path '/nix/store/fqlha9avsvckrqnaq4y6syw8icgjdgc5-expand-response-params' from 'https://cache.nixos.org'...
+copying path '/nix/store/bvrbfzyimpjxwn679252bhbbccnb43nr-gawk-5.3.2' from 'https://cache.nixos.org'...
+copying path '/nix/store/q3m24zzwbg0f2xjd4900hycpfs3aigfq-libSystem-B' from 'https://cache.nixos.org'...
+copying path '/nix/store/xrnhc1bsbqb2bwc8zjds4al8jwqd9qy1-cups-headers-2.4.16' from 'https://cache.nixos.org'...
+copying path '/nix/store/22mhkcy5mpkgsa7k1d04qkxybnkwhqc4-libutil-72' from 'https://cache.nixos.org'...
+copying path '/nix/store/4rqfrsyqp53wavnk86k4flm35vhagwjk-bzip2-1.0.8-bin' from 'https://cache.nixos.org'...
+copying path '/nix/store/hrkhhbx6v8fzwnizwvqh9h0yff5vcp75-diffutils-3.12' from 'https://cache.nixos.org'...
+copying path '/nix/store/5n5ynvylwkjrblm2lpj3ns2qc821fvmi-file-5.45' from 'https://cache.nixos.org'...
+copying path '/nix/store/wr33c2hmpj37sly95dzmy8b5jzpdm5gq-gnu-config-2024-01-01' from 'https://cache.nixos.org'...
+copying path '/nix/store/fx6qvxgcvfpjhy5wr9hsvpkpjqw5zgf0-gzip-1.14' from 'https://cache.nixos.org'...
+copying path '/nix/store/15kykfhv72fy4bhnkg0h9sid1g70i5af-ncurses-6.6-man' from 'https://cache.nixos.org'...
+copying path '/nix/store/3kl23yrdmyy7c8m4fvzg2kilks9ca83s-libsbuf-14.1.0' from 'https://cache.nixos.org'...
+copying path '/nix/store/qvvfglczwvxbhrx6ssmq1y6qgr8ld0f9-libffi-40' from 'https://cache.nixos.org'...
+copying path '/nix/store/fc6w1zkl1klj979isgaag8a66jmpq1qs-xz-5.8.2-bin' from 'https://cache.nixos.org'...
+copying path '/nix/store/04z936yhx1bf003gba7z3q3cjv864sm7-ed-1.22.5' from 'https://cache.nixos.org'...
+copying path '/nix/store/4nwha4jp6rckbr4kk6k52w75l9yhbis3-ld64-954.16-lib' from 'https://cache.nixos.org'...
+copying path '/nix/store/4l8729yjln4zhnry763pklqb75dwmrd2-libiconv-109.100.2-dev' from 'https://cache.nixos.org'...
+copying path '/nix/store/d6dh7sdypw64lf74iv0gwgphvs1dq3fa-libresolv-91-dev' from 'https://cache.nixos.org'...
+copying path '/nix/store/4wghrxpzaa1hfi12z8xz5yyg4hwr6g79-make-shell-wrapper-hook' from 'https://cache.nixos.org'...
+copying path '/nix/store/im0zmk31mvcxm7v7sxnr7fcpsmnwhbik-llvm-21.1.8-lib' from 'https://cache.nixos.org'...
+copying path '/nix/store/vhpk9kva46zqsxi75g1q87gmylcy7cv7-sigtool-0.1.3' from 'https://cache.nixos.org'...
+copying path '/nix/store/ykwz6395vf4gn185zfvkx30avzmap11y-libsbuf-14.1.0-dev' from 'https://cache.nixos.org'...
+copying path '/nix/store/i9m41jhzxcvayy6c14iy1gf4qwv5bs5q-xar-minimal-501-lib' from 'https://cache.nixos.org'...
+copying path '/nix/store/avjzyij6c5vbva2pqvfp7y9ch4aii05g-update-autotools-gnu-config-scripts-hook' from 'https://cache.nixos.org'...
+copying path '/nix/store/03c37dqdsycrr8d3wl5s71vlxhj99h8h-xcbuild-0.1.1-unstable-2019-11-20' from 'https://cache.nixos.org'...
+copying path '/nix/store/jqcdmxsh8zk7bn1qcxwq3dwjjx4p7i0f-patch-2.8' from 'https://cache.nixos.org'...
+copying path '/nix/store/n2x56qqqs07kmkfnjgk7fi5l6d9kvk5j-stdenv-darwin' from 'https://cache.nixos.org'...
+copying path '/nix/store/pnazzar06qzgcbsln5shjnmrq0krryww-compiler-rt-libc-21.1.8-dev' from 'https://cache.nixos.org'...
+copying path '/nix/store/27isw1415xpv8j8nphr5xpzvh92w1cka-ncurses-6.6-dev' from 'https://cache.nixos.org'...
+copying path '/nix/store/930py6p7h4xw7fwys7y3hx7rkyqnpvqq-xcbuild-0.1.1-unstable-2019-11-20-xcrun' from 'https://cache.nixos.org'...
+copying path '/nix/store/57zdfv1z7r4d73aw70q5agpjg6wpkncx-clang-21.1.8-lib' from 'https://cache.nixos.org'...
+copying path '/nix/store/grm8zrhz3zmb5in5d2n5rblfsy9cg5nq-llvm-21.1.8' from 'https://cache.nixos.org'...
+copying path '/nix/store/as71q3x2cqxyg953x0zym7zrvh8g7xpf-ld64-954.16' from 'https://cache.nixos.org'...
+copying path '/nix/store/lawy0qykzxczbxwg68xbarl0na643l3q-cctools-1010.6-libtool' from 'https://cache.nixos.org'...
+copying path '/nix/store/dxk52da28ap6qmmqyppa454iz8wqqpv2-cctools-1010.6' from 'https://cache.nixos.org'...
+copying path '/nix/store/blbw3qcsgk5gw90zarb2chnyi94ygx08-signing-utils' from 'https://cache.nixos.org'...
+copying path '/nix/store/v2hlj404vr2ssylzrqq5ba1na0q6n997-auto-sign-darwin-binaries-hook' from 'https://cache.nixos.org'...
+copying path '/nix/store/6adskryjj6g2p508xjxp2x4iwyy15gsr-clang-21.1.8' from 'https://cache.nixos.org'...
+copying path '/nix/store/yppcv1v8rdm3086ykynmf7w5yy61v30b-cctools-binutils-darwin-1010.6' from 'https://cache.nixos.org'...
+copying path '/nix/store/q2dccg26bm7bn6ia1q30qkl5jck7wwgb-apple-sdk-14.4' from 'https://cache.nixos.org'...
+copying path '/nix/store/hwn7mviydmcdr2gw3zx30rcc0xi7k40c-cctools-binutils-darwin-wrapper-1010.6' from 'https://cache.nixos.org'...
+copying path '/nix/store/s7qlr26bmc6n4r607scz8iiwcg6yg4ic-clang-wrapper-21.1.8' from 'https://cache.nixos.org'...
+building '/nix/store/cl4sc3rxv8bvqxl5qyl5g3n97yglvrmm-hello-conductor-0.0.1.drv'...
+hello-conductor> 2 blocks
+hello-conductor> patching script interpreter paths in /nix/store/x495vqgn2h4dmylbzazh67r8kwdq9iqh-hello-conductor-0.0.1/bin/hello-conductor
+hello-conductor> /nix/store/x495vqgn2h4dmylbzazh67r8kwdq9iqh-hello-conductor-0.0.1/bin/hello-conductor: interpreter directive changed from "#!/usr/bin/env bash" to "/nix/store/s0psayl7zvkvwdcqc8fy1sbv8rlf1yq8-bash-5.3p9/bin/bash"
+hello-conductor> signing /nix/store/x495vqgn2h4dmylbzazh67r8kwdq9iqh-hello-conductor-0.0.1
+Completed build of hello-conductor-0.0.1 in local mode
+
+⚡︎ Built output: /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/bucharest/envs/repackage/result-hello-conductor
+==> [3a hello build] PASS — trivial no-network build + run OK (64s)
+$ flox build --dir /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/bucharest/envs/repackage bd
+Rendering bd build script to /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T//a8b7b9a6/bd/build.bash
+Building bd-1.1.2 in local mode
+[36m00:00:00.006297 [0m[1m[33m+ set -euo pipefail[0m
+[36m00:00:00.006297 [0m[1m[33m+ version=1.1.2[0m
+[36m00:00:00.006310 [0m[1m[33m+ case "$(uname -s)-$(uname -m)" in[0m
+[36m00:00:00.006766 [0m[1m[33m++ uname -s[0m
+[36m00:00:00.010717 [0m[1m[33m++ uname -m[0m
+[36m00:00:00.014520 [0m[1m[33m+ asset=beads_1.1.2_darwin_arm64.tar.gz[0m
+[36m00:00:00.014526 [0m[1m[33m+ sha256=9b0137a83a2afd343e2abd2a506be72ea032721000f76669c2cf81729e78501d[0m
+[36m00:00:00.014584 [0m[1m[33m+ '[' -z /nix/store/j5bh1bwmvddn749z7hkxkrlladyrn7rg-nss-cacert-3.121/etc/ssl/certs/ca-bundle.crt ']'[0m
+[36m00:00:00.015228 [0m[1m[33m++ mktemp -d[0m
+[36m00:00:00.018938 [0m[1m[33m+ tmp=/var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.GCf3DI2esA[0m
+[36m00:00:00.018957 [0m[1m[33m+ trap 'rm -rf "${tmp}"' EXIT[0m
+[36m00:00:00.018993 [0m[1m[33m+ curl -fsSL -o /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.GCf3DI2esA/beads_1.1.2_darwin_arm64.tar.gz https://github.com/gastownhall/beads/releases/download/v1.1.2/beads_1.1.2_darwin_arm64.tar.gz[0m
+[36m00:00:06.118228 [0m[1m[33m+ echo '9b0137a83a2afd343e2abd2a506be72ea032721000f76669c2cf81729e78501d  /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.GCf3DI2esA/beads_1.1.2_darwin_arm64.tar.gz'[0m
+[36m00:00:06.118470 [0m[1m[33m+ sha256sum --check -[0m
+[36m00:00:06.233579 [0m/var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.GCf3DI2esA/beads_1.1.2_darwin_arm64.tar.gz: OK[0m
+[36m00:00:06.233951 [0m[1m[33m+ tar -xzf /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.GCf3DI2esA/beads_1.1.2_darwin_arm64.tar.gz -C /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.GCf3DI2esA bd[0m
+[36m00:00:07.466872 [0m[1m[33mtar: bd: Not found in archive[0m
+[36m00:00:07.466872 [0m[1m[33mtar: Exiting with failure status due to previous errors[0m
+[36m00:00:07.467363 [0m[1m[33m+ rm -rf /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.GCf3DI2esA[0m
+make: *** [/nix/store/17yp27b2kg1fgy5pngi987j1krhrh4fa-package-builder-1.0.0/libexec/flox-build.mk:849: /tmp/store_72b8471dd9ae4388aa9b9486d8ff3bda-bd-1.1.2] Error 2
+✘ ERROR: Build failed
+==> [3b bd repackage build] FAIL — repackage build failed — see body
+==> [3c bd flag surface] SKIP — no bd build
+! You are not currently logged in to FloxHub.
+$ flox show elviskahoro/hello-conductor
+✘ ERROR: no packages matched this pkg-path: 'elviskahoro/hello-conductor'
+==> [4 FloxHub fetch] SKIP — 'flox show elviskahoro/hello-conductor' failed — publish a throwaway pkg from a Mac (#445 Phase A3: flox publish from envs/repackage covers hello-conductor), then re-run with FLOXHUB_TEST_PKG=<owner>/<pkg>. NOTE: not-found here is ambiguous between 'not published' and 'published but private/auth-gated' — check which.
+==> [5 H2 flake repro] SKIP — opt-in: re-run with FLAKE_REPRO=1 (costs a doomed Go build, ~minutes)
+
+Report: findings/report-20260801-121814Z.md
+Full log: findings/full-log-20260801-121814Z.txt
+
+| Stage | Result | Detail |
+| 0 fingerprint | **PASS** | recorded (see report body) |
+| 1 flox bootstrap | **SKIP** | non-Linux host; install flox manually |
+| 2 H1 prebuilt activate | **PASS** | all 5 tools resolve under .flox/run and execute (2s) |
+| 3a hello build | **PASS** | trivial no-network build + run OK (64s) |
+| 3b bd repackage build | **FAIL** | repackage build failed — see body |
+| 3c bd flag surface | **SKIP** | no bd build |
+| 4 FloxHub fetch | **SKIP** | 'flox show elviskahoro/hello-conductor' failed — publish a throwaway pkg from a Mac (#445 Phase A3: flox publish from envs/repackage covers hello-conductor), then re-run with FLOXHUB_TEST_PKG=<owner>/<pkg>. NOTE: not-found here is ambiguous between 'not published' and 'published but private/auth-gated' — check which. |
+| 5 H2 flake repro | **SKIP** | opt-in: re-run with FLAKE_REPRO=1 (costs a doomed Go build, ~minutes) |
