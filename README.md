@@ -67,7 +67,7 @@ A Conductor sandbox runs everything automatically via
 ```bash
 bash scripts/sandbox-test.sh                      # stages 0–4
 FLAKE_REPRO=1 bash scripts/sandbox-test.sh        # also run the H2 failure repro (slow: real Go build attempt)
-FLOXHUB_TEST_PKG=elviskahoro/conductor-workspace-floxhub-01 bash scripts/sandbox-test.sh  # (default shown)
+FLOXHUB_TEST_PKG=elvis/conductor-workspace-floxhub-01 bash scripts/sandbox-test.sh  # (default shown)
 ```
 
 The harness writes `findings/report-<UTC timestamp>.md` with a PASS/FAIL/SKIP

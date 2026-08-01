@@ -23,7 +23,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 export FLOX_DISABLE_METRICS=true
-FLOXHUB_TEST_PKG="${FLOXHUB_TEST_PKG:-elviskahoro/conductor-workspace-floxhub-01}"
+FLOXHUB_TEST_PKG="${FLOXHUB_TEST_PKG:-elvis/conductor-workspace-floxhub-01}"
 FLAKE_REPRO="${FLAKE_REPRO:-0}"
 FLAKE_REPRO_TIMEOUT="${FLAKE_REPRO_TIMEOUT:-1800}"
 
