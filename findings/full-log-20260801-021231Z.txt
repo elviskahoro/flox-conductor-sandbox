@@ -1,0 +1,144 @@
+Linux 6.18.5 x86_64
+PRETTY_NAME="Ubuntu 24.04.4 LTS"
+NAME="Ubuntu"
+no /etc/nix/nix.conf
+no nixbld group
+lrwxrwxrwx 1 root root 13 Aug  1 02:02 /dev/fd -> /proc/self/fd
+absent (good)
+absent
+neither on PATH
+==> [0 fingerprint] PASS — recorded (see report body)
+$ curl -fsSLo /tmp/flox.deb https://downloads.flox.dev/by-env/stable/deb/flox.x86_64-linux.deb
+$ sudo apt-get install -y /tmp/flox.deb
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following NEW packages will be installed:
+  flox
+0 upgraded, 1 newly installed, 0 to remove and 1 not upgraded.
+Need to get 0 B/85.0 MB of archives.
+After this operation, 85.2 MB of additional disk space will be used.
+Get:1 /tmp/flox.deb flox amd64 1.14.0 [85.0 MB]
+debconf: delaying package configuration, since apt-utils is not installed
+Selecting previously unselected package flox.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 54237 files and directories currently installed.)
+Preparing to unpack /tmp/flox.deb ...
+Unpacking flox (1.14.0) ...
+Setting up flox (1.14.0) ...
+1.14.0
+
+build-users-group =
+include flox.conf
+==> [1 flox bootstrap] PASS — flox installed and responding (47s)
+$ flox activate --dir /home/user/flox-conductor-sandbox/envs/prebuilt --mode run -- true
+==> [2 H1 prebuilt activate] PASS — all 5 tools resolve under .flox/run and execute (32s)
+$ flox build --dir /home/user/flox-conductor-sandbox/envs/repackage hello-conductor
+✘ ERROR: Failed to download Nix build tools from 'github:flox/nixpkgs/46db2e09e1d3f113a13c0d7b81e2f221c63b8ce9?narHash=sha256-4hAV26quOxdC6iyG7kYaZcM3VOskcPUrdCQd/nx8obc='
+unpacking 'github:flox/nixpkgs/46db2e09e1d3f113a13c0d7b81e2f221c63b8ce9?narHash=sha256-4hAV26quOxdC6iyG7kYaZcM3VOskcPUrdCQd/nx8obc%3D' into the Git cache...
+error:
+       … while fetching the input 'github:flox/nixpkgs/46db2e09e1d3f113a13c0d7b81e2f221c63b8ce9?narHash=sha256-4hAV26quOxdC6iyG7kYaZcM3VOskcPUrdCQd/nx8obc%3D'
+
+       error: Failed to open archive (Source threw exception: error: unable to download 'https://github.com/flox/nixpkgs/archive/46db2e09e1d3f113a13c0d7b81e2f221c63b8ce9.tar.gz': HTTP error 403
+
+              response body:
+
+              {"message":"GitHub access to this repository is not enabled for this session. Use add_repo to request access. If add_repo answers that read access is already available and you need GitHub API or write access, call add_repo again with access:\"push\" to attach the repository with credentials.","documentation_url":"https://docs.anthropic.com/en/docs/claude-code/github-actions"})
+
+   0: anyhow::error::<impl core::convert::From<E> for anyhow::Error>::from
+   1: <tracing::instrument::Instrumented<T> as core::future::future::Future>::poll
+   2: flox::commands::build::Build::handle::{{closure}}
+   3: flox::commands::ShareCommands::handle::{{closure}}
+   4: <core::pin::Pin<P> as core::future::future::Future>::poll
+   5: tokio::runtime::task::core::Core<T,S>::poll
+   6: tokio::runtime::task::harness::Harness<T,S>::poll
+   7: tokio::task::local::LocalSet::tick
+   8: std::thread::local::LocalKey<T>::with
+   9: flox::run::{{closure}}
+  10: tokio::runtime::park::CachedParkThread::block_on
+  11: tokio::runtime::context::runtime::enter_runtime
+  12: tokio::runtime::runtime::Runtime::block_on
+  13: flox::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace
+  15: std::rt::lang_start::{{closure}}
+  16: std::rt::lang_start_internal
+  17: main
+  18: __libc_start_call_main
+  19: __libc_start_main_alias_2
+  20: _start
+
+==> [3a hello build] FAIL — trivial build failed — flox build mechanics broken here; see body
+$ flox build --dir /home/user/flox-conductor-sandbox/envs/repackage bd
+✘ ERROR: Failed to download Nix build tools from 'github:flox/nixpkgs/46db2e09e1d3f113a13c0d7b81e2f221c63b8ce9?narHash=sha256-4hAV26quOxdC6iyG7kYaZcM3VOskcPUrdCQd/nx8obc='
+unpacking 'github:flox/nixpkgs/46db2e09e1d3f113a13c0d7b81e2f221c63b8ce9?narHash=sha256-4hAV26quOxdC6iyG7kYaZcM3VOskcPUrdCQd/nx8obc%3D' into the Git cache...
+error:
+       … while fetching the input 'github:flox/nixpkgs/46db2e09e1d3f113a13c0d7b81e2f221c63b8ce9?narHash=sha256-4hAV26quOxdC6iyG7kYaZcM3VOskcPUrdCQd/nx8obc%3D'
+
+       error: Failed to open archive (Source threw exception: error: unable to download 'https://github.com/flox/nixpkgs/archive/46db2e09e1d3f113a13c0d7b81e2f221c63b8ce9.tar.gz': HTTP error 403
+
+              response body:
+
+              {"message":"GitHub access to this repository is not enabled for this session. Use add_repo to request access. If add_repo answers that read access is already available and you need GitHub API or write access, call add_repo again with access:\"push\" to attach the repository with credentials.","documentation_url":"https://docs.anthropic.com/en/docs/claude-code/github-actions"})
+
+   0: anyhow::error::<impl core::convert::From<E> for anyhow::Error>::from
+   1: <tracing::instrument::Instrumented<T> as core::future::future::Future>::poll
+   2: flox::commands::build::Build::handle::{{closure}}
+   3: flox::commands::ShareCommands::handle::{{closure}}
+   4: <core::pin::Pin<P> as core::future::future::Future>::poll
+   5: tokio::runtime::task::core::Core<T,S>::poll
+   6: tokio::runtime::task::harness::Harness<T,S>::poll
+   7: tokio::task::local::LocalSet::tick
+   8: std::thread::local::LocalKey<T>::with
+   9: flox::run::{{closure}}
+  10: tokio::runtime::park::CachedParkThread::block_on
+  11: tokio::runtime::context::runtime::enter_runtime
+  12: tokio::runtime::runtime::Runtime::block_on
+  13: flox::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace
+  15: std::rt::lang_start::{{closure}}
+  16: std::rt::lang_start_internal
+  17: main
+  18: __libc_start_call_main
+  19: __libc_start_main_alias_2
+  20: _start
+
+==> [3b bd repackage build] FAIL — repackage build failed — see body
+==> [3c bd flag surface] SKIP — no bd build
+! You are not currently logged in to FloxHub.
+$ flox show elviskahoro/hello-conductor
+✘ ERROR: no packages matched this pkg-path: 'elviskahoro/hello-conductor'
+   0: anyhow::error::<impl anyhow::Error>::msg
+   1: <tracing::instrument::Instrumented<T> as core::future::future::Future>::poll
+   2: flox::commands::DiscoverCommands::handle::{{closure}}
+   3: <core::pin::Pin<P> as core::future::future::Future>::poll
+   4: tokio::runtime::task::core::Core<T,S>::poll
+   5: tokio::runtime::task::harness::Harness<T,S>::poll
+   6: tokio::task::local::LocalSet::tick
+   7: std::thread::local::LocalKey<T>::with
+   8: flox::run::{{closure}}
+   9: tokio::runtime::park::CachedParkThread::block_on
+  10: tokio::runtime::context::runtime::enter_runtime
+  11: tokio::runtime::runtime::Runtime::block_on
+  12: flox::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace
+  14: std::rt::lang_start::{{closure}}
+  15: std::rt::lang_start_internal
+  16: main
+  17: __libc_start_call_main
+  18: __libc_start_main_alias_2
+  19: _start
+
+==> [4 FloxHub fetch] SKIP — 'flox show elviskahoro/hello-conductor' failed — publish a throwaway pkg from a Mac (#445 Phase A3: flox publish from envs/repackage covers hello-conductor), then re-run with FLOXHUB_TEST_PKG=<owner>/<pkg>. NOTE: not-found here is ambiguous between 'not published' and 'published but private/auth-gated' — check which.
+==> [5 H2 flake repro] SKIP — opt-in: re-run with FLAKE_REPRO=1 (costs a doomed Go build, ~minutes)
+
+Report: findings/report-20260801-021231Z.md
+Full log: findings/full-log-20260801-021231Z.txt
+
+| Stage | Result | Detail |
+| 0 fingerprint | **PASS** | recorded (see report body) |
+| 1 flox bootstrap | **PASS** | flox installed and responding (47s) |
+| 2 H1 prebuilt activate | **PASS** | all 5 tools resolve under .flox/run and execute (32s) |
+| 3a hello build | **FAIL** | trivial build failed — flox build mechanics broken here; see body |
+| 3b bd repackage build | **FAIL** | repackage build failed — see body |
+| 3c bd flag surface | **SKIP** | no bd build |
+| 4 FloxHub fetch | **SKIP** | 'flox show elviskahoro/hello-conductor' failed — publish a throwaway pkg from a Mac (#445 Phase A3: flox publish from envs/repackage covers hello-conductor), then re-run with FLOXHUB_TEST_PKG=<owner>/<pkg>. NOTE: not-found here is ambiguous between 'not published' and 'published but private/auth-gated' — check which. |
+| 5 H2 flake repro | **SKIP** | opt-in: re-run with FLAKE_REPRO=1 (costs a doomed Go build, ~minutes) |
