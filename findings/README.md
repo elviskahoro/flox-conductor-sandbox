@@ -1,5 +1,10 @@
 # Navigating `findings/`
 
+> **[Issue #16](https://github.com/elviskahoro/flox-conductor-sandbox/issues/16) is
+> the single source of truth for gtm-sdk#445 Phase A** — the verdict, the traps, and
+> the open items. It also carries a run-by-run index marking which Stage 4 results are
+> contaminated. Read it before drawing conclusions from anything here.
+
 Each `scripts/sandbox-test.sh` run writes one pair of files, named by UTC
 timestamp:
 
@@ -23,6 +28,7 @@ and stages mean, and how to produce a new run.
 | `20260801-141525Z` | Same Amazon Linux 2023 / Vercel / Conductor cloud sandbox | **Yes** | H1 + H3 PASS again; H4 and opt-in H2 skipped |
 | `20260801-160419Z` | Fresh Conductor cloud sandbox, never authenticated to FloxHub | **Yes** | H1 + H3 PASS again; **H4 SKIP** — `flox show elvis/conductor-workspace-floxhub-01` fails unauthenticated even though PR #7/#8 confirm it's published for both platforms; `flox search` also can't find it. Resolved by issue #11: expected — private-by-default catalog, not a visibility bug |
 | `20260801-201328Z` | macOS, developer machine, **already authenticated to FloxHub** | No | Stage 3b bd repackage FAIL (`tar` extraction, unrelated); Stage 4 logged **PASS** with "no token plumbing needed" — **invalid**, see issue #11 resolution below: this run's own `flox auth status` shows it was logged in, so it never tested unauthenticated access |
+| `20260802-161922Z` | macOS, developer machine, **already authenticated to FloxHub** | No | The last run before the `tar` fix, one minute ahead of `20260802-162020Z` below and superseded by it. Stage 3b bd repackage FAIL (same `./bd` member-filter cause, root-caused in the next run). Stage 4 "PASS" is **contaminated** — logged-in machine, no auth precondition in the harness; ignore it, not an H4 data point (issue #16, trap 4) |
 | `20260802-162020Z` | macOS, developer machine, **already authenticated to FloxHub** | No | Stage 3b bd repackage FAIL, **root-caused this run**: the beads release tarball stores entries as `./bd` etc., and the build's `tar -xzf ... bd` member filter never matches that name. Fixed in `envs/repackage/.flox/env/manifest.toml` by extracting the whole archive instead of filtering a member; verified locally (`flox build --dir envs/repackage bd` now succeeds, built `bd --version` runs). Stage 4 "PASS" is contaminated for the same reason as `20260801-201328Z` — ignore it, not a new H4 data point |
 
 ## Current bottom line (as of the last run above)
@@ -84,6 +90,12 @@ analysis lives, not in the generated report files themselves.
 ## If you're about to add another run
 
 - Read the top-level README's "Running" section first.
+- **Before trusting the run's Stage 4 row, grep its full log for
+  `You are logged in as elvis on https://hub.flox.dev/`.** Stage 4 has no auth
+  precondition, so on an already-authenticated machine it records a PASS reading
+  "no token plumbing needed (#445 §6 is dead code)" — a conclusion issue #16
+  falsified. Five committed runs already carry that false PASS; don't add a sixth
+  without a caveat.
 - One commit per run; add findings files by explicit name, never `git add -A`.
 - Put a stage-by-stage analysis in the commit body (see recent findings
   commits for the expected shape) — don't hand-edit the generated
