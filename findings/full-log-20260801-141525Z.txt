@@ -1,0 +1,147 @@
+Linux 6.12.76 x86_64
+NAME="Amazon Linux"
+VERSION="2023"
+no /etc/nix/nix.conf
+no nixbld group
+MISSING (gtm-sdk#279 territory)
+absent (good)
+absent
+neither on PATH
+==> [0 fingerprint] PASS — recorded (see report body)
+$ curl -fsSLo /tmp/flox.rpm https://downloads.flox.dev/by-env/stable/rpm/flox.x86_64-linux.rpm
+$ sudo rpm -ivh /tmp/flox.rpm
+Verifying...                          ########################################
+Preparing...                          ########################################
+Updating / installing...
+flox-1.14.0-1                         ########################################
+1.14.0
+
+build-users-group =
+include flox.conf
+==> [1 flox bootstrap] PASS — flox installed and responding (9s)
+$ flox activate --dir /home/vercel-sandbox/workspace/envs/prebuilt --mode run -- true
+==> [2 H1 prebuilt activate] PASS — all 5 tools resolve under .flox/run and execute (3s)
+$ flox build --dir /home/vercel-sandbox/workspace/envs/repackage hello-conductor
+Rendering hello-conductor build script to /tmp/05fbb2a4/hello-conductor/build.bash
+Building hello-conductor-0.0.1 in local mode
+[36m00:00:00.001810 [0m[1m[33m+ mkdir -p /tmp/store_1b6c3c397ea613d09eb3920e110419d3-hello-conductor-0.0.1/bin[0m
+[36m00:00:00.004406 [0m[1m[33m+ echo '#!/usr/bin/env bash'[0m
+[36m00:00:00.004413 [0m[1m[33m+ echo 'echo "hello from a flox-built package (gtm-sdk#445 preflight)"'[0m
+[36m00:00:00.004432 [0m[1m[33m+ chmod +x /tmp/store_1b6c3c397ea613d09eb3920e110419d3-hello-conductor-0.0.1/bin/hello-conductor[0m
+2 blocks
+this derivation will be built:
+  /nix/store/3sdzjjpak9g7qz95sh5bbaq5607jz64p-hello-conductor-0.0.1.drv
+these 27 paths will be fetched (69.96 MiB download, 327.81 MiB unpacked):
+  /nix/store/rfp8lhk4dl9syfn64rwb3h3c73426p08-binutils-2.44
+  /nix/store/jg0wzzd657xyhhss3mfqqa1iv5s9r75i-binutils-2.44-lib
+  /nix/store/x7ikkplbrv5dlihy1bqq32gp6lilkval-binutils-wrapper-2.44
+  /nix/store/by6npbc13ly5a1zgsqghv7wv5bklyiny-bzip2-1.0.8-bin
+  /nix/store/jc6kzjc5hp19570p0ihnvrnbc13jgm7f-die-hook
+  /nix/store/355mp4ns4042sb5p51rx3ys4mlliiwc5-diffutils-3.12
+  /nix/store/nvllv8vnli7kqa9vsx5r9pzchrglnj7x-ed-1.22.5
+  /nix/store/68kslg4wrhdxz24saw62fzyqi1kjgcfs-expand-response-params
+  /nix/store/kjg8z2k0zvsczaij78803g7imlfm1vfb-file-5.45
+  /nix/store/gg169kyil5vhsg5aqcpagyhs8fwl0r5r-gawk-5.3.2
+  /nix/store/lvwga6ivl1d4lnw0zis9ajs0rqx9gp4i-gcc-15.2.0
+  /nix/store/hb2bs5fg5wkm04x565737qd5nh2hy5nk-gcc-wrapper-15.2.0
+  /nix/store/h0ip0h6qp7kc2wm7mwjaglkxxbzmjri4-glibc-2.42-51-dev
+  /nix/store/cynwj0s5x0c84hyi879isn8pdpf1iihm-gmp-6.3.0
+  /nix/store/ikx8300mbv3pjf4602dm1dv43wyafff1-gnu-config-2024-01-01
+  /nix/store/1fvcxyhg3i5fvw0j4l8wmyml10dnvm7q-gnumake-4.4.1
+  /nix/store/pnxiz967z73a45f4x7c1icldjaaqmlcp-gzip-1.14
+  /nix/store/scabrfc47i7h73kfp4yn7vkw3qkxv8gk-isl-0.20
+  /nix/store/zfv59aslcf318vjkjs8zw855cdjcjdvq-libmpc-1.3.1
+  /nix/store/pg99pd2gbwqs9y6z0q2hmx46m3hw9bns-linux-headers-6.18.7
+  /nix/store/qmbai9ywd5lvigv0rq1i8ap5pf4b67ym-make-shell-wrapper-hook
+  /nix/store/sjlfsbd2lk4a1iva4vjjgvp4r1hga1xg-mpfr-4.2.2
+  /nix/store/ca84rbhb0bhwdcci7q51dad20nkbn9xc-patch-2.8
+  /nix/store/sj3f6y3j8m1831l0gqm1bsk1f46jzkfd-patchelf-0.15.2
+  /nix/store/s2grcjv8pklvkajk3mkh75aja5dppx6z-stdenv-linux
+  /nix/store/yshg9z9pkqqq1aidgrryn6hcmzgys2hs-update-autotools-gnu-config-scripts-hook
+  /nix/store/g6mlwdvpg92rchq352ll7jbi0pz7h43r-xz-5.8.2-bin
+copying path '/nix/store/jc6kzjc5hp19570p0ihnvrnbc13jgm7f-die-hook' from 'https://cache.nixos.org'...
+copying path '/nix/store/ikx8300mbv3pjf4602dm1dv43wyafff1-gnu-config-2024-01-01' from 'https://cache.nixos.org'...
+copying path '/nix/store/68kslg4wrhdxz24saw62fzyqi1kjgcfs-expand-response-params' from 'https://cache.nixos.org'...
+copying path '/nix/store/gg169kyil5vhsg5aqcpagyhs8fwl0r5r-gawk-5.3.2' from 'https://cache.nixos.org'...
+copying path '/nix/store/pg99pd2gbwqs9y6z0q2hmx46m3hw9bns-linux-headers-6.18.7' from 'https://cache.nixos.org'...
+copying path '/nix/store/sj3f6y3j8m1831l0gqm1bsk1f46jzkfd-patchelf-0.15.2' from 'https://cache.nixos.org'...
+copying path '/nix/store/by6npbc13ly5a1zgsqghv7wv5bklyiny-bzip2-1.0.8-bin' from 'https://cache.nixos.org'...
+copying path '/nix/store/355mp4ns4042sb5p51rx3ys4mlliiwc5-diffutils-3.12' from 'https://cache.nixos.org'...
+copying path '/nix/store/nvllv8vnli7kqa9vsx5r9pzchrglnj7x-ed-1.22.5' from 'https://cache.nixos.org'...
+copying path '/nix/store/kjg8z2k0zvsczaij78803g7imlfm1vfb-file-5.45' from 'https://cache.nixos.org'...
+copying path '/nix/store/1fvcxyhg3i5fvw0j4l8wmyml10dnvm7q-gnumake-4.4.1' from 'https://cache.nixos.org'...
+copying path '/nix/store/pnxiz967z73a45f4x7c1icldjaaqmlcp-gzip-1.14' from 'https://cache.nixos.org'...
+copying path '/nix/store/g6mlwdvpg92rchq352ll7jbi0pz7h43r-xz-5.8.2-bin' from 'https://cache.nixos.org'...
+copying path '/nix/store/cynwj0s5x0c84hyi879isn8pdpf1iihm-gmp-6.3.0' from 'https://cache.nixos.org'...
+copying path '/nix/store/jg0wzzd657xyhhss3mfqqa1iv5s9r75i-binutils-2.44-lib' from 'https://cache.nixos.org'...
+copying path '/nix/store/qmbai9ywd5lvigv0rq1i8ap5pf4b67ym-make-shell-wrapper-hook' from 'https://cache.nixos.org'...
+copying path '/nix/store/yshg9z9pkqqq1aidgrryn6hcmzgys2hs-update-autotools-gnu-config-scripts-hook' from 'https://cache.nixos.org'...
+copying path '/nix/store/ca84rbhb0bhwdcci7q51dad20nkbn9xc-patch-2.8' from 'https://cache.nixos.org'...
+copying path '/nix/store/scabrfc47i7h73kfp4yn7vkw3qkxv8gk-isl-0.20' from 'https://cache.nixos.org'...
+copying path '/nix/store/sjlfsbd2lk4a1iva4vjjgvp4r1hga1xg-mpfr-4.2.2' from 'https://cache.nixos.org'...
+copying path '/nix/store/rfp8lhk4dl9syfn64rwb3h3c73426p08-binutils-2.44' from 'https://cache.nixos.org'...
+copying path '/nix/store/s2grcjv8pklvkajk3mkh75aja5dppx6z-stdenv-linux' from 'https://cache.nixos.org'...
+copying path '/nix/store/zfv59aslcf318vjkjs8zw855cdjcjdvq-libmpc-1.3.1' from 'https://cache.nixos.org'...
+copying path '/nix/store/h0ip0h6qp7kc2wm7mwjaglkxxbzmjri4-glibc-2.42-51-dev' from 'https://cache.nixos.org'...
+copying path '/nix/store/lvwga6ivl1d4lnw0zis9ajs0rqx9gp4i-gcc-15.2.0' from 'https://cache.nixos.org'...
+copying path '/nix/store/x7ikkplbrv5dlihy1bqq32gp6lilkval-binutils-wrapper-2.44' from 'https://cache.nixos.org'...
+copying path '/nix/store/hb2bs5fg5wkm04x565737qd5nh2hy5nk-gcc-wrapper-15.2.0' from 'https://cache.nixos.org'...
+building '/nix/store/3sdzjjpak9g7qz95sh5bbaq5607jz64p-hello-conductor-0.0.1.drv'...
+hello-conductor> 2 blocks
+hello-conductor> patching script interpreter paths in /nix/store/r5chpa0lwqnary26nssvfwmg0bsz0h49-hello-conductor-0.0.1/bin/hello-conductor
+hello-conductor> /nix/store/r5chpa0lwqnary26nssvfwmg0bsz0h49-hello-conductor-0.0.1/bin/hello-conductor: interpreter directive changed from "#!/usr/bin/env bash" to "/nix/store/v8sa6r6q037ihghxfbwzjj4p59v2x0pv-bash-5.3p9/bin/bash"
+Completed build of hello-conductor-0.0.1 in local mode
+
+⚡︎ Built output: /home/vercel-sandbox/workspace/envs/repackage/result-hello-conductor
+==> [3a hello build] PASS — trivial no-network build + run OK (26s)
+$ flox build --dir /home/vercel-sandbox/workspace/envs/repackage bd
+Rendering bd build script to /tmp/05fbb2a4/bd/build.bash
+Building bd-1.1.2 in local mode
+[36m00:00:00.001546 [0m[1m[33m+ set -euo pipefail[0m
+[36m00:00:00.001551 [0m[1m[33m+ version=1.1.2[0m
+[36m00:00:00.001581 [0m[1m[33m+ case "$(uname -s)-$(uname -m)" in[0m
+[36m00:00:00.001811 [0m[1m[33m++ uname -s[0m
+[36m00:00:00.003142 [0m[1m[33m++ uname -m[0m
+[36m00:00:00.004100 [0m[1m[33m+ asset=beads_1.1.2_linux_amd64.tar.gz[0m
+[36m00:00:00.004100 [0m[1m[33m+ sha256=a72d71ed374955dc9f83a0f90b54bd7b6a0016709dd1676ae2e368651ed401c2[0m
+[36m00:00:00.004134 [0m[1m[33m+ '[' -z /etc/ssl/certs/ca-certificates.crt ']'[0m
+[36m00:00:00.004362 [0m[1m[33m++ mktemp -d[0m
+[36m00:00:00.005385 [0m[1m[33m+ tmp=/tmp/tmp.3c29L6DVqe[0m
+[36m00:00:00.005391 [0m[1m[33m+ trap 'rm -rf "${tmp}"' EXIT[0m
+[36m00:00:00.005432 [0m[1m[33m+ curl -fsSL -o /tmp/tmp.3c29L6DVqe/beads_1.1.2_linux_amd64.tar.gz https://github.com/gastownhall/beads/releases/download/v1.1.2/beads_1.1.2_linux_amd64.tar.gz[0m
+[36m00:00:00.251768 [0m[1m[33m+ echo 'a72d71ed374955dc9f83a0f90b54bd7b6a0016709dd1676ae2e368651ed401c2  /tmp/tmp.3c29L6DVqe/beads_1.1.2_linux_amd64.tar.gz'[0m
+[36m00:00:00.251819 [0m[1m[33m+ sha256sum --check -[0m
+[36m00:00:00.466849 [0m/tmp/tmp.3c29L6DVqe/beads_1.1.2_linux_amd64.tar.gz: OK[0m
+[36m00:00:00.467178 [0m[1m[33m+ tar -xzf /tmp/tmp.3c29L6DVqe/beads_1.1.2_linux_amd64.tar.gz -C /tmp/tmp.3c29L6DVqe bd[0m
+[36m00:00:01.098391 [0m[1m[33m+ mkdir -p /tmp/store_bfae0213bb54829fd5f7eea2fc0bd5b6-bd-1.1.2/bin[0m
+[36m00:00:01.101288 [0m[1m[33m+ install -m755 /tmp/tmp.3c29L6DVqe/bd /tmp/store_bfae0213bb54829fd5f7eea2fc0bd5b6-bd-1.1.2/bin/bd[0m
+[36m00:00:01.178540 [0m[1m[33m+ rm -rf /tmp/tmp.3c29L6DVqe[0m
+279808 blocks
+this derivation will be built:
+  /nix/store/r0ihfh390d8m3ydyn0gr367f7jgqc5hk-bd-1.1.2.drv
+building '/nix/store/r0ihfh390d8m3ydyn0gr367f7jgqc5hk-bd-1.1.2.drv'...
+bd> 279808 blocks
+bd> patching script interpreter paths in /nix/store/9c5pgvdcw5hpa9rzils3csy2mwsm3g60-bd-1.1.2/bin/bd
+Completed build of bd-1.1.2 in local mode
+
+⚡︎ Built output: /home/vercel-sandbox/workspace/envs/repackage/result-bd
+==> [3b bd repackage build] PASS — built + `bd version` → bd version 1.1.2 (20e493e56: HEAD@20e493e569c9) (4s)
+==> [3c bd flag surface] PASS — all conductor-workspace-setup.sh flags present on v1.1.2
+! You are not currently logged in to FloxHub.
+$ flox show elviskahoro/hello-conductor
+✘ ERROR: no packages matched this pkg-path: 'elviskahoro/hello-conductor'
+==> [4 FloxHub fetch] SKIP — 'flox show elviskahoro/hello-conductor' failed — publish a throwaway pkg from a Mac (#445 Phase A3: flox publish from envs/repackage covers hello-conductor), then re-run with FLOXHUB_TEST_PKG=<owner>/<pkg>. NOTE: not-found here is ambiguous between 'not published' and 'published but private/auth-gated' — check which.
+==> [5 H2 flake repro] SKIP — opt-in: re-run with FLAKE_REPRO=1 (costs a doomed Go build, ~minutes)
+
+Report: findings/report-20260801-141525Z.md
+Full log: findings/full-log-20260801-141525Z.txt
+
+| Stage | Result | Detail |
+| 0 fingerprint | **PASS** | recorded (see report body) |
+| 1 flox bootstrap | **PASS** | flox installed and responding (9s) |
+| 2 H1 prebuilt activate | **PASS** | all 5 tools resolve under .flox/run and execute (3s) |
+| 3a hello build | **PASS** | trivial no-network build + run OK (26s) |
+| 3b bd repackage build | **PASS** | built + `bd version` → bd version 1.1.2 (20e493e56: HEAD@20e493e569c9) (4s) |
+| 3c bd flag surface | **PASS** | all conductor-workspace-setup.sh flags present on v1.1.2 |
+| 4 FloxHub fetch | **SKIP** | 'flox show elviskahoro/hello-conductor' failed — publish a throwaway pkg from a Mac (#445 Phase A3: flox publish from envs/repackage covers hello-conductor), then re-run with FLOXHUB_TEST_PKG=<owner>/<pkg>. NOTE: not-found here is ambiguous between 'not published' and 'published but private/auth-gated' — check which. |
+| 5 H2 flake repro | **SKIP** | opt-in: re-run with FLAKE_REPRO=1 (costs a doomed Go build, ~minutes) |
