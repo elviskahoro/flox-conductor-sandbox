@@ -1,0 +1,73 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "schema-version": "1.13.0",
+    "install": {
+      "conductor-workspace-floxhub-01": {
+        "pkg-path": "elvis/conductor-workspace-floxhub-01"
+      }
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "x86_64-linux"
+      ]
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "conductor-workspace-floxhub-01",
+      "derivation": "/nix/store/dkjxd94ags0pg04mj6vlvj9lcxfk6yhy-conductor-workspace-floxhub-01-0.0.1.drv",
+      "description": "Trivial flox build smoke test (gtm-sdk#445 preflight)",
+      "install_id": "conductor-workspace-floxhub-01",
+      "locked_url": "https://github.com/elviskahoro/flox-conductor-sandbox.git?rev=7c71bdccae39fab02f50521cdaefafad569af9da",
+      "name": "conductor-workspace-floxhub-01-0.0.1",
+      "pname": "conductor-workspace-floxhub-01",
+      "rev": "7c71bdccae39fab02f50521cdaefafad569af9da",
+      "rev_count": 9,
+      "rev_date": "2026-08-01T14:46:57Z",
+      "scrape_date": "2026-08-01T22:00:25.761794Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "version": "0.0.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/rfffk8kd18w5mqm334nmss1lmi3s978l-conductor-workspace-floxhub-01-0.0.1"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "conductor-workspace-floxhub-01",
+      "derivation": "/nix/store/ib1wh4pr4r17mcaac4kv206agggh1mwz-conductor-workspace-floxhub-01-0.0.1.drv",
+      "description": "Trivial flox build smoke test (gtm-sdk#445 preflight)",
+      "install_id": "conductor-workspace-floxhub-01",
+      "locked_url": "https://github.com/elviskahoro/flox-conductor-sandbox?rev=32a1585bbcd7183008bba004a441178006a3d4fa",
+      "name": "conductor-workspace-floxhub-01-0.0.1",
+      "pname": "conductor-workspace-floxhub-01",
+      "rev": "32a1585bbcd7183008bba004a441178006a3d4fa",
+      "rev_count": 8,
+      "rev_date": "2026-08-01T14:52:23Z",
+      "scrape_date": "2026-08-01T22:00:25.761801Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "version": "0.0.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/6izcbdqki6q5a9d41d46aq0gcp0bb2s8-conductor-workspace-floxhub-01-0.0.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}

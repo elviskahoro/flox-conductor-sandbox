@@ -1,0 +1,90 @@
+Darwin 25.5.0 arm64
+no /etc/os-release
+
+build-users-group = nixbld
+
+include flox.conf
+sh: getent: command not found
+no nixbld group
+dr-xr-xr-x  1 root  wheel  0 Jul 26 14:36 /dev/fd
+absent (good)
+srw-rw-rw-  1 root  nixbld  0 Aug  1 07:44 /nix/var/nix/daemon-socket/socket
+/usr/local/bin/flox
+/usr/local/bin/nix
+==> [0 fingerprint] PASS — recorded (see report body)
+==> [1 flox bootstrap] SKIP — non-Linux host; install flox manually
+$ flox activate --dir /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/almaty/envs/prebuilt --mode run -- true
+==> [2 H1 prebuilt activate] PASS — all 5 tools resolve under .flox/run and execute (0s)
+$ flox build --dir /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/almaty/envs/repackage conductor-workspace-floxhub-01
+Rendering conductor-workspace-floxhub-01 build script to /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T//746b47bb/conductor-workspace-floxhub-01/build.bash
+Building conductor-workspace-floxhub-01-0.0.1 in local mode
+[36m00:00:00.006021 [0m[1m[33m+ mkdir -p /tmp/store_f6e304a5efd793b7dbe49775a5ab297c-conductor-workspace-floxhub-01-0.0.1/bin[0m
+[36m00:00:00.011321 [0m[1m[33m+ echo '#!/usr/bin/env bash'[0m
+[36m00:00:00.011356 [0m[1m[33m+ echo 'echo "hello from a flox-built package (gtm-sdk#445 preflight)"'[0m
+[36m00:00:00.011388 [0m[1m[33m+ chmod +x /tmp/store_f6e304a5efd793b7dbe49775a5ab297c-conductor-workspace-floxhub-01-0.0.1/bin/conductor-workspace-floxhub-01[0m
+2 blocks
+Completed build of conductor-workspace-floxhub-01-0.0.1 in local mode
+
+⚡︎ Built output: /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/almaty/envs/repackage/result-conductor-workspace-floxhub-01
+==> [3a hello build] PASS — trivial no-network build + run OK (3s)
+$ flox build --dir /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/almaty/envs/repackage bd
+Rendering bd build script to /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T//746b47bb/bd/build.bash
+Building bd-1.1.2 in local mode
+[36m00:00:00.005997 [0m[1m[33m+ set -euo pipefail[0m
+[36m00:00:00.006005 [0m[1m[33m+ version=1.1.2[0m
+[36m00:00:00.006041 [0m[1m[33m+ case "$(uname -s)-$(uname -m)" in[0m
+[36m00:00:00.006567 [0m[1m[33m++ uname -s[0m
+[36m00:00:00.010511 [0m[1m[33m++ uname -m[0m
+[36m00:00:00.013519 [0m[1m[33m+ asset=beads_1.1.2_darwin_arm64.tar.gz[0m
+[36m00:00:00.013530 [0m[1m[33m+ sha256=9b0137a83a2afd343e2abd2a506be72ea032721000f76669c2cf81729e78501d[0m
+[36m00:00:00.013563 [0m[1m[33m+ '[' -z /nix/store/j5bh1bwmvddn749z7hkxkrlladyrn7rg-nss-cacert-3.121/etc/ssl/certs/ca-bundle.crt ']'[0m
+[36m00:00:00.014014 [0m[1m[33m++ mktemp -d[0m
+[36m00:00:00.017189 [0m[1m[33m+ tmp=/var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.4AihA7brUY[0m
+[36m00:00:00.017200 [0m[1m[33m+ trap 'rm -rf "${tmp}"' EXIT[0m
+[36m00:00:00.017235 [0m[1m[33m+ curl -fsSL -o /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.4AihA7brUY/beads_1.1.2_darwin_arm64.tar.gz https://github.com/gastownhall/beads/releases/download/v1.1.2/beads_1.1.2_darwin_arm64.tar.gz[0m
+[36m00:00:01.016751 [0m[1m[33m+ echo '9b0137a83a2afd343e2abd2a506be72ea032721000f76669c2cf81729e78501d  /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.4AihA7brUY/beads_1.1.2_darwin_arm64.tar.gz'[0m
+[36m00:00:01.017123 [0m[1m[33m+ sha256sum --check -[0m
+[36m00:00:01.122388 [0m/var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.4AihA7brUY/beads_1.1.2_darwin_arm64.tar.gz: OK[0m
+[36m00:00:01.122740 [0m[1m[33m+ tar -xzf /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.4AihA7brUY/beads_1.1.2_darwin_arm64.tar.gz -C /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.4AihA7brUY bd[0m
+[36m00:00:01.616782 [0m[1m[33mtar: bd: Not found in archive[0m
+[36m00:00:01.616782 [0m[1m[33mtar: Exiting with failure status due to previous errors[0m
+[36m00:00:01.617255 [0m[1m[33m+ rm -rf /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.4AihA7brUY[0m
+make: *** [/nix/store/rv6kgzmscz7b5drmav5yi7qmg6q9d86y-package-builder-1.0.0/libexec/flox-build.mk:849: /tmp/store_507fb2f39b5bcb33266fd4f55f084d49-bd-1.1.2] Error 2
+✘ ERROR: Build failed
+==> [3b bd repackage build] FAIL — repackage build failed — see body
+==> [3c bd flag surface] SKIP — no bd build
+You are logged in as elvis on https://hub.flox.dev/
+Credential stored in your system keyring.
+$ flox show elvis/conductor-workspace-floxhub-01
+elvis/conductor-workspace-floxhub-01 - Trivial flox build smoke test (gtm-sdk#445 preflight)
+Catalog: elvis
+Latest:  elvis/conductor-workspace-floxhub-01@0.0.1
+Outputs: out* (* installed by default)
+Systems: aarch64-darwin, x86_64-linux
+
+Other versions:
+    elvis/conductor-workspace-floxhub-01@0.0.1 (aarch64-darwin, x86_64-linux only)
+! 'conductor-workspace-floxhub-01' installed only for the following systems: aarch64-darwin, x86_64-linux
+==> [4 FloxHub fetch] PASS — unauthenticated install of elvis/conductor-workspace-floxhub-01 works — no token plumbing needed (#445 §6 is dead code)
+==> [5 H2 flake repro] SKIP — opt-in: re-run with FLAKE_REPRO=1 (costs a doomed Go build, ~minutes)
+$ bash /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/almaty/scripts/floxhub-login.sh
+✔ Authentication complete
+✔ Logged in as elvis
+You are logged in as elvis on https://hub.flox.dev/
+Credential stored in your system keyring.
+$ flox activate --dir /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/almaty/envs/floxhub-consume --mode run -- true
+==> [6 auth plumbing] PASS — flox auth login --token-file + flox activate against a pkg-path manifest works end to end (1s)
+
+Report: findings/report-20260801-220017Z.md
+Full log: findings/full-log-20260801-220017Z.txt
+
+| Stage | Result | Detail |
+| 0 fingerprint | **PASS** | recorded (see report body) |
+| 1 flox bootstrap | **SKIP** | non-Linux host; install flox manually |
+| 2 H1 prebuilt activate | **PASS** | all 5 tools resolve under .flox/run and execute (0s) |
+| 3a hello build | **PASS** | trivial no-network build + run OK (3s) |
+| 3b bd repackage build | **FAIL** | repackage build failed — see body |
+| 3c bd flag surface | **SKIP** | no bd build |
+| 4 FloxHub fetch | **PASS** | unauthenticated install of elvis/conductor-workspace-floxhub-01 works — no token plumbing needed (#445 §6 is dead code) |
+| 5 H2 flake repro | **SKIP** | opt-in: re-run with FLAKE_REPRO=1 (costs a doomed Go build, ~minutes) |
+| 6 auth plumbing | **PASS** | flox auth login --token-file + flox activate against a pkg-path manifest works end to end (1s) |
