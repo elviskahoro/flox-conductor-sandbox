@@ -46,13 +46,15 @@ macOS, and the target class three times). For the full run-by-run breakdown, see
 | 3 | **H3:** `flox build` manifest builds work here — a trivial no-network build, then the real Option-A shape: repackage the official `beads` v1.1.2 release binary (pinned URL + sha256) into `$out/bin`, then verify the CLI flag surface the gtm-sdk setup script depends on | Phase B "Option 1" + Phase C flag-surface check | **PASS** on target class (2 non-target environments hit unrelated, environment-specific issues) |
 | 4 | **H4 (the fork in the road):** an unauthenticated sandbox can fetch a package from a project-controlled FloxHub catalog (`flox install <owner>/<pkg>`) | Phase A preflight — decides whether token plumbing (§6) is needed | **SKIP** — resolved (#11): expected. Bare `flox publish` is private-by-default; §6 token plumbing is needed |
 | 5 | **H2 (control, opt-in):** the `bd.flake = "github:gastownhall/beads/v1.1.0"` source build reproduces the `/homeless-shelter` purity failure on this sandbox, confirming root-cause attribution | "Problem" section repro | **PASS** — target class confirmed to share the defect |
+| 6 | **Phase D' prototype (opt-in):** an authenticated sandbox (`scripts/floxhub-login.sh`) can `flox activate` a manifest whose `[install]` references the published `pkg-path` (`envs/floxhub-consume`) — the real gtm-sdk consumption pattern, not Stage 4's ad hoc `flox install` | #445 §6 — proves the auth-token recipe before porting it to gtm-sdk | opt-in, not yet run by default |
 
 ## Layout
 
 ```
-envs/prebuilt/     H1: gtm-sdk's five catalog packages, zero flake pins
-envs/repackage/    H3: [build.conductor-workspace-floxhub-01] + [build.bd] (upstream-binary repackage)
-envs/flake-repro/  H2: the failing bd flake pin, nothing else (opt-in stage)
+envs/prebuilt/        H1: gtm-sdk's five catalog packages, zero flake pins
+envs/repackage/       H3: [build.conductor-workspace-floxhub-01] + [build.bd] (upstream-binary repackage)
+envs/flake-repro/     H2: the failing bd flake pin, nothing else (opt-in stage)
+envs/floxhub-consume/ Phase D' prototype: [install] pkg-path = "elvis/conductor-workspace-floxhub-01" (opt-in stage 6, needs auth)
 scripts/sandbox-test.sh   the harness — runs all stages, never hard-fails
 findings/          harness output: report-*.md (summary + evidence) and full-log-*.txt
                    — see findings/README.md for a run-by-run index
@@ -81,6 +83,7 @@ A Conductor sandbox runs everything automatically via
 bash scripts/sandbox-test.sh                      # stages 0–4
 FLAKE_REPRO=1 bash scripts/sandbox-test.sh        # also run the H2 failure repro (slow: real Go build attempt)
 FLOXHUB_TEST_PKG=elvis/conductor-workspace-floxhub-01 bash scripts/sandbox-test.sh  # (default shown)
+TEST_AUTH_PLUMBING=1 FLOXHUB_TOKEN=<token> bash scripts/sandbox-test.sh  # opt-in Phase D' prototype (stage 6) — permanently authenticates this sandbox
 ```
 
 The harness writes `findings/report-<UTC timestamp>.md` with a PASS/FAIL/SKIP
@@ -121,6 +124,32 @@ into a publisher:
    disqualified from ever being the unauthenticated Stage 4 tester — use a
    separate, never-touched sandbox for that.
 
+### Prototyping the consumer side (Phase D', opt-in, manual only)
+
+Once Stage 4 confirms (as it now has, per issue #11) that the catalog is
+private, the actual question for gtm-sdk#445 §6 is whether a sandbox can
+authenticate *and then consume* the package the way gtm-sdk really would —
+via a `pkg-path` in `[install]`, materialized by `flox activate`, not an
+ad hoc `flox install`. `envs/floxhub-consume/.flox/env/manifest.toml`
+exists for exactly this and Stage 6 of `scripts/sandbox-test.sh` tests it,
+opt-in only (same reasoning as `floxhub-login.sh` above — running this on
+the sandbox you also want to use for Stage 4 disqualifies it):
+
+```bash
+TOKEN="$(flox auth token)"   # run on an already-authenticated machine
+TEST_AUTH_PLUMBING=1 FLOXHUB_TOKEN="${TOKEN}" bash scripts/sandbox-test.sh
+```
+
+Stage 6 reuses `scripts/floxhub-login.sh` verbatim to authenticate, then
+`flox activate --dir envs/floxhub-consume --mode run -- true` and checks
+the binary resolves under `.flox/run/.../bin`, mirroring Stage 2's
+verification. A PASS here is the recipe to port into
+`gtm-sdk/scripts/conductor-workspace-setup.sh`: obtain a token (in real
+gtm-sdk provisioning, from Infisical via `infisical secrets get`, not a
+hand-copied value — see this repo's parent secrets-management convention)
+→ `flox auth login --token-file=...` → `flox activate` against a manifest
+that lists the FloxHub `pkg-path`.
+
 ## Interpreting outcomes
 
 - **Stage 2 PASS** → #445's central claim holds: remove the flake pins and the
@@ -153,6 +182,12 @@ into a publisher:
   confirming this sandbox has the same single-user/no-sandbox Nix defect the
   issue describes. If it *succeeds*, this sandbox class differs from the one
   in #445 and Stage 2's PASS is weaker evidence.
+- **Stage 6 PASS (opt-in)** = the Phase D' auth-token recipe works
+  end-to-end (`flox auth login --token-file` then `flox activate` against a
+  `pkg-path` manifest) — this is the concrete mechanism to port into
+  `gtm-sdk/scripts/conductor-workspace-setup.sh`. A FAIL here means the
+  recipe itself needs rework before porting, not just the visibility
+  conclusion from Stage 4.
 
 ## Known scope reductions
 

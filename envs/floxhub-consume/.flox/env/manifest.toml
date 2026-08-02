@@ -1,0 +1,12 @@
+schema-version = "1.13.0"
+
+# gtm-sdk#445 Phase D' prototype: this is how gtm-sdk actually consumes a
+# FloxHub-published package — a pkg-path in [install], materialized via
+# `flox activate` — not the ad hoc `flox install` Stage 4 (H4) uses to test
+# raw unauthenticated visibility. Requires auth (see
+# scripts/floxhub-login.sh); the package is private (issue #11 finding).
+[install]
+conductor-workspace-floxhub-01.pkg-path = "elvis/conductor-workspace-floxhub-01"
+
+[options]
+systems = ["aarch64-darwin", "x86_64-linux"]
