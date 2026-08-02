@@ -23,14 +23,17 @@ and stages mean, and how to produce a new run.
 | `20260801-141525Z` | Same Amazon Linux 2023 / Vercel / Conductor cloud sandbox | **Yes** | H1 + H3 PASS again; H4 and opt-in H2 skipped |
 | `20260801-160419Z` | Fresh Conductor cloud sandbox, never authenticated to FloxHub | **Yes** | H1 + H3 PASS again; **H4 SKIP** — `flox show elvis/conductor-workspace-floxhub-01` fails unauthenticated even though PR #7/#8 confirm it's published for both platforms; `flox search` also can't find it. Resolved by issue #11: expected — private-by-default catalog, not a visibility bug |
 | `20260801-201328Z` | macOS, developer machine, **already authenticated to FloxHub** | No | Stage 3b bd repackage FAIL (`tar` extraction, unrelated); Stage 4 logged **PASS** with "no token plumbing needed" — **invalid**, see issue #11 resolution below: this run's own `flox auth status` shows it was logged in, so it never tested unauthenticated access |
+| `20260802-162020Z` | macOS, developer machine, **already authenticated to FloxHub** | No | Stage 3b bd repackage FAIL, **root-caused this run**: the beads release tarball stores entries as `./bd` etc., and the build's `tar -xzf ... bd` member filter never matches that name. Fixed in `envs/repackage/.flox/env/manifest.toml` by extracting the whole archive instead of filtering a member; verified locally (`flox build --dir envs/repackage bd` now succeeds, built `bd --version` runs). Stage 4 "PASS" is contaminated for the same reason as `20260801-201328Z` — ignore it, not a new H4 data point |
 
 ## Current bottom line (as of the last run above)
 
 - **H1** (prebuilt-catalog manifest activates atomically): PASS on every
   environment tested.
 - **H3** (`flox build` repackage shape): PASS on the real target class,
-  three times. The two earlier failures are understood/explained, not open
-  questions (see table above).
+  three times. The macOS-only `bd` repackage failures (`20260801-121814Z`,
+  `20260801-201328Z`, `20260802-162020Z`) are now root-caused and fixed — the
+  release tarball's entries are `./`-prefixed and the build's `tar`
+  extraction didn't match, not a target-class issue (see table above).
 - **H2** (control repro of the original bug): PASS — the target sandbox
   class genuinely has the defect #445 describes, which is what makes the
   H1/H3 passes meaningful evidence rather than "the bug just doesn't exist
