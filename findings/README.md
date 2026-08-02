@@ -1,5 +1,10 @@
 # Navigating `findings/`
 
+> **[Issue #16](https://github.com/elviskahoro/flox-conductor-sandbox/issues/16) is
+> the single source of truth for gtm-sdk#445 Phase A** — the verdict, the traps, and
+> the open items. It also carries a run-by-run index marking which Stage 4 results are
+> contaminated. Read it before drawing conclusions from anything here.
+
 Each `scripts/sandbox-test.sh` run writes one pair of files, named by UTC
 timestamp:
 
@@ -84,6 +89,12 @@ analysis lives, not in the generated report files themselves.
 ## If you're about to add another run
 
 - Read the top-level README's "Running" section first.
+- **Before trusting the run's Stage 4 row, grep its full log for
+  `You are logged in as elvis on https://hub.flox.dev/`.** Stage 4 has no auth
+  precondition, so on an already-authenticated machine it records a PASS reading
+  "no token plumbing needed (#445 §6 is dead code)" — a conclusion issue #16
+  falsified. Five committed runs already carry that false PASS; don't add a sixth
+  without a caveat.
 - One commit per run; add findings files by explicit name, never `git add -A`.
 - Put a stage-by-stage analysis in the commit body (see recent findings
   commits for the expected shape) — don't hand-edit the generated

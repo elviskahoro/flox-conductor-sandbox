@@ -11,6 +11,12 @@ real FloxHub publishing work is invested in gtm-sdk itself.
 
 ## Current status
 
+> **Start here: [issue #16](https://github.com/elviskahoro/flox-conductor-sandbox/issues/16)**
+> — the single source of truth for gtm-sdk#445 Phase A. It carries the verdict, the
+> full evidence index (including which runs are contaminated), the traps not to
+> re-derive, and what's still open. It supersedes issues #4, #5, and #11, whose
+> bodies contain instructions that later work falsified.
+
 On the actual target sandbox class (Amazon Linux 2023 / Vercel / Conductor
 cloud), flox bootstraps cleanly, **H1 and H3 both PASS**, and **H2's control
 repro also PASSes** — confirming this sandbox genuinely has the defect #445
