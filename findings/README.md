@@ -21,6 +21,8 @@ and stages mean, and how to produce a new run.
 | `20260801-123329Z` | Amazon Linux 2023 / Vercel / Conductor cloud | **Yes** | H1 + H3 (all sub-stages) PASS — first clean pass on the real target class |
 | `20260801-125246Z` | Same sandbox as above, deliberate re-run with `FLAKE_REPRO=1` | **Yes** | Reproduces the prior run exactly (confirms idempotency) + H2 control PASS |
 | `20260801-141525Z` | Same Amazon Linux 2023 / Vercel / Conductor cloud sandbox | **Yes** | H1 + H3 PASS again; H4 and opt-in H2 skipped |
+| `20260801-160419Z` | Fresh Conductor cloud sandbox, never authenticated to FloxHub | **Yes** | H1 + H3 PASS again; **H4 SKIP** — `flox show elvis/conductor-workspace-floxhub-01` fails unauthenticated even though PR #7/#8 confirm it's published for both platforms; `flox search` also can't find it. Resolved by issue #11: expected — private-by-default catalog, not a visibility bug |
+| `20260801-201328Z` | macOS, developer machine, **already authenticated to FloxHub** | No | Stage 3b bd repackage FAIL (`tar` extraction, unrelated); Stage 4 logged **PASS** with "no token plumbing needed" — **invalid**, see issue #11 resolution below: this run's own `flox auth status` shows it was logged in, so it never tested unauthenticated access |
 
 ## Current bottom line (as of the last run above)
 
@@ -30,13 +32,43 @@ and stages mean, and how to produce a new run.
   three times. The two earlier failures are understood/explained, not open
   questions (see table above).
 - **H2** (control repro of the original bug): PASS — the target sandbox
-  class genuinely has the defect #445 describes (from the prior opt-in run),
-  which makes the H1/H3 passes meaningful evidence rather than "the bug just
-  doesn't exist here." The latest run left this opt-in stage skipped.
-- **H4** (unauthenticated FloxHub fetch): still untested. Blocked on a human
-  publishing a throwaway package from an authenticated Mac (`flox publish`,
-  #445 Phase A3) — nothing in a cloud sandbox can complete this step. Re-run
-  with `FLOXHUB_TEST_PKG=<owner>/<pkg>` once one exists.
+  class genuinely has the defect #445 describes, which is what makes the
+  H1/H3 passes meaningful evidence rather than "the bug just doesn't exist
+  here."
+- **H4** (unauthenticated FloxHub fetch): run on a genuinely fresh,
+  never-authenticated sandbox (`20260801-160419Z`), and it came back
+  **SKIP, not PASS or FAIL** — `flox show
+  elvis/conductor-workspace-floxhub-01` fails unauthenticated
+  ("no packages matched"), even though the package is confirmed published
+  for both `aarch64-darwin` (PR #7) and `x86_64-linux` (see
+  [`floxhub-x86_64-linux-publish-20260801.md`](floxhub-x86_64-linux-publish-20260801.md)).
+  `flox search` also can't surface it unauthenticated.
+
+  **Resolved (issue #11):** SKIP is the correct, expected result — not an
+  ambiguous signal. `flox publish <pkg>` with no `-o`/`--org` flag (exactly
+  what PR #7 and PR #8 ran) always publishes to the **publisher's private
+  catalog**. Per `flox publish --help` and
+  https://flox.dev/docs/concepts/publishing/: "individual users will not be
+  able to share packages they've published with other users." The only
+  visibility knob `flox publish` exposes is `--org`, and even org-shared
+  packages "cannot be viewed by anyone outside the organization" (a paid
+  Flox-for-Teams feature) — there is no flag that makes a published package
+  fetchable by the general public or by an unauthenticated caller. A
+  second-account test isn't needed to confirm this; the CLI/docs already
+  rule out any other outcome for a bare `flox publish`.
+
+  **Conclusion: Phase D' (#445 §6 FloxHub auth-token plumbing) is required**
+  for any real unauthenticated or CI consumption of a FloxHub-hosted
+  package — the catalog entry is private by construction, not
+  misconfigured.
+
+  Note: a separate run, `20260801-201328Z`, logged this stage as **PASS**
+  with the note "no token plumbing needed (#445 §6 is dead code)". That
+  conclusion is **invalid and superseded** — the run's own
+  `flox auth status` output shows it executed on an already-authenticated
+  machine ("You are logged in as elvis... Credential stored in your system
+  keyring"), so its `flox show` success proves nothing about unauthenticated
+  visibility. Kept in the runs table above for the record, not as evidence.
 - Still unexplained: the macOS `tar` extraction failure in the second run —
   worth root-causing if `bd`/`roborev` provisioning needs to work on
   developer Macs, not just cloud sandboxes.
