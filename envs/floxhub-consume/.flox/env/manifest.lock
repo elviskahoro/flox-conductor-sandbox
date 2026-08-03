@@ -9,7 +9,8 @@
     },
     "options": {
       "systems": [
-        "aarch64-darwin"
+        "aarch64-darwin",
+        "x86_64-linux"
       ]
     }
   },
@@ -25,7 +26,7 @@
       "rev": "6917f77da4b1e7b767b0a431530a600aea46c3a9",
       "rev_count": 28,
       "rev_date": "2026-08-03T13:20:00Z",
-      "scrape_date": "2026-08-03T13:35:25.172057Z",
+      "scrape_date": "2026-08-03T14:19:26.078348331Z",
       "stabilities": [
         "staging",
         "unstable"
@@ -38,6 +39,33 @@
         "out": "/nix/store/y0z9q2rjchxpggzgblsp5ral169slcw6-conductor-workspace-floxhub-01-0.0.1"
       },
       "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "conductor-workspace-floxhub-01",
+      "derivation": "/nix/store/4qm4b4b6dxlamzi1qgi6rf0ibck67103-conductor-workspace-floxhub-01-0.0.1.drv",
+      "description": "Trivial flox build smoke test (gtm-sdk#445 preflight)",
+      "install_id": "conductor-workspace-floxhub-01",
+      "locked_url": "https://github.com/elviskahoro/flox-conductor-sandbox.git?rev=2f731a55e03492e5ec0509bbbd41df5295bdd2bb",
+      "name": "conductor-workspace-floxhub-01-0.0.1",
+      "pname": "conductor-workspace-floxhub-01",
+      "rev": "2f731a55e03492e5ec0509bbbd41df5295bdd2bb",
+      "rev_count": 40,
+      "rev_date": "2026-08-03T14:18:33Z",
+      "scrape_date": "2026-08-03T14:19:26.078353967Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "version": "0.0.1",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/zqicq6g3j2ncwi4g4ax3zg4caw742i55-conductor-workspace-floxhub-01-0.0.1"
+      },
+      "system": "x86_64-linux",
       "group": "toplevel",
       "priority": 5
     }
