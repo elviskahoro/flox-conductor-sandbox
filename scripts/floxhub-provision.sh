@@ -59,4 +59,14 @@ if [[ -z "${FLOXHUB_TOKEN:-}" ]]; then
 fi
 
 export FLOX_FLOXHUB_TOKEN="${FLOXHUB_TOKEN}"
+
+# Validate the token up front so a bad/expired FLOXHUB_TOKEN surfaces as an
+# unambiguous auth error here, rather than as a generic flox activate
+# failure indistinguishable from a manifest/build/publish-availability
+# problem downstream.
+if ! flox auth status >/dev/null 2>&1; then
+  echo "error: FLOX_FLOXHUB_TOKEN was not accepted by FloxHub (invalid or expired token)." >&2
+  exit 1
+fi
+
 flox activate --dir "${REPO_ROOT}/envs/floxhub-provision" --mode run -- true

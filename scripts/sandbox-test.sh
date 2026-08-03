@@ -24,8 +24,9 @@
 #      floxhub-login.sh itself: authenticating a sandbox must stay opt-in so
 #      Stage 4 can keep testing genuinely unauthenticated sandboxes.
 #   7  Phase D MVP: opt-in (TEST_FLOXHUB_PROVISION=1) — run
-#      scripts/floxhub-provision.sh (obtain a token, authenticate, activate
-#      envs/floxhub-provision), then verify all 7 tools (the 5 catalog
+#      scripts/floxhub-provision.sh (obtain a token, export it as
+#      FLOX_FLOXHUB_TOKEN, activate envs/floxhub-provision), then verify all
+#      7 tools (the 5 catalog
 #      tools + real bd/roborev packages, not Stage 6's trivial smoke
 #      package) resolve and run. A separate opt-in gate from Stage 6's, so
 #      the minimal auth-mechanism prototype and the full MVP can be run
