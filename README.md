@@ -222,6 +222,16 @@ if `FLOXHUB_TOKEN` is unset. Requires `uv` and the `dagger` CLI on `PATH`
 locally. Same opt-in-only rule as Stage 6/7: never wire this into
 `.conductor/settings.toml` or `scripts/sandbox-test.sh`'s default path.
 
+**Cannot be run from a Conductor cloud workspace itself** — it's already a
+nested container, and Dagger's engine needs cgroups/overlayfs access that
+isn't available there. For a real, non-emulated `x86_64-linux` run (the
+actual target class, and the only way to get the full 7/7 check including
+`bd`/`roborev`), use the manual GitHub Actions workflow instead:
+[`.github/workflows/floxhub-provision-check.yml`](.github/workflows/floxhub-provision-check.yml),
+triggered via `workflow_dispatch` (Actions tab, or
+`gh workflow run floxhub-provision-check.yml`). It reads `FLOXHUB_TOKEN` from
+a repo secret of the same name.
+
 ## Interpreting outcomes
 
 - **Stage 2 PASS** → #445's central claim holds: remove the flake pins and the

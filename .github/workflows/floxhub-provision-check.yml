@@ -1,0 +1,32 @@
+name: FloxHub provisioning staging check
+
+# Manual-only (issue #16 trap 5's opt-in rule applies here too: this
+# authenticates a throwaway container to FloxHub, so it must never run
+# automatically on push/PR — only on demand).
+on:
+  workflow_dispatch: {}
+
+jobs:
+  dagger-provision-check:
+    # ubuntu-latest is a real x86_64-linux VM, not a nested container, so
+    # Dagger's engine (rootless, needs cgroups/overlayfs) runs here in a way
+    # a Conductor cloud workspace cannot. This is also the real target class
+    # (issue #16 §6), so elvis/bd and elvis/roborev are both expected to
+    # resolve here — unlike a local run on Apple Silicon, which only checks
+    # the 5 catalog tools.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install Dagger CLI
+        run: curl -fsSL https://dagger.io/install.sh | sh
+        env:
+          BIN_DIR: /usr/local/bin
+
+      - name: Run FloxHub provisioning check
+        env:
+          FLOXHUB_TOKEN: ${{ secrets.FLOXHUB_TOKEN }}
+        run: uv run dagger run python scripts/dagger_provision_test.py
