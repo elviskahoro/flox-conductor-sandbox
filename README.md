@@ -32,9 +32,10 @@ publish --help` and https://flox.dev/docs/concepts/publishing/. Phase D'
 (FloxHub auth-token plumbing, §6) **is needed** for any real unauthenticated
 consumption of a FloxHub-hosted package.
 
-Five runs exist so far across three environments (a non-target container,
-macOS, and the target class three times). For the full run-by-run breakdown, see
-[`findings/README.md`](findings/README.md); for the narrative writeup, see
+14 runs exist so far across three environment classes (a non-target
+container, macOS, and the target sandbox class). For the full run-by-run
+breakdown, see [`findings/README.md`](findings/README.md) — that table is the
+definitive count, not this sentence; for the narrative writeup, see
 [PR #3](https://github.com/elviskahoro/flox-conductor-sandbox/pull/3).
 
 ## Hypotheses under test

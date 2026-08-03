@@ -1,0 +1,76 @@
+Darwin 25.5.0 arm64
+no /etc/os-release
+
+build-users-group = nixbld
+
+include flox.conf
+sh: getent: command not found
+no nixbld group
+dr-xr-xr-x  1 root  wheel  0 Jul 26 14:36 /dev/fd
+absent (good)
+srw-rw-rw-  1 root  nixbld  0 Aug  1 07:44 /nix/var/nix/daemon-socket/socket
+/usr/local/bin/flox
+/usr/local/bin/nix
+==> [0 fingerprint] PASS — recorded (see report body)
+==> [1 flox bootstrap] SKIP — non-Linux host; install flox manually
+$ flox activate --dir /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/beijing/envs/prebuilt --mode run -- true
+==> [2 H1 prebuilt activate] PASS — all 5 tools resolve under .flox/run and execute (0s)
+$ flox build --dir /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/beijing/envs/repackage conductor-workspace-floxhub-01
+Rendering conductor-workspace-floxhub-01 build script to /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T//fb7e087f/conductor-workspace-floxhub-01/build.bash
+Building conductor-workspace-floxhub-01-0.0.1 in local mode
+[36m00:00:00.005438 [0m[1m[33m+ mkdir -p /tmp/store_faed929c0d6d5aea0a20d0d2f2ca3664-conductor-workspace-floxhub-01-0.0.1/bin[0m
+[36m00:00:00.042081 [0m[1m[33m+ echo '#!/usr/bin/env bash'[0m
+[36m00:00:00.042124 [0m[1m[33m+ echo 'echo "hello from a flox-built package (gtm-sdk#445 preflight)"'[0m
+[36m00:00:00.042152 [0m[1m[33m+ chmod +x /tmp/store_faed929c0d6d5aea0a20d0d2f2ca3664-conductor-workspace-floxhub-01-0.0.1/bin/conductor-workspace-floxhub-01[0m
+2 blocks
+Completed build of conductor-workspace-floxhub-01-0.0.1 in local mode
+
+⚡︎ Built output: /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/beijing/envs/repackage/result-conductor-workspace-floxhub-01
+==> [3a hello build] PASS — trivial no-network build + run OK (4s)
+$ flox build --dir /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/beijing/envs/repackage bd
+Rendering bd build script to /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T//fb7e087f/bd/build.bash
+Building bd-1.1.2 in local mode
+[36m00:00:00.007096 [0m[1m[33m+ set -euo pipefail[0m
+[36m00:00:00.007096 [0m[1m[33m+ version=1.1.2[0m
+[36m00:00:00.007130 [0m[1m[33m+ case "$(uname -s)-$(uname -m)" in[0m
+[36m00:00:00.007579 [0m[1m[33m++ uname -s[0m
+[36m00:00:00.011348 [0m[1m[33m++ uname -m[0m
+[36m00:00:00.014173 [0m[1m[33m+ asset=beads_1.1.2_darwin_arm64.tar.gz[0m
+[36m00:00:00.014177 [0m[1m[33m+ sha256=9b0137a83a2afd343e2abd2a506be72ea032721000f76669c2cf81729e78501d[0m
+[36m00:00:00.014209 [0m[1m[33m+ '[' -z /nix/store/j5bh1bwmvddn749z7hkxkrlladyrn7rg-nss-cacert-3.121/etc/ssl/certs/ca-bundle.crt ']'[0m
+[36m00:00:00.014684 [0m[1m[33m++ mktemp -d[0m
+[36m00:00:00.018430 [0m[1m[33m+ tmp=/var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.itb8GqBkcy[0m
+[36m00:00:00.018445 [0m[1m[33m+ trap 'rm -rf "${tmp}"' EXIT[0m
+[36m00:00:00.018473 [0m[1m[33m+ curl -fsSL -o /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.itb8GqBkcy/beads_1.1.2_darwin_arm64.tar.gz https://github.com/gastownhall/beads/releases/download/v1.1.2/beads_1.1.2_darwin_arm64.tar.gz[0m
+[36m00:00:01.165594 [0m[1m[33m+ echo '9b0137a83a2afd343e2abd2a506be72ea032721000f76669c2cf81729e78501d  /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.itb8GqBkcy/beads_1.1.2_darwin_arm64.tar.gz'[0m
+[36m00:00:01.166267 [0m[1m[33m+ sha256sum --check -[0m
+[36m00:00:01.263337 [0m/var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.itb8GqBkcy/beads_1.1.2_darwin_arm64.tar.gz: OK[0m
+[36m00:00:01.263674 [0m[1m[33m+ tar -xzf /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.itb8GqBkcy/beads_1.1.2_darwin_arm64.tar.gz -C /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.itb8GqBkcy[0m
+[36m00:00:01.730985 [0m[1m[33m+ mkdir -p /tmp/store_f70e66b31445f87f8d7c24b4a2399c38-bd-1.1.2/bin[0m
+[36m00:00:01.734123 [0m[1m[33m+ install -m755 /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.itb8GqBkcy/bd /tmp/store_f70e66b31445f87f8d7c24b4a2399c38-bd-1.1.2/bin/bd[0m
+[36m00:00:01.761958 [0m[1m[33m+ rm -rf /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.itb8GqBkcy[0m
+262088 blocks
+Completed build of bd-1.1.2 in local mode
+
+⚡︎ Built output: /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/beijing/envs/repackage/result-bd
+==> [3b bd repackage build] PASS — built + `bd version` → bd version 1.1.2 (20e493e56: conductor/fix-issue-16-open-items@20e493e569c9) (5s)
+==> [3c bd flag surface] PASS — all conductor-workspace-setup.sh flags present on v1.1.2
+You are logged in as elvis on https://hub.flox.dev/
+Credential stored in your system keyring.
+==> [4 FloxHub fetch] SKIP — sandbox is already authenticated to FloxHub (see auth status above) — Stage 4 only means something on a genuinely unauthenticated sandbox; show/install/search are not attempted so this run can't masquerade as an H4 data point (issue #16 trap 4)
+==> [5 H2 flake repro] SKIP — opt-in: re-run with FLAKE_REPRO=1 (costs a doomed Go build, ~minutes)
+==> [6 auth plumbing] SKIP — opt-in: re-run with TEST_AUTH_PLUMBING=1 FLOXHUB_TOKEN=<token> (permanently authenticates this sandbox — never run on the one testing Stage 4)
+
+Report: findings/report-20260803-122518Z.md
+Full log: findings/full-log-20260803-122518Z.txt
+
+| Stage | Result | Detail |
+| 0 fingerprint | **PASS** | recorded (see report body) |
+| 1 flox bootstrap | **SKIP** | non-Linux host; install flox manually |
+| 2 H1 prebuilt activate | **PASS** | all 5 tools resolve under .flox/run and execute (0s) |
+| 3a hello build | **PASS** | trivial no-network build + run OK (4s) |
+| 3b bd repackage build | **PASS** | built + `bd version` → bd version 1.1.2 (20e493e56: conductor/fix-issue-16-open-items@20e493e569c9) (5s) |
+| 3c bd flag surface | **PASS** | all conductor-workspace-setup.sh flags present on v1.1.2 |
+| 4 FloxHub fetch | **SKIP** | sandbox is already authenticated to FloxHub (see auth status above) — Stage 4 only means something on a genuinely unauthenticated sandbox; show/install/search are not attempted so this run can't masquerade as an H4 data point (issue #16 trap 4) |
+| 5 H2 flake repro | **SKIP** | opt-in: re-run with FLAKE_REPRO=1 (costs a doomed Go build, ~minutes) |
+| 6 auth plumbing | **SKIP** | opt-in: re-run with TEST_AUTH_PLUMBING=1 FLOXHUB_TOKEN=<token> (permanently authenticates this sandbox — never run on the one testing Stage 4) |

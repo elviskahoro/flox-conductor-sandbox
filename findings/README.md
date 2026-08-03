@@ -25,12 +25,16 @@ and stages mean, and how to produce a new run.
 | `20260801-121814Z` | macOS (Darwin, developer machine) | No | H1 PASS; Stage 3a PASS but 3b FAIL (`tar` extraction error, never root-caused) |
 | `20260801-123329Z` | Amazon Linux 2023 / Vercel / Conductor cloud | **Yes** | H1 + H3 (all sub-stages) PASS — first clean pass on the real target class |
 | `20260801-125246Z` | Same sandbox as above, deliberate re-run with `FLAKE_REPRO=1` | **Yes** | Reproduces the prior run exactly (confirms idempotency) + H2 control PASS |
+| `20260801-134157Z` | macOS (Darwin, developer machine), genuinely unauthenticated at the time | No | H1 PASS; Stage 3b FAIL (`tar` extraction, same cause as `121814Z`, later root-caused/fixed in PR #15); Stage 4 SKIP — `elviskahoro/hello-conductor` not found (pre-dates the handle fix and package rename, traps 1-2) |
 | `20260801-141525Z` | Same Amazon Linux 2023 / Vercel / Conductor cloud sandbox | **Yes** | H1 + H3 PASS again; H4 and opt-in H2 skipped |
-| `20260801-160419Z` | Fresh Conductor cloud sandbox, never authenticated to FloxHub | **Yes** | H1 + H3 PASS again; **H4 SKIP** — `flox show elvis/conductor-workspace-floxhub-01` fails unauthenticated even though PR #7/#8 confirm it's published for both platforms; `flox search` also can't find it. Resolved by issue #11: expected — private-by-default catalog, not a visibility bug |
+| `20260801-150017Z` | Amazon Linux 2023 / Vercel / Conductor cloud | **Yes** | H1 + H3 (all sub-stages) PASS; Stage 4 SKIP — but moot as an H4 data point, since it ran 6 minutes before PR #8 published `x86_64-linux` (trap 6) |
+| `20260801-160419Z` | Fresh Conductor cloud sandbox, never authenticated to FloxHub | **Yes** | H1 + H3 PASS again; **H4 SKIP** — `flox show elvis/conductor-workspace-floxhub-01` fails unauthenticated even though PR #7/#8 confirm it's published for both platforms. Resolved by issue #11: expected — private-by-default catalog, not a visibility bug |
+| `20260801-161442Z` | macOS, developer machine, **already authenticated to FloxHub** | No | Stage 3b bd repackage FAIL (`tar` extraction, same cause, later root-caused/fixed in PR #15); Stage 4 logged **PASS** with "no token plumbing needed" — **contaminated**, same reason as `20260801-201328Z` below: this run's own `flox auth status` shows it was logged in, so it never tested unauthenticated access (issue #16 trap 4) |
 | `20260801-201328Z` | macOS, developer machine, **already authenticated to FloxHub** | No | Stage 3b bd repackage FAIL (`tar` extraction, unrelated); Stage 4 logged **PASS** with "no token plumbing needed" — **invalid**, see issue #11 resolution below: this run's own `flox auth status` shows it was logged in, so it never tested unauthenticated access |
 | `20260801-220017Z` | macOS, developer machine, deliberately re-authenticated for `TEST_AUTH_PLUMBING=1` | No | New **Stage 6 (Phase D' prototype) PASS** — `flox auth login --token-file` + `flox activate` against a `pkg-path` manifest (`envs/floxhub-consume`) works end to end. Stage 4's "PASS" here is contaminated for the same reason as `20260801-201328Z` and should be ignored |
 | `20260802-161922Z` | macOS, developer machine, **already authenticated to FloxHub** | No | The last run before the `tar` fix, one minute ahead of `20260802-162020Z` below and superseded by it. Stage 3b bd repackage FAIL (same `./bd` member-filter cause, root-caused in the next run). Stage 4 "PASS" is **contaminated** — logged-in machine, no auth precondition in the harness; ignore it, not an H4 data point (issue #16, trap 4) |
 | `20260802-162020Z` | macOS, developer machine, **already authenticated to FloxHub** | No | Stage 3b bd repackage FAIL, **root-caused this run**: the beads release tarball stores entries as `./bd` etc., and the build's `tar -xzf ... bd` member filter never matches that name. Fixed in `envs/repackage/.flox/env/manifest.toml` by extracting the whole archive instead of filtering a member; verified locally (`flox build --dir envs/repackage bd` now succeeds, built `bd --version` runs). Stage 4 "PASS" is contaminated for the same reason as `20260801-201328Z` — ignore it, not a new H4 data point |
+| `20260803-122518Z` | macOS, developer machine, **already authenticated to FloxHub** | No | Verifies the issue #16 open-item fix for the Stage 4 false-PASS bug: H1 + H3 all PASS; Stage 4 now correctly reports **SKIP** ("sandbox is already authenticated... not attempted") instead of the old hardcoded false PASS, because the harness now checks `flox auth status` before running show/install/search. Not a new H4/search data point — this Mac is still authenticated — but confirms the fix works |
 
 ## Current bottom line (as of the last run above)
 
@@ -52,7 +56,12 @@ and stages mean, and how to produce a new run.
   ("no packages matched"), even though the package is confirmed published
   for both `aarch64-darwin` (PR #7) and `x86_64-linux` (see
   [`floxhub-x86_64-linux-publish-20260801.md`](floxhub-x86_64-linux-publish-20260801.md)).
-  `flox search` also can't surface it unauthenticated.
+  (An earlier draft also claimed `flox search` can't surface it
+  unauthenticated — that was anecdotal from a manual check during PR #9, not
+  something the harness ever ran, and issue #16 flagged it as unverified. A
+  real `flox search ${FLOXHUB_TEST_PKG}` probe was added to Stage 4 to settle
+  it with evidence; no unauthenticated run has captured it yet — the next
+  fresh, never-authenticated sandbox run will.)
 
   **Resolved (issue #11):** SKIP is the correct, expected result — not an
   ambiguous signal. `flox publish <pkg>` with no `-o`/`--org` flag (exactly
