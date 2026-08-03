@@ -79,22 +79,21 @@ too, so the manifest can go back to covering both systems.
 
 ## What's changed since the original attempt (unblocking the two stops)
 
-1. **FloxHub auth is now available, but opt-in per workspace.** As of PR #23
-   (merged to `main`), `.conductor/settings.toml`'s `scripts.setup` will run
-   `flox auth login --token-file=- --insecure-storage` automatically **only
-   if both `FLOX_AUTOLOGIN=1` and `FLOXHUB_TOKEN` are set** in this
-   workspace's environment. The repo owner has `FLOXHUB_TOKEN` (a personal
+1. **FloxHub auth now happens automatically.** As of PR #23/#25 (both merged
+   to `main`), `.conductor/settings.toml`'s `scripts.setup` runs
+   `flox auth login --token-file=- --insecure-storage` automatically
+   whenever `FLOXHUB_TOKEN` is present in the sandbox's environment — no
+   second variable needed. The repo owner has `FLOXHUB_TOKEN` (a personal
    token) set at their Conductor **user-level** settings
    (`environment_variables.cloud`, applies to every cloud sandbox for every
-   repo), deliberately *not* gated to auto-login by itself — this is so that
-   a default fresh sandbox stays unauthenticated, since Stage 4 (H4, issue
-   #16) requires a genuinely never-authenticated sandbox to mean anything.
-   **This specific workspace needs `FLOX_AUTOLOGIN=1` set too** (e.g. in this
-   workspace's own Conductor settings, not the user-level ones) for setup to
-   actually log in. If you land in a sandbox and `flox auth status` still
-   shows not logged in, check whether `FLOX_AUTOLOGIN=1` was actually set for
-   *this* workspace before treating it as a hard blocker — that's the most
-   likely cause, not a missing credential.
+   repo), so a fresh sandbox from this repo should already be authenticated
+   by the time you start. **Accepted tradeoff, not a bug:** this means every
+   sandbox provisioned this way is permanently authenticated and can never
+   serve as Stage 4 (H4)'s never-authenticated tester — irrelevant to this
+   task, but don't be surprised if `flox auth status` shows logged in
+   immediately. If it doesn't, check `~/.conductor-setup.log` for the
+   `flox auth login` attempt and its result before treating it as a hard
+   blocker.
 2. **This is still a personal token**, not a `sanhedrin` machine token — the
    §7 decision is still open (see Background above). A personal token that's
    a member of the `sanhedrin` org with Writer access is sufficient for
@@ -119,16 +118,15 @@ too, so the manifest can go back to covering both systems.
    be logged in as a member of the `sanhedrin` org with at least Writer
    access to publish (Reader cannot publish — see
    `findings/20260803-131800Z-floxhub-token-strategy-decision-brief.md` for
-   the documented role restrictions). If not authenticated, first check
-   whether `FLOX_AUTOLOGIN=1` is actually set for this workspace (see
-   "What's changed" above) before concluding this is a hard blocker. If it's
-   set and login still didn't happen, check `~/.conductor-setup.log` for the
-   `flox auth login` attempt and its result. If genuinely no credential is
-   available after that check, this task **cannot proceed without a real
-   credential** — do not attempt to work around this by publishing to your
-   own personal catalog instead and silently relabeling it; stop, say so
-   explicitly, and hand back a note describing exactly what you found in the
-   setup log rather than improvising.
+   the documented role restrictions). If not authenticated, check
+   `~/.conductor-setup.log` for the automatic `flox auth login` attempt (see
+   "What's changed" above) and its result before concluding this is a hard
+   blocker. If genuinely no credential is available after that check, this
+   task **cannot proceed without a real credential** — do not attempt to
+   work around this by publishing to your own personal catalog instead and
+   silently relabeling it; stop, say so explicitly, and hand back a note
+   describing exactly what you found in the setup log rather than
+   improvising.
 
 3. **Inspect the build source before publishing.** Read
    `envs/repackage/.flox/env/manifest.toml` in full — as of `main`@`7276931`
@@ -198,9 +196,9 @@ too, so the manifest can go back to covering both systems.
 The `aarch64-darwin` half of this change was pushed **directly to `main`**,
 bypassing the normal PR flow, as a **deliberate one-off exception** made at
 the repo owner's explicit, in-the-moment request. That is not the default,
-and you should not treat it as license to do the same. The `FLOX_AUTOLOGIN`
-gating change (PR #23) went through the normal PR flow and was merged by the
-repo owner directly, without a successful `roborev` run — `roborev` was
+and you should not treat it as license to do the same. The auto-login
+changes (PRs #23 and #25) went through the normal PR flow and were merged by
+the repo owner directly, without a successful `roborev` run — `roborev` was
 confirmed **not installed** in that sandbox (no `roborev` git subcommand, no
 binary anywhere on `$PATH` or filesystem). If `roborev` is available in your
 sandbox, use it normally per the steps below; if it's genuinely unavailable
@@ -241,9 +239,10 @@ pushing rather than assuming you should skip it.
 - The `flox search` unauthenticated-evidence task (issue #16 §4).
 - Editing `findings/20260803-131800Z-floxhub-token-strategy-decision-brief.md`
   or issue #16 to declare any token-strategy decision made — none has been.
-- Changing the `FLOX_AUTOLOGIN`/`FLOXHUB_TOKEN` gating mechanism itself
-  (`.conductor/settings.toml`, PR #23) — if it's not working as described
-  above, report exactly what you observed rather than redesigning it.
+- Changing the `FLOXHUB_TOKEN` auto-login mechanism itself
+  (`.conductor/settings.toml`, PRs #23/#25) — if it's not working as
+  described above, report exactly what you observed rather than
+  redesigning it.
 
 ## Deliverable
 
