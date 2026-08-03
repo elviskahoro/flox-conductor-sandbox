@@ -301,23 +301,35 @@ section "Stage 4 — H4: FloxHub catalog fetch (the Phase A fork in the road)"
 if ! command -v flox >/dev/null 2>&1; then
   record "4 FloxHub fetch" "SKIP" "no flox"
 else
-  note_cmd "flox auth status (expect logged-out on a fresh sandbox)" sh -c 'flox auth status 2>&1 || true'
-  SHOW_LOG="$(mktemp)"
-  if run_logged "${SHOW_LOG}" flox show "${FLOXHUB_TEST_PKG}"; then
-    FETCH_DIR="$(mktemp -d)"
-    FETCH_LOG="$(mktemp)"
-    if (cd "${FETCH_DIR}" && flox init >/dev/null 2>&1 &&
-      flox install "${FLOXHUB_TEST_PKG}") >"${FETCH_LOG}" 2>&1; then
-      cat "${FETCH_LOG}" >>"${FULL_LOG}"
-      record "4 FloxHub fetch" "PASS" "unauthenticated install of ${FLOXHUB_TEST_PKG} works — no token plumbing needed (#445 §6 is dead code)"
-    else
-      cat "${FETCH_LOG}" >>"${FULL_LOG}"
-      note_excerpt "${FETCH_LOG}"
-      record "4 FloxHub fetch" "FAIL" "package visible but install failed — likely auth; token plumbing (#445 §6) required"
-    fi
+  AUTH_STATUS="$(flox auth status 2>&1 || true)"
+  {
+    printf '**%s** (`%s`, exit %d):\n\n```\n%s\n```\n\n' \
+      "flox auth status (expect logged-out on a fresh sandbox)" \
+      "sh -c flox auth status 2>&1 || true" 0 "${AUTH_STATUS}"
+  } >>"${BODY}"
+  printf '%s\n' "${AUTH_STATUS}" >>"${FULL_LOG}"
+
+  if printf '%s' "${AUTH_STATUS}" | grep -q '^You are logged in as '; then
+    record "4 FloxHub fetch" "SKIP" "sandbox is already authenticated to FloxHub (see auth status above) — Stage 4 only means something on a genuinely unauthenticated sandbox; show/install/search are not attempted so this run can't masquerade as an H4 data point (issue #16 trap 4)"
   else
-    note_excerpt "${SHOW_LOG}"
-    record "4 FloxHub fetch" "SKIP" "'flox show ${FLOXHUB_TEST_PKG}' failed — publish a throwaway pkg from a Mac (#445 Phase A3: flox publish from envs/repackage covers conductor-workspace-floxhub-01), then re-run with FLOXHUB_TEST_PKG=<owner>/<pkg>. NOTE: not-found here is ambiguous between 'not published' and 'published but private/auth-gated' — check which."
+    note_cmd "flox search ${FLOXHUB_TEST_PKG} (expect no results unauthenticated)" flox search "${FLOXHUB_TEST_PKG}"
+    SHOW_LOG="$(mktemp)"
+    if run_logged "${SHOW_LOG}" flox show "${FLOXHUB_TEST_PKG}"; then
+      FETCH_DIR="$(mktemp -d)"
+      FETCH_LOG="$(mktemp)"
+      if (cd "${FETCH_DIR}" && flox init >/dev/null 2>&1 &&
+        flox install "${FLOXHUB_TEST_PKG}") >"${FETCH_LOG}" 2>&1; then
+        cat "${FETCH_LOG}" >>"${FULL_LOG}"
+        record "4 FloxHub fetch" "PASS" "unauthenticated install of ${FLOXHUB_TEST_PKG} succeeded — contradicts issue #16's private-by-default catalog conclusion; re-verify before trusting"
+      else
+        cat "${FETCH_LOG}" >>"${FULL_LOG}"
+        note_excerpt "${FETCH_LOG}"
+        record "4 FloxHub fetch" "FAIL" "package visible but install failed — likely auth; token plumbing (#445 §6) required"
+      fi
+    else
+      note_excerpt "${SHOW_LOG}"
+      record "4 FloxHub fetch" "SKIP" "'flox show ${FLOXHUB_TEST_PKG}' failed unauthenticated — expected: a bare 'flox publish' is private-by-default (issue #16 §1), not ambiguous. See the flox search output above for whether the catalog is discoverable at all unauthenticated. Re-run with TEST_AUTH_PLUMBING=1 to exercise the authenticated Phase D' consumption path (Stage 6) instead."
+    fi
   fi
 fi
 
@@ -391,7 +403,7 @@ fi
   echo "# gtm-sdk#445 sandbox findings — ${STAMP}"
   echo
   echo "Harness: \`scripts/sandbox-test.sh\` @ $(git rev-parse --short HEAD 2>/dev/null || echo 'unknown rev')"
-  echo "Options: FLAKE_REPRO=${FLAKE_REPRO}, FLOXHUB_TEST_PKG=${FLOXHUB_TEST_PKG}"
+  echo "Options: FLAKE_REPRO=${FLAKE_REPRO}, FLOXHUB_TEST_PKG=${FLOXHUB_TEST_PKG}, TEST_AUTH_PLUMBING=${TEST_AUTH_PLUMBING}"
   echo
   echo "| Stage | Result | Detail |"
   echo "|---|---|---|"
