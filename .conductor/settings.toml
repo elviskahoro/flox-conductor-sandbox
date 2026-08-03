@@ -13,6 +13,22 @@ SETUP_LOG="$HOME/.conductor-setup.log"
 exec >> "$SETUP_LOG" 2>&1
 echo "=== setup started $(date -u +%FT%TZ) ==="
 
+# Auto-authenticate flox with FLOXHUB_TOKEN (set via this user's
+# ~/.conductor/settings.toml [environment_variables.cloud], not committed
+# here) so fresh sandboxes can publish/consume from FloxHub without a manual
+# `flox auth login`. --insecure-storage is required: cloud sandboxes have no
+# dbus/keyring for flox's default token storage. Never hard-fails setup.
+if [ -n "${FLOXHUB_TOKEN:-}" ]; then
+  echo "Attempting flox auth login with FLOXHUB_TOKEN from environment..."
+  if echo "$FLOXHUB_TOKEN" | flox auth login --token-file=- --insecure-storage; then
+    echo "flox auth login succeeded"
+  else
+    echo "flox auth login failed (see output above); continuing unauthenticated"
+  fi
+else
+  echo "FLOXHUB_TOKEN not set; skipping flox auth login"
+fi
+
 # The whole point of this repo: run the gtm-sdk#445 hypothesis harness on a
 # fresh sandbox. It never hard-fails; findings land in findings/report-*.md.
 bash scripts/sandbox-test.sh
