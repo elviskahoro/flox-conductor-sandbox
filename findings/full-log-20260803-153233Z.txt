@@ -1,0 +1,90 @@
+Linux 6.12.76 x86_64
+NAME="Amazon Linux"
+VERSION="2023"
+
+build-users-group =
+include flox.conf
+no nixbld group
+lrwxrwxrwx 1 root root 13 Aug  3 15:05 /dev/fd -> /proc/self/fd
+absent (good)
+srw-rw-rw- 1 root root 0 Aug  3 15:05 /nix/var/nix/daemon-socket/socket
+/usr/bin/flox
+/usr/bin/nix
+==> [0 fingerprint] PASS — recorded (see report body)
+1.14.0
+
+build-users-group =
+include flox.conf
+==> [1 flox bootstrap] PASS — flox installed and responding (0s)
+$ flox activate --dir /home/vercel-sandbox/workspace/envs/prebuilt --mode run -- true
+==> [2 H1 prebuilt activate] PASS — all 5 tools resolve under .flox/run and execute (0s)
+$ flox build --dir /home/vercel-sandbox/workspace/envs/repackage conductor-workspace-floxhub-01
+Rendering conductor-workspace-floxhub-01 build script to /tmp/05fbb2a4/conductor-workspace-floxhub-01/build.bash
+Building conductor-workspace-floxhub-01-0.0.1 in local mode
+[36m00:00:00.001632 [0m[1m[33m+ mkdir -p /tmp/store_7570ff8611ca3dc406fcbad7ae1ff2f4-conductor-workspace-floxhub-01-0.0.1/bin[0m
+[36m00:00:00.003616 [0m[1m[33m+ echo '#!/usr/bin/env bash'[0m
+[36m00:00:00.003650 [0m[1m[33m+ echo 'echo "hello from a flox-built package (gtm-sdk#445 preflight)"'[0m
+[36m00:00:00.003650 [0m[1m[33m+ chmod +x /tmp/store_7570ff8611ca3dc406fcbad7ae1ff2f4-conductor-workspace-floxhub-01-0.0.1/bin/conductor-workspace-floxhub-01[0m
+2 blocks
+Completed build of conductor-workspace-floxhub-01-0.0.1 in local mode
+
+⚡︎ Built output: /home/vercel-sandbox/workspace/envs/repackage/result-conductor-workspace-floxhub-01
+==> [3a hello build] PASS — trivial no-network build + run OK (2s)
+$ flox build --dir /home/vercel-sandbox/workspace/envs/repackage bd
+Rendering bd build script to /tmp/05fbb2a4/bd/build.bash
+Building bd-1.1.2 in local mode
+[36m00:00:00.001595 [0m[1m[33m+ set -euo pipefail[0m
+[36m00:00:00.001599 [0m[1m[33m+ version=1.1.2[0m
+[36m00:00:00.001654 [0m[1m[33m+ case "$(uname -s)-$(uname -m)" in[0m
+[36m00:00:00.001868 [0m[1m[33m++ uname -s[0m
+[36m00:00:00.003209 [0m[1m[33m++ uname -m[0m
+[36m00:00:00.004373 [0m[1m[33m+ asset=beads_1.1.2_linux_amd64.tar.gz[0m
+[36m00:00:00.004373 [0m[1m[33m+ sha256=a72d71ed374955dc9f83a0f90b54bd7b6a0016709dd1676ae2e368651ed401c2[0m
+[36m00:00:00.004405 [0m[1m[33m+ '[' -z /etc/ssl/certs/ca-certificates.crt ']'[0m
+[36m00:00:00.004614 [0m[1m[33m++ mktemp -d[0m
+[36m00:00:00.006042 [0m[1m[33m+ tmp=/tmp/tmp.N0zdpDDIkD[0m
+[36m00:00:00.006058 [0m[1m[33m+ trap 'rm -rf "${tmp}"' EXIT[0m
+[36m00:00:00.006098 [0m[1m[33m+ curl -fsSL -o /tmp/tmp.N0zdpDDIkD/beads_1.1.2_linux_amd64.tar.gz https://github.com/gastownhall/beads/releases/download/v1.1.2/beads_1.1.2_linux_amd64.tar.gz[0m
+[36m00:00:00.299030 [0m[1m[33m+ echo 'a72d71ed374955dc9f83a0f90b54bd7b6a0016709dd1676ae2e368651ed401c2  /tmp/tmp.N0zdpDDIkD/beads_1.1.2_linux_amd64.tar.gz'[0m
+[36m00:00:00.299109 [0m[1m[33m+ sha256sum --check -[0m
+[36m00:00:00.511036 [0m/tmp/tmp.N0zdpDDIkD/beads_1.1.2_linux_amd64.tar.gz: OK[0m
+[36m00:00:00.511331 [0m[1m[33m+ tar -xzf /tmp/tmp.N0zdpDDIkD/beads_1.1.2_linux_amd64.tar.gz -C /tmp/tmp.N0zdpDDIkD[0m
+[36m00:00:01.104331 [0m[1m[33m+ mkdir -p /tmp/store_bfae0213bb54829fd5f7eea2fc0bd5b6-bd-1.1.2/bin[0m
+[36m00:00:01.105697 [0m[1m[33m+ install -m755 /tmp/tmp.N0zdpDDIkD/bd /tmp/store_bfae0213bb54829fd5f7eea2fc0bd5b6-bd-1.1.2/bin/bd[0m
+[36m00:00:01.177779 [0m[1m[33m+ rm -rf /tmp/tmp.N0zdpDDIkD[0m
+279808 blocks
+Completed build of bd-1.1.2 in local mode
+
+⚡︎ Built output: /home/vercel-sandbox/workspace/envs/repackage/result-bd
+==> [3b bd repackage build] PASS — built + `bd version` → bd version 1.1.2 (20e493e56: HEAD@20e493e569c9) (3s)
+==> [3c bd flag surface] PASS — all conductor-workspace-setup.sh flags present on v1.1.2
+! You are not currently logged in to FloxHub.
+✘ ERROR: No packages matched this search term: 'elvis/conductor-workspace-floxhub-01'
+$ flox show elvis/conductor-workspace-floxhub-01
+✘ ERROR: no packages matched this pkg-path: 'elvis/conductor-workspace-floxhub-01'
+==> [4 FloxHub fetch] SKIP — 'flox show elvis/conductor-workspace-floxhub-01' failed unauthenticated — expected: a bare 'flox publish' is private-by-default (issue #16 §1), not ambiguous. See the flox search output above for whether the catalog is discoverable at all unauthenticated. Re-run with TEST_AUTH_PLUMBING=1 to exercise the authenticated Phase D' consumption path (Stage 6) instead.
+==> [5 H2 flake repro] SKIP — opt-in: re-run with FLAKE_REPRO=1 (costs a doomed Go build, ~minutes)
+==> [6 auth plumbing] SKIP — opt-in: re-run with TEST_AUTH_PLUMBING=1 FLOXHUB_TOKEN=<token> (permanently authenticates this sandbox — never run on the one testing Stage 4)
+$ bash /home/vercel-sandbox/workspace/scripts/floxhub-provision.sh
+✔ Authentication complete
+✔ Logged in as elvis
+! Credential stored in plain text at '/home/vercel-sandbox/.config/flox/flox.toml'.
+No OS keyring is available.
+You are logged in as elvis on https://hub.flox.dev/
+! Credential stored in plain text at '/home/vercel-sandbox/.config/flox/flox.toml'.
+==> [7 floxhub provision MVP] PASS — all 7 tools (catalog tools + real bd/roborev packages) resolve under .flox/run and execute (4s)
+
+Report: findings/report-20260803-153233Z.md
+Full log: findings/full-log-20260803-153233Z.txt
+
+| Stage | Result | Detail |
+| 0 fingerprint | **PASS** | recorded (see report body) |
+| 1 flox bootstrap | **PASS** | flox installed and responding (0s) |
+| 2 H1 prebuilt activate | **PASS** | all 5 tools resolve under .flox/run and execute (0s) |
+| 3a hello build | **PASS** | trivial no-network build + run OK (2s) |
+| 3b bd repackage build | **PASS** | built + `bd version` → bd version 1.1.2 (20e493e56: HEAD@20e493e569c9) (3s) |
+| 3c bd flag surface | **PASS** | all conductor-workspace-setup.sh flags present on v1.1.2 |
+| 4 FloxHub fetch | **SKIP** | 'flox show elvis/conductor-workspace-floxhub-01' failed unauthenticated — expected: a bare 'flox publish' is private-by-default (issue #16 §1), not ambiguous. See the flox search output above for whether the catalog is discoverable at all unauthenticated. Re-run with TEST_AUTH_PLUMBING=1 to exercise the authenticated Phase D' consumption path (Stage 6) instead. |
+| 5 H2 flake repro | **SKIP** | opt-in: re-run with FLAKE_REPRO=1 (costs a doomed Go build, ~minutes) |
+| 6 auth plumbing | **SKIP** | opt-in: re-run with TEST_AUTH_PLUMBING=1 FLOXHUB_TOKEN=<token> (permanently authenticates this sandbox — never run on the one testing Stage 4) |
+| 7 floxhub provision MVP | **PASS** | all 7 tools (catalog tools + real bd/roborev packages) resolve under .flox/run and execute (4s) |
