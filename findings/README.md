@@ -37,6 +37,7 @@ and stages mean, and how to produce a new run.
 | `20260803-122518Z` | macOS, developer machine, **already authenticated to FloxHub** | No | Verifies the issue #16 open-item fix for the Stage 4 false-PASS bug: H1 + H3 all PASS; Stage 4 now correctly reports **SKIP** ("sandbox is already authenticated... not attempted") instead of the old hardcoded false PASS, because the harness now checks `flox auth status` before running show/install/search. Not a new H4/search data point — this Mac is still authenticated — but confirms the fix works |
 | `20260803-131301Z` | macOS (Conductor `belgrade` workspace), **already authenticated to FloxHub** | No | Automatic provisioning run (`.conductor/settings.toml`), pre-dates the Phase D MVP work (issue #16 §9). H1 + H3 (all sub-stages) PASS; Stage 4 correctly SKIPs (already-authenticated, same as `20260803-122518Z`) |
 | `20260803-134541Z` | macOS (Conductor `belgrade` workspace), deliberately re-authenticated for `TEST_FLOXHUB_PROVISION=1` | No | New **Stage 7 (Phase D MVP) PASS** — `scripts/floxhub-provision.sh` (Infisical-first token lookup, falls back to `FLOXHUB_TOKEN`; `flox auth login --token-file` via `scripts/floxhub-login.sh`; `flox activate` against the combined `envs/floxhub-provision` manifest) resolves and runs all 7 tools (`uv`, `dolt`, `infisical`, `gh`, `git`, `bd` 1.1.2, `roborev` 0.63.0) under `.flox/run/.../bin`. Token confirmed absent from both the report and full log (grepped before committing). Only proven on `aarch64-darwin` so far — `elvis/bd`/`elvis/roborev` aren't yet published for Linux (tracked as an open follow-up, same shape as the original package's PR #7/#8 split). Stage 4's "SKIP" here is the expected already-authenticated result, not a new H4 data point |
+| `20260803-144830Z` | Amazon Linux 2023 / Vercel / Conductor cloud, genuinely never authenticated to FloxHub (`FLOXHUB_AUTOLOGIN` not set) | **Yes** | H1 + H3 (all sub-stages) PASS; **first real `flox search` unauthenticated data point (PR #19's probe, finally exercised)**: `flox search elvis/conductor-workspace-floxhub-01` → exit 1, `✘ ERROR: No packages matched this search term: 'elvis/conductor-workspace-floxhub-01'`. `flox show` on the same package → exit 1, `✘ ERROR: no packages matched this pkg-path: 'elvis/conductor-workspace-floxhub-01'`. **Search and show agree** — both fail explicitly and unambiguously, no silent-empty/exit-0 divergence. Stage 4 still correctly records SKIP (not PASS/FAIL), per issue #11's resolution |
 
 ## Current bottom line (as of the last run above)
 
@@ -62,8 +63,16 @@ and stages mean, and how to produce a new run.
   unauthenticated — that was anecdotal from a manual check during PR #9, not
   something the harness ever ran, and issue #16 flagged it as unverified. A
   real `flox search ${FLOXHUB_TEST_PKG}` probe was added to Stage 4 to settle
-  it with evidence; no unauthenticated run has captured it yet — the next
-  fresh, never-authenticated sandbox run will.)
+  it with evidence, and run `20260803-144830Z` — on a genuinely fresh, never-
+  authenticated Amazon Linux 2023 / Vercel / Conductor cloud sandbox —
+  finally exercised it: `flox search elvis/conductor-workspace-floxhub-01`
+  exits 1 with `✘ ERROR: No packages matched this search term:
+  'elvis/conductor-workspace-floxhub-01'`, and `flox show` on the same
+  package exits 1 with `✘ ERROR: no packages matched this pkg-path:
+  'elvis/conductor-workspace-floxhub-01'`. **`flox search` and `flox show`
+  agree** — both fail explicitly and unambiguously (nonzero exit, explicit
+  "no match" error text), not a silent-empty-result vs. explicit-error
+  divergence. The anecdote is now confirmed by evidence.)
 
   **Resolved (issue #11):** SKIP is the correct, expected result — not an
   ambiguous signal. `flox publish <pkg>` with no `-o`/`--org` flag (exactly
