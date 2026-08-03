@@ -38,6 +38,8 @@ and stages mean, and how to produce a new run.
 | `20260803-131301Z` | macOS (Conductor `belgrade` workspace), **already authenticated to FloxHub** | No | Automatic provisioning run (`.conductor/settings.toml`), pre-dates the Phase D MVP work (issue #16 §9). H1 + H3 (all sub-stages) PASS; Stage 4 correctly SKIPs (already-authenticated, same as `20260803-122518Z`) |
 | `20260803-134541Z` | macOS (Conductor `belgrade` workspace), deliberately re-authenticated for `TEST_FLOXHUB_PROVISION=1` | No | New **Stage 7 (Phase D MVP) PASS** — `scripts/floxhub-provision.sh` (Infisical-first token lookup, falls back to `FLOXHUB_TOKEN`; `flox auth login --token-file` via `scripts/floxhub-login.sh`; `flox activate` against the combined `envs/floxhub-provision` manifest) resolves and runs all 7 tools (`uv`, `dolt`, `infisical`, `gh`, `git`, `bd` 1.1.2, `roborev` 0.63.0) under `.flox/run/.../bin`. Token confirmed absent from both the report and full log (grepped before committing). Only proven on `aarch64-darwin` so far — `elvis/bd`/`elvis/roborev` aren't yet published for Linux (tracked as an open follow-up, same shape as the original package's PR #7/#8 split). Stage 4's "SKIP" here is the expected already-authenticated result, not a new H4 data point |
 | `20260803-144830Z` | Amazon Linux 2023 / Vercel / Conductor cloud, genuinely never authenticated to FloxHub (`FLOXHUB_AUTOLOGIN` not set) | **Yes** | H1 + H3 (all sub-stages) PASS; **first real `flox search` unauthenticated data point (PR #19's probe, finally exercised)**: `flox search elvis/conductor-workspace-floxhub-01` → exit 1, `✘ ERROR: No packages matched this search term: 'elvis/conductor-workspace-floxhub-01'`. `flox show` on the same package → exit 1, `✘ ERROR: no packages matched this pkg-path: 'elvis/conductor-workspace-floxhub-01'`. **Search and show agree** — both fail explicitly and unambiguously, no silent-empty/exit-0 divergence. Stage 4 still correctly records SKIP (not PASS/FAIL), per issue #11's resolution |
+| `20260803-150536Z` | Amazon Linux 2023 / Vercel / Conductor cloud | **Yes** | Automatic provisioning run (`.conductor/settings.toml`), genuinely never authenticated (`flox auth status`: logged-out). H1 + H3 (all sub-stages) PASS; Stage 4 correctly SKIPs unauthenticated. Committed just before the deliberate Stage 7 re-run below on this same sandbox |
+| `20260803-153233Z` | Same Amazon Linux 2023 / Vercel / Conductor cloud sandbox, deliberately re-authenticated for `TEST_FLOXHUB_PROVISION=1` | **Yes** | **Stage 7 (Phase D MVP) PASS on the real target class** — closes the gap left by `20260803-134541Z` (macOS-only). `scripts/floxhub-provision.sh` resolves and runs all 7 tools (`uv`, `dolt`, `infisical`, `gh`, `git`, `bd` 1.1.2, `roborev` 0.63.0) under `envs/floxhub-provision/.flox/run/x86_64-linux.floxhub-provision-run/bin`. Token confirmed absent from both the report and full log (grepped before committing). Stage 4's SKIP in this same run was captured before Stage 7's auth side effect, so it's not contaminated |
 
 ## Current bottom line (as of the last run above)
 
@@ -119,10 +121,13 @@ and stages mean, and how to produce a new run.
   manifest (the 5 catalog tools + both), and a real setup script
   (`scripts/floxhub-provision.sh`, Infisical-first token acquisition).
   Run `20260803-134541Z`: **PASS** — all 7 tools resolve under
-  `.flox/run/.../bin`. **Known gap:** `elvis/bd`/`elvis/roborev` are only
-  published for `aarch64-darwin` so far (same trap 6 as the original
-  package); a Linux publish is still needed before this proves out on the
-  actual Conductor cloud target class.
+  `.flox/run/.../bin`, but only proven on `aarch64-darwin` at the time.
+  Commit `da731ee` closed that gap by publishing `elvis/bd`/`elvis/roborev`
+  for `x86_64-linux` too, and run `20260803-153233Z` validated it
+  end-to-end on the actual Amazon Linux 2023 / Vercel / Conductor cloud
+  target class: **PASS**, same 7 tools resolving, genuinely
+  never-before-authenticated sandbox. Phase D MVP (issue #16 §9) is now
+  validated on the real target class, not just macOS.
 - Nothing from the original hypothesis set is still unexplained. The macOS
   `tar` extraction failure that was open for four runs is root-caused and
   fixed (see the H3 bullet above). Remaining work is tracked as the open-items
