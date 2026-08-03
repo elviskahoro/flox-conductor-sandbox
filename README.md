@@ -169,9 +169,9 @@ Issue #16 §9's Phase D MVP goes one step further: prove the *actual*
 recipe `gtm-sdk/scripts/conductor-workspace-setup.sh` needs — the 5
 catalog tools plus real `bd`/`roborev` packages, obtained via one script
 rather than assembled by hand in the harness. `scripts/floxhub-provision.sh`
-is that script (token → `flox auth login` → `flox activate` against
-`envs/floxhub-provision`), and Stage 7 of `scripts/sandbox-test.sh` runs it
-and verifies all 7 tools, opt-in only, same reasoning as Stage 6:
+is that script (token → `flox activate` against `envs/floxhub-provision`),
+and Stage 7 of `scripts/sandbox-test.sh` runs it and verifies all 7 tools,
+opt-in only, same reasoning as Stage 6:
 
 ```bash
 TOKEN="$(flox auth token)"   # run on an already-authenticated machine
@@ -183,10 +183,18 @@ FLOXHUB_TOKEN="${TOKEN}" bash scripts/floxhub-provision.sh
 `scripts/floxhub-provision.sh` tries Infisical first (`infisical secrets
 get FLOXHUB_TOKEN --plain`, secret name overridable via
 `FLOXHUB_TOKEN_SECRET_NAME`) before falling back to a `FLOXHUB_TOKEN` env
-var already set — no interactive fallback either way. **Known gap:**
-`elvis/bd`/`elvis/roborev` are so far only published for `aarch64-darwin`
-(see [Known scope reductions](#known-scope-reductions)); Stage 7 currently
-only PASSes there.
+var already set — no interactive fallback either way. The resolved token is
+exported as `FLOX_FLOXHUB_TOKEN` and read directly by `flox activate` —
+Flox's own documented CI pattern
+([flox.dev/docs/tutorials/ci-cd](https://flox.dev/docs/tutorials/ci-cd)).
+No `flox auth login` step, no credential written to the keyring or to disk:
+confirmed working from a completely fresh, never-authenticated `$HOME`.
+Flox's docs recommend backing this with a dedicated low-privilege FloxHub
+service account rather than a real person's token, to keep CI blast radius
+scoped to read/install only. **Known gap:** `elvis/bd`/`elvis/roborev` are
+so far only published for `aarch64-darwin` and `x86_64-linux` (see [Known
+scope reductions](#known-scope-reductions)); Stage 7 doesn't yet PASS on
+`aarch64-linux`.
 
 ## Interpreting outcomes
 
