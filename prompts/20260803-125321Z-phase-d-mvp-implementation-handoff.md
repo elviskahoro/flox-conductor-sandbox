@@ -62,6 +62,23 @@ you're building now — **entirely inside this repo**, not in `gtm-sdk`.
    script **is** the recipe eventually meant for
    `gtm-sdk/scripts/conductor-workspace-setup.sh` — you're proving it here
    first (§8), not porting it there now.
+   - **Token handling is not optional, match `scripts/floxhub-login.sh`'s
+     existing discipline exactly**: write the token to a `mktemp` file created
+     under `umask 077` (or `chmod 600` immediately after creation), `trap` its
+     removal on exit (including on error paths — a token file must never
+     survive the script), and never `echo`/log the token value itself. Any
+     validation output this script or step 6 produces (findings docs, full
+     logs, terminal output you paste into a PR) must have the token redacted —
+     treat it with the same care a leaked credential would deserve, because it
+     is one.
+   - **Resolve paths from the script's own location, not the caller's cwd**,
+     the same way `scripts/sandbox-test.sh` does
+     (`SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"`, then derive `REPO_ROOT`
+     from that). Invoke `flox activate` with an explicit `--dir
+     "${REPO_ROOT}/envs/<whatever step 2 built>"` — never rely on the
+     manifest being resolved relative to wherever the script happened to be
+     invoked from, since a script run from an unexpected directory must not
+     silently activate the wrong (or no) environment.
 4. **Wire it into an opt-in-only provisioning path.** This is the one
    non-negotiable rule, inherited directly from `scripts/floxhub-login.sh`'s
    existing header comment: **never** wire this into
