@@ -48,6 +48,7 @@ definitive count, not this sentence; for the narrative writeup, see
 | 4 | **H4 (the fork in the road):** an unauthenticated sandbox can fetch a package from a project-controlled FloxHub catalog (`flox install <owner>/<pkg>`) | Phase A preflight — decides whether token plumbing (§6) is needed | **SKIP** — resolved (#11): expected. Bare `flox publish` is private-by-default; §6 token plumbing is needed |
 | 5 | **H2 (control, opt-in):** the `bd.flake = "github:gastownhall/beads/v1.1.0"` source build reproduces the `/homeless-shelter` purity failure on this sandbox, confirming root-cause attribution | "Problem" section repro | **PASS** — target class confirmed to share the defect |
 | 6 | **Phase D' prototype (opt-in):** an authenticated sandbox (`scripts/floxhub-login.sh`) can `flox activate` a manifest whose `[install]` references the published `pkg-path` (`envs/floxhub-consume`) — the real gtm-sdk consumption pattern, not Stage 4's ad hoc `flox install` | #445 §6 — proves the auth-token recipe before porting it to gtm-sdk | opt-in, not yet run by default |
+| 7 | **Phase D MVP (opt-in):** `scripts/floxhub-provision.sh` (token → `flox auth login` → `flox activate`) against `envs/floxhub-provision`, a *combined* manifest — the same 5 catalog tools plus real `elvis/bd`/`elvis/roborev` packages published from `envs/repackage`, not Stage 6's trivial smoke package | #445 §9 — the actual recipe for `gtm-sdk/scripts/conductor-workspace-setup.sh`, proven here first | opt-in, PASS on `aarch64-darwin`; `elvis/bd`/`elvis/roborev` not yet published for Linux (see [Known scope reductions](#known-scope-reductions)) |
 
 ## Layout
 
@@ -56,7 +57,9 @@ envs/prebuilt/        H1: gtm-sdk's five catalog packages, zero flake pins
 envs/repackage/       H3: [build.conductor-workspace-floxhub-01] + [build.bd] (upstream-binary repackage)
 envs/flake-repro/     H2: the failing bd flake pin, nothing else (opt-in stage)
 envs/floxhub-consume/ Phase D' prototype: [install] pkg-path = "elvis/conductor-workspace-floxhub-01" (opt-in stage 6, needs auth)
+envs/floxhub-provision/ Phase D MVP: [install] the 5 catalog tools + elvis/bd + elvis/roborev (opt-in stage 7, needs auth)
 scripts/sandbox-test.sh   the harness — runs all stages, never hard-fails
+scripts/floxhub-provision.sh  Phase D MVP setup-script recipe (token → login → activate envs/floxhub-provision)
 findings/          harness output: report-*.md (summary + evidence) and full-log-*.txt
                    — see findings/README.md for a run-by-run index
 ```
@@ -85,6 +88,7 @@ bash scripts/sandbox-test.sh                      # stages 0–4
 FLAKE_REPRO=1 bash scripts/sandbox-test.sh        # also run the H2 failure repro (slow: real Go build attempt)
 FLOXHUB_TEST_PKG=elvis/conductor-workspace-floxhub-01 bash scripts/sandbox-test.sh  # (default shown)
 TEST_AUTH_PLUMBING=1 FLOXHUB_TOKEN=<token> bash scripts/sandbox-test.sh  # opt-in Phase D' prototype (stage 6) — permanently authenticates this sandbox
+TEST_FLOXHUB_PROVISION=1 FLOXHUB_TOKEN=<token> bash scripts/sandbox-test.sh  # opt-in Phase D MVP (stage 7) — permanently authenticates this sandbox
 ```
 
 The harness writes `findings/report-<UTC timestamp>.md` with a PASS/FAIL/SKIP
@@ -151,6 +155,32 @@ hand-copied value — see this repo's parent secrets-management convention)
 → `flox auth login --token-file=...` → `flox activate` against a manifest
 that lists the FloxHub `pkg-path`.
 
+### Prototyping the full MVP (Phase D, opt-in, manual only)
+
+Stage 6 proves the auth-token *mechanism* with a single trivial package.
+Issue #16 §9's Phase D MVP goes one step further: prove the *actual*
+recipe `gtm-sdk/scripts/conductor-workspace-setup.sh` needs — the 5
+catalog tools plus real `bd`/`roborev` packages, obtained via one script
+rather than assembled by hand in the harness. `scripts/floxhub-provision.sh`
+is that script (token → `flox auth login` → `flox activate` against
+`envs/floxhub-provision`), and Stage 7 of `scripts/sandbox-test.sh` runs it
+and verifies all 7 tools, opt-in only, same reasoning as Stage 6:
+
+```bash
+TOKEN="$(flox auth token)"   # run on an already-authenticated machine
+TEST_FLOXHUB_PROVISION=1 FLOXHUB_TOKEN="${TOKEN}" bash scripts/sandbox-test.sh
+# or, standalone, without the harness:
+FLOXHUB_TOKEN="${TOKEN}" bash scripts/floxhub-provision.sh
+```
+
+`scripts/floxhub-provision.sh` tries Infisical first (`infisical secrets
+get FLOXHUB_TOKEN --plain`, secret name overridable via
+`FLOXHUB_TOKEN_SECRET_NAME`) before falling back to a `FLOXHUB_TOKEN` env
+var already set — no interactive fallback either way. **Known gap:**
+`elvis/bd`/`elvis/roborev` are so far only published for `aarch64-darwin`
+(see [Known scope reductions](#known-scope-reductions)); Stage 7 currently
+only PASSes there.
+
 ## Interpreting outcomes
 
 - **Stage 2 PASS** → #445's central claim holds: remove the flake pins and the
@@ -189,14 +219,27 @@ that lists the FloxHub `pkg-path`.
   `gtm-sdk/scripts/conductor-workspace-setup.sh`. A FAIL here means the
   recipe itself needs rework before porting, not just the visibility
   conclusion from Stage 4.
+- **Stage 7 PASS (opt-in)** = the Phase D MVP setup script
+  (`scripts/floxhub-provision.sh`) works end-to-end against the *combined*
+  manifest (5 catalog tools + real `elvis/bd`/`elvis/roborev`), not just
+  Stage 6's single trivial package — this is the actual recipe issue #16 §9
+  scopes for `gtm-sdk/scripts/conductor-workspace-setup.sh`. Currently only
+  PASSes on `aarch64-darwin`, since `elvis/bd`/`elvis/roborev` aren't yet
+  published for Linux (see Known scope reductions below) — a FAIL/SKIP on a
+  Linux sandbox right now means that, not a recipe defect.
 
 ## Known scope reductions
 
-- `roborev` is omitted: same mechanism as `bd` (Go flake pin → repackaged
-  release binary), so one tool proves the path. The repackage build's shape
-  transfers 1:1.
-- No DoltHub/beads-DB bootstrap, no Infisical secrets, no uv sync — tool
-  *provisioning* is the only thing under test.
+- **`elvis/bd` and `elvis/roborev` are only published for `aarch64-darwin`
+  so far** (issue #16 §9). `flox publish` only publishes the host's own
+  system (trap 6) — the original throwaway package needed a separate Mac
+  publish (PR #7) and Linux publish (PR #8) for the same reason; the same
+  follow-up is still needed here before Stage 7 / `envs/floxhub-provision`
+  work on the actual `x86_64-linux` Conductor cloud target class.
+- No DoltHub/beads-DB bootstrap, no uv sync — tool *provisioning* is the
+  main thing under test (Stage 7 does exercise real Infisical-first token
+  acquisition in `scripts/floxhub-provision.sh`, but doesn't bootstrap any
+  Infisical secrets beyond that one lookup).
 - The repackage env carries `curl`/`gnutar`/`gzip`/`coreutils`/`cacert` as
   build-time deps because `sandbox = "off"` builds run inside the activated
   env. If gtm-sdk adopts this shape, those deps land in whatever env hosts

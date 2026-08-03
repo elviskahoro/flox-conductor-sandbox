@@ -23,6 +23,13 @@
 #      into .conductor/settings.toml's default path, same as
 #      floxhub-login.sh itself: authenticating a sandbox must stay opt-in so
 #      Stage 4 can keep testing genuinely unauthenticated sandboxes.
+#   7  Phase D MVP: opt-in (TEST_FLOXHUB_PROVISION=1) — run
+#      scripts/floxhub-provision.sh (obtain a token, authenticate, activate
+#      envs/floxhub-provision), then verify all 7 tools (the 5 catalog
+#      tools + real bd/roborev packages, not Stage 6's trivial smoke
+#      package) resolve and run. A separate opt-in gate from Stage 6's, so
+#      the minimal auth-mechanism prototype and the full MVP can be run
+#      independently. Same NEVER-wired-into-provisioning rule as Stage 6.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -34,6 +41,7 @@ FLOXHUB_TEST_PKG="${FLOXHUB_TEST_PKG:-elvis/conductor-workspace-floxhub-01}"
 FLAKE_REPRO="${FLAKE_REPRO:-0}"
 FLAKE_REPRO_TIMEOUT="${FLAKE_REPRO_TIMEOUT:-1800}"
 TEST_AUTH_PLUMBING="${TEST_AUTH_PLUMBING:-0}"
+TEST_FLOXHUB_PROVISION="${TEST_FLOXHUB_PROVISION:-0}"
 
 STAMP="$(date -u +%Y%m%d-%H%M%SZ)"
 mkdir -p findings
@@ -397,13 +405,74 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Stage 7 (opt-in): Phase D MVP — combined bd+roborev+catalog provisioning
+# ---------------------------------------------------------------------------
+section "Stage 7 — Phase D MVP: combined FloxHub provisioning (bd + roborev + catalog tools)"
+if [[ ${TEST_FLOXHUB_PROVISION} != 1 ]]; then
+  record "7 floxhub provision MVP" "SKIP" "opt-in: re-run with TEST_FLOXHUB_PROVISION=1 FLOXHUB_TOKEN=<token> (permanently authenticates this sandbox — never run on the one testing Stage 4)"
+elif ! command -v flox >/dev/null 2>&1; then
+  record "7 floxhub provision MVP" "SKIP" "no flox"
+else
+  STAGE7_START=$(date +%s)
+  PROVISION_LOG="$(mktemp)"
+  if run_logged "${PROVISION_LOG}" bash "${SCRIPT_DIR}/floxhub-provision.sh"; then
+    DUR7="$(elapsed "${STAGE7_START}")"
+    SYSTEM7="$(uname -m | sed s/arm64/aarch64/)-$(uname -s | tr '[:upper:]' '[:lower:]')"
+    FLOX_BIN7="${REPO_ROOT}/envs/floxhub-provision/.flox/run/${SYSTEM7}.floxhub-provision-run/bin"
+    if [[ ! -d ${FLOX_BIN7} ]]; then
+      # Fall back to a glob in case flox's run-dir naming differs.
+      for d in "${REPO_ROOT}/envs/floxhub-provision/.flox/run/"*"/bin"; do
+        [[ -d "${d}" ]] && FLOX_BIN7="${d}" && break
+      done
+    fi
+    if [[ -d ${FLOX_BIN7} ]]; then
+      note "floxhub-provision.sh succeeded in ${DUR7}; FLOX_BIN: \`${FLOX_BIN7}\`."
+      TOOL_FAILURES7=0
+      OLD_PATH7="${PATH}"
+      export PATH="${FLOX_BIN7}:${PATH}"
+      while read -r tool version_flag; do
+        tool_path="$(command -v "${tool}" || true)"
+        if [[ ${tool_path} != "${FLOX_BIN7}"/* ]]; then
+          note "- \`${tool}\`: FAIL — resolved to \`${tool_path:-<missing>}\`, not under FLOX_BIN"
+          TOOL_FAILURES7=$((TOOL_FAILURES7 + 1))
+        elif ! out="$("${tool}" "${version_flag}" 2>&1)"; then
+          note "- \`${tool}\`: FAIL — found under FLOX_BIN but \`${tool} ${version_flag}\` errored: ${out}"
+          TOOL_FAILURES7=$((TOOL_FAILURES7 + 1))
+        else
+          note "- \`${tool}\`: OK — $(printf '%s' "${out}" | head -1)"
+        fi
+      done <<'EOF'
+uv --version
+dolt version
+infisical --version
+gh --version
+git --version
+bd version
+roborev version
+EOF
+      export PATH="${OLD_PATH7}"
+      if [[ ${TOOL_FAILURES7} == 0 ]]; then
+        record "7 floxhub provision MVP" "PASS" "all 7 tools (catalog tools + real bd/roborev packages) resolve under .flox/run and execute (${DUR7})"
+      else
+        record "7 floxhub provision MVP" "FAIL" "floxhub-provision.sh succeeded but ${TOOL_FAILURES7} tool(s) failed verification"
+      fi
+    else
+      record "7 floxhub provision MVP" "FAIL" "floxhub-provision.sh succeeded but no run bin dir found"
+    fi
+  else
+    note_excerpt "${PROVISION_LOG}"
+    record "7 floxhub provision MVP" "FAIL" "scripts/floxhub-provision.sh failed — see body (likely FLOXHUB_TOKEN unset/invalid, or elvis/bd|elvis/roborev not yet published for this system — see envs/floxhub-provision/.flox/env/manifest.toml)"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # Compose the report
 # ---------------------------------------------------------------------------
 {
   echo "# gtm-sdk#445 sandbox findings — ${STAMP}"
   echo
   echo "Harness: \`scripts/sandbox-test.sh\` @ $(git rev-parse --short HEAD 2>/dev/null || echo 'unknown rev')"
-  echo "Options: FLAKE_REPRO=${FLAKE_REPRO}, FLOXHUB_TEST_PKG=${FLOXHUB_TEST_PKG}, TEST_AUTH_PLUMBING=${TEST_AUTH_PLUMBING}"
+  echo "Options: FLAKE_REPRO=${FLAKE_REPRO}, FLOXHUB_TEST_PKG=${FLOXHUB_TEST_PKG}, TEST_AUTH_PLUMBING=${TEST_AUTH_PLUMBING}, TEST_FLOXHUB_PROVISION=${TEST_FLOXHUB_PROVISION}"
   echo
   echo "| Stage | Result | Detail |"
   echo "|---|---|---|"
