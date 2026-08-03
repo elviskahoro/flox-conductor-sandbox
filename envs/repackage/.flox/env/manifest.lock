@@ -37,6 +37,12 @@
         "command": "  mkdir -p \"$out/bin\"\n  {\n    echo '#!/usr/bin/env bash'\n    echo 'echo \"hello from a flox-built package (gtm-sdk#445 preflight)\"'\n  } > \"$out/bin/conductor-workspace-floxhub-01\"\n  chmod +x \"$out/bin/conductor-workspace-floxhub-01\"\n",
         "version": "0.0.1",
         "description": "Trivial flox build smoke test (gtm-sdk#445 preflight)"
+      },
+      "roborev": {
+        "command": "  set -euo pipefail\n  version=\"0.63.0\"\n  case \"$(uname -s)-$(uname -m)\" in\n    Linux-x86_64)\n      asset=\"roborev_${version}_linux_amd64.tar.gz\"\n      sha256=\"c7dbbefed91747b80d04498358fa0207880adb7e2b57c95677214195a3ece887\"\n      ;;\n    Linux-aarch64)\n      asset=\"roborev_${version}_linux_arm64.tar.gz\"\n      sha256=\"bcb1e96d13efb903a80f965581c23bcf8e6d39a92ded01bf8ee61a2e9e18fe71\"\n      ;;\n    Darwin-arm64)\n      asset=\"roborev_${version}_darwin_arm64.tar.gz\"\n      sha256=\"696161b785d5bf45f635af993c4a32334c545a5d8747e41213356d33fe2fd5e1\"\n      ;;\n    *)\n      echo \"error: no pinned roborev asset for $(uname -s)-$(uname -m)\" >&2\n      exit 1\n      ;;\n  esac\n  # nixpkgs curl does not fall back to distro CA paths; point it at the\n  # cacert package installed in this env unless the caller already set one.\n  if [ -z \"${SSL_CERT_FILE:-}\" ] && [ -f \"${FLOX_ENV}/etc/ssl/certs/ca-bundle.crt\" ]; then\n    export SSL_CERT_FILE=\"${FLOX_ENV}/etc/ssl/certs/ca-bundle.crt\"\n  fi\n  tmp=\"$(mktemp -d)\"\n  trap 'rm -rf \"${tmp}\"' EXIT\n  curl -fsSL -o \"${tmp}/${asset}\" \\\n    \"https://github.com/kenn-io/roborev/releases/download/v${version}/${asset}\"\n  echo \"${sha256}  ${tmp}/${asset}\" | sha256sum --check -\n  tar -xzf \"${tmp}/${asset}\" -C \"${tmp}\"\n  mkdir -p \"$out/bin\"\n  install -m755 \"${tmp}/roborev\" \"$out/bin/roborev\"\n",
+        "sandbox": "off",
+        "version": "0.63.0",
+        "description": "roborev CLI repackaged from official upstream release binaries"
       }
     }
   },
