@@ -8,7 +8,8 @@
         "pkg-group": "floxhub-published",
         "version": "^1.1.2",
         "systems": [
-          "aarch64-darwin"
+          "aarch64-darwin",
+          "x86_64-linux"
         ]
       },
       "dolt": {
@@ -28,7 +29,8 @@
         "pkg-group": "floxhub-published",
         "version": "^0.63.0",
         "systems": [
-          "aarch64-darwin"
+          "aarch64-darwin",
+          "x86_64-linux"
         ]
       },
       "uv": {
@@ -501,7 +503,7 @@
       "rev": "69020d57c65aefe4f15787e14f1d8640648831e5",
       "rev_count": 28,
       "rev_date": "2026-08-03T13:23:06Z",
-      "scrape_date": "2026-08-03T13:35:34.597815Z",
+      "scrape_date": "2026-08-03T14:27:10.610585242Z",
       "stabilities": [
         "staging",
         "unstable"
@@ -518,6 +520,33 @@
       "priority": 5
     },
     {
+      "attr_path": "bd",
+      "derivation": "/nix/store/g9zy8pmyvskmckm4j3jgl1s75vdhg12s-bd-1.1.2.drv",
+      "description": "beads (bd) CLI repackaged from official upstream release binaries",
+      "install_id": "bd",
+      "locked_url": "https://github.com/elviskahoro/flox-conductor-sandbox.git?rev=d98f2930c9c6cc381715929ac9d921ebae655e72",
+      "name": "bd-1.1.2",
+      "pname": "bd",
+      "rev": "d98f2930c9c6cc381715929ac9d921ebae655e72",
+      "rev_count": 43,
+      "rev_date": "2026-08-03T14:26:09Z",
+      "scrape_date": "2026-08-03T14:27:10.610588647Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "version": "1.1.2",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/mzfdhs8zbjw5xzqfysr8fnm48ppb042r-bd-1.1.2"
+      },
+      "system": "x86_64-linux",
+      "group": "floxhub-published",
+      "priority": 5
+    },
+    {
       "attr_path": "roborev",
       "derivation": "/nix/store/ziyrngm24dfraxf7g3lzslyh0gq6lqkx-roborev-0.63.0.drv",
       "description": "roborev CLI repackaged from official upstream release binaries",
@@ -528,7 +557,7 @@
       "rev": "69020d57c65aefe4f15787e14f1d8640648831e5",
       "rev_count": 28,
       "rev_date": "2026-08-03T13:23:06Z",
-      "scrape_date": "2026-08-03T13:35:34.597818Z",
+      "scrape_date": "2026-08-03T14:27:10.610589938Z",
       "stabilities": [
         "staging",
         "unstable"
@@ -541,6 +570,33 @@
         "out": "/nix/store/g8r0di22an11i10sgb7z7yrjrs2ya6ga-roborev-0.63.0"
       },
       "system": "aarch64-darwin",
+      "group": "floxhub-published",
+      "priority": 5
+    },
+    {
+      "attr_path": "roborev",
+      "derivation": "/nix/store/21qywd396m9rzf1f9xf58f64d5z9mvx5-roborev-0.63.0.drv",
+      "description": "roborev CLI repackaged from official upstream release binaries",
+      "install_id": "roborev",
+      "locked_url": "https://github.com/elviskahoro/flox-conductor-sandbox.git?rev=d98f2930c9c6cc381715929ac9d921ebae655e72",
+      "name": "roborev-0.63.0",
+      "pname": "roborev",
+      "rev": "d98f2930c9c6cc381715929ac9d921ebae655e72",
+      "rev_count": 43,
+      "rev_date": "2026-08-03T14:26:09Z",
+      "scrape_date": "2026-08-03T14:27:10.610590682Z",
+      "stabilities": [
+        "staging",
+        "unstable"
+      ],
+      "version": "0.63.0",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/ywv1mlr69nbjs13rsfdbpj6a27yks06k-roborev-0.63.0"
+      },
+      "system": "x86_64-linux",
       "group": "floxhub-published",
       "priority": 5
     }

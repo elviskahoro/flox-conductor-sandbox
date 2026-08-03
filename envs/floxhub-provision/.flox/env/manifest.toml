@@ -16,13 +16,12 @@ dolt.pkg-path = "dolt"
 infisical.pkg-path = "infisical"
 gh.pkg-path = "gh"
 git.pkg-path = "git"
-# elvis/bd and elvis/roborev are so far only published for aarch64-darwin
-# (flox publish only publishes the host's own system — issue #16 trap 6),
-# scoped here per-package so the env-wide systems list below doesn't force
-# a resolution failure on the Linux systems the catalog tools DO support.
-# An x86_64-linux/aarch64-linux publish from an authenticated Linux sandbox
-# is still needed before bd/roborev resolve on the actual Conductor cloud
-# target class — tracked as a known gap, not silently worked around.
+# elvis/bd and elvis/roborev are now published for aarch64-darwin AND
+# x86_64-linux (issue #16 §9 gap, closed from an x86_64-linux Conductor
+# cloud sandbox). Neither is published for aarch64-linux yet, so the
+# per-package systems override stays (narrower than the env-wide systems
+# list below) rather than being dropped, to avoid a resolution failure on
+# that system.
 #
 # Explicit version pins (issue #16 §9 finding): a bare pkg-path with no
 # version constraint resolved to the OLDEST published version (1.1.0 /
@@ -31,11 +30,11 @@ git.pkg-path = "git"
 # actually just published and tested.
 bd.pkg-path = "elvis/bd"
 bd.version = "^1.1.2"
-bd.systems = ["aarch64-darwin"]
+bd.systems = ["aarch64-darwin", "x86_64-linux"]
 bd.pkg-group = "floxhub-published"
 roborev.pkg-path = "elvis/roborev"
 roborev.version = "^0.63.0"
-roborev.systems = ["aarch64-darwin"]
+roborev.systems = ["aarch64-darwin", "x86_64-linux"]
 roborev.pkg-group = "floxhub-published"
 
 [options]
