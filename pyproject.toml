@@ -1,0 +1,8 @@
+[project]
+name = "flox-conductor-sandbox"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = [
+    "dagger-io>=0.18.0",
+    "anyio>=4.0.0",
+]

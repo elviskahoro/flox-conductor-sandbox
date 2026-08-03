@@ -196,6 +196,32 @@ so far only published for `aarch64-darwin` and `x86_64-linux` (see [Known
 scope reductions](#known-scope-reductions)); Stage 7 doesn't yet PASS on
 `aarch64-linux`.
 
+### Staging check: the provisioning recipe in a disposable container (Dagger)
+
+Stage 7 above proves the recipe by authenticating *this* sandbox — which is
+exactly the trade-off issue #16 trap 5 warns against (an authenticated
+sandbox can never again serve as the Stage 4/H4 unauthenticated tester).
+`scripts/dagger_provision_test.py` gets the same proof without that cost: it
+spins up a throwaway `amazonlinux:2023` container (matching the real target
+class), bootstraps `flox` the same way Stage 1 does, runs
+`scripts/floxhub-provision.sh` unmodified inside it, and verifies all 7 tools
+resolve — then the container is discarded. This workspace's own Flox auth
+state never changes.
+
+```bash
+TOKEN="$(flox auth token)"   # run on an already-authenticated machine
+FLOXHUB_TOKEN="${TOKEN}" uv run dagger run python scripts/dagger_provision_test.py
+```
+
+Unlike `scripts/floxhub-provision.sh`'s own Infisical-first lookup, this
+pipeline always takes `FLOXHUB_TOKEN` directly from the environment — no
+Infisical fallback for this particular token, by deliberate choice: Infisical
+is for downstream/consumed secrets, not for FloxHub's own bootstrap
+credential here. The script fails fast (no silent unauthenticated fallback)
+if `FLOXHUB_TOKEN` is unset. Requires `uv` and the `dagger` CLI on `PATH`
+locally. Same opt-in-only rule as Stage 6/7: never wire this into
+`.conductor/settings.toml` or `scripts/sandbox-test.sh`'s default path.
+
 ## Interpreting outcomes
 
 - **Stage 2 PASS** → #445's central claim holds: remove the flake pins and the
