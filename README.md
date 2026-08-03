@@ -95,15 +95,22 @@ The harness writes `findings/report-<UTC timestamp>.md` with a PASS/FAIL/SKIP
 table plus evidence, and a full transcript alongside. Commit the findings back
 (or paste the report into #445).
 
-### Authenticating a publisher sandbox (opt-in, manual only)
+### Authenticating a publisher sandbox
 
 Stage 4 (H4) only means anything if the sandbox running it has *never*
 authenticated to FloxHub. Publishing a package (`flox publish`, needed for
 Phase A3 / #445 §6 preflight) requires the opposite: an authenticated
-sandbox. `scripts/floxhub-login.sh` bridges that gap non-interactively, but is
-deliberately **never** called from `.conductor/settings.toml` or
-`scripts/sandbox-test.sh` — wiring it into provisioning would silently and
-permanently disqualify every fresh sandbox from ever running Stage 4 again.
+sandbox. `scripts/floxhub-login.sh` bridges that gap non-interactively.
+
+**As of PR #23/#25, `.conductor/settings.toml`'s `scripts.setup` now calls
+`flox auth login` automatically whenever `FLOXHUB_TOKEN` is present in the
+sandbox's environment** (see the setup script for the exact guard). This is
+a deliberate, accepted tradeoff: any sandbox provisioned with
+`FLOXHUB_TOKEN` set is permanently authenticated and **cannot** be used as
+the never-authenticated Stage 4 tester. If you need to re-run Stage 4, use
+a sandbox/workspace that deliberately does not have `FLOXHUB_TOKEN` set —
+e.g. don't set it at the Conductor user level for that workspace, or run
+Stage 4 before ever setting the token on that machine.
 
 flox 1.14.0+ supports non-interactive login via `flox auth login
 --token-file=PATH` and `flox auth token` (prints the current token on an
