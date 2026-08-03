@@ -46,7 +46,8 @@ rejected for that grant type:
 $ curl -s -X POST https://auth.flox.dev/oauth/token \
     -d 'grant_type=client_credentials' \
     -d 'client_id=fGrotHBfQr9X1PHGbFoifEWaDPyWZDmc' \
-    -d 'audience=https://hub.flox.dev/api'
+    -d 'audience=https://hub.flox.dev/api' \
+    -w '\nHTTP %{http_code}\n'
 {"error":"unauthorized_client","error_description":"Grant type 'client_credentials' not allowed for the client.", ...}
 HTTP 403
 ```
