@@ -5,8 +5,11 @@ schema-version = "1.13.0"
 # `flox activate` — not the ad hoc `flox install` Stage 4 (H4) uses to test
 # raw unauthenticated visibility. Requires auth (see
 # scripts/floxhub-login.sh); the package is private (issue #11 finding).
+# systems is aarch64-darwin only for now: the sanhedrin org catalog only has
+# the aarch64-darwin build published. Add x86_64-linux back once that build
+# is published to the org from a Linux sandbox and the lock is regenerated.
 [install]
-conductor-workspace-floxhub-01.pkg-path = "elvis/conductor-workspace-floxhub-01"
+conductor-workspace-floxhub-01.pkg-path = "sanhedrin/conductor-workspace-floxhub-01"
 
 [options]
-systems = ["aarch64-darwin", "x86_64-linux"]
+systems = ["aarch64-darwin"]
