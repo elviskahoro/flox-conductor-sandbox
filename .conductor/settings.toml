@@ -13,20 +13,29 @@ SETUP_LOG="$HOME/.conductor-setup.log"
 exec >> "$SETUP_LOG" 2>&1
 echo "=== setup started $(date -u +%FT%TZ) ==="
 
-# Auto-authenticate flox with FLOXHUB_TOKEN (set via this user's
-# ~/.conductor/settings.toml [environment_variables.cloud], not committed
-# here) so fresh sandboxes can publish/consume from FloxHub without a manual
-# `flox auth login`. --insecure-storage is required: cloud sandboxes have no
-# dbus/keyring for flox's default token storage. Never hard-fails setup.
-if [ -n "${FLOXHUB_TOKEN:-}" ]; then
-  echo "Attempting flox auth login with FLOXHUB_TOKEN from environment..."
+# Auto-authenticate flox, gated behind FLOX_AUTOLOGIN=1 (in addition to
+# FLOXHUB_TOKEN) so a default sandbox stays unauthenticated by default. This
+# matters because Stage 4 (H4, issue #16) specifically requires a genuinely
+# never-authenticated sandbox — per this README's "Authenticating a
+# publisher sandbox" section, wiring auto-login unconditionally into
+# provisioning would silently and permanently disqualify every fresh
+# sandbox from ever running Stage 4 again. Set FLOX_AUTOLOGIN=1 only on
+# sandboxes deliberately dedicated to publish/consume work (e.g. via
+# environment_variables.cloud in a specific workspace's settings, not the
+# blanket user-level FLOXHUB_TOKEN). --insecure-storage is required: cloud
+# sandboxes have no dbus/keyring for flox's default token storage. Never
+# hard-fails setup.
+if [ "${FLOX_AUTOLOGIN:-}" = "1" ] && [ -n "${FLOXHUB_TOKEN:-}" ]; then
+  echo "FLOX_AUTOLOGIN=1: attempting flox auth login with FLOXHUB_TOKEN..."
   if echo "$FLOXHUB_TOKEN" | flox auth login --token-file=- --insecure-storage; then
     echo "flox auth login succeeded"
   else
     echo "flox auth login failed (see output above); continuing unauthenticated"
   fi
+elif [ "${FLOX_AUTOLOGIN:-}" = "1" ]; then
+  echo "FLOX_AUTOLOGIN=1 but FLOXHUB_TOKEN not set; skipping flox auth login"
 else
-  echo "FLOXHUB_TOKEN not set; skipping flox auth login"
+  echo "FLOX_AUTOLOGIN not set to 1; leaving sandbox unauthenticated (default, required for Stage 4)"
 fi
 
 # The whole point of this repo: run the gtm-sdk#445 hypothesis harness on a
