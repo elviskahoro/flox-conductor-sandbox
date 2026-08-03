@@ -72,5 +72,52 @@ command = '''
   install -m755 "${tmp}/bd" "$out/bin/bd"
 '''
 
+# Same Option-A shape as [build.bd] above, mirrored for roborev (issue #16
+# §9/gtm-sdk#445 §7): fetch the pinned upstream release tarball for the
+# current platform, verify its official sha256 (from the release's
+# SHA256SUMS — fail closed), install the binary into $out/bin. Confirmed
+# empirically (not just assumed) that this transfers 1:1 from bd: roborev's
+# releases ship the same goreleaser-shaped per-platform tarballs plus a
+# checksums file in the same `<sha256>  <filename>` format.
+[build.roborev]
+description = "roborev CLI repackaged from official upstream release binaries"
+version = "0.63.0"
+sandbox = "off"
+command = '''
+  set -euo pipefail
+  version="0.63.0"
+  case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64)
+      asset="roborev_${version}_linux_amd64.tar.gz"
+      sha256="c7dbbefed91747b80d04498358fa0207880adb7e2b57c95677214195a3ece887"
+      ;;
+    Linux-aarch64)
+      asset="roborev_${version}_linux_arm64.tar.gz"
+      sha256="bcb1e96d13efb903a80f965581c23bcf8e6d39a92ded01bf8ee61a2e9e18fe71"
+      ;;
+    Darwin-arm64)
+      asset="roborev_${version}_darwin_arm64.tar.gz"
+      sha256="696161b785d5bf45f635af993c4a32334c545a5d8747e41213356d33fe2fd5e1"
+      ;;
+    *)
+      echo "error: no pinned roborev asset for $(uname -s)-$(uname -m)" >&2
+      exit 1
+      ;;
+  esac
+  # nixpkgs curl does not fall back to distro CA paths; point it at the
+  # cacert package installed in this env unless the caller already set one.
+  if [ -z "${SSL_CERT_FILE:-}" ] && [ -f "${FLOX_ENV}/etc/ssl/certs/ca-bundle.crt" ]; then
+    export SSL_CERT_FILE="${FLOX_ENV}/etc/ssl/certs/ca-bundle.crt"
+  fi
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "${tmp}"' EXIT
+  curl -fsSL -o "${tmp}/${asset}" \
+    "https://github.com/kenn-io/roborev/releases/download/v${version}/${asset}"
+  echo "${sha256}  ${tmp}/${asset}" | sha256sum --check -
+  tar -xzf "${tmp}/${asset}" -C "${tmp}"
+  mkdir -p "$out/bin"
+  install -m755 "${tmp}/roborev" "$out/bin/roborev"
+'''
+
 [options]
 systems = ["aarch64-darwin", "aarch64-linux", "x86_64-linux"]

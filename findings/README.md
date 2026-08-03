@@ -35,6 +35,8 @@ and stages mean, and how to produce a new run.
 | `20260802-161922Z` | macOS, developer machine, **already authenticated to FloxHub** | No | The last run before the `tar` fix, one minute ahead of `20260802-162020Z` below and superseded by it. Stage 3b bd repackage FAIL (same `./bd` member-filter cause, root-caused in the next run). Stage 4 "PASS" is **contaminated** — logged-in machine, no auth precondition in the harness; ignore it, not an H4 data point (issue #16, trap 4) |
 | `20260802-162020Z` | macOS, developer machine, **already authenticated to FloxHub** | No | Stage 3b bd repackage FAIL, **root-caused this run**: the beads release tarball stores entries as `./bd` etc., and the build's `tar -xzf ... bd` member filter never matches that name. Fixed in `envs/repackage/.flox/env/manifest.toml` by extracting the whole archive instead of filtering a member; verified locally (`flox build --dir envs/repackage bd` now succeeds, built `bd --version` runs). Stage 4 "PASS" is contaminated for the same reason as `20260801-201328Z` — ignore it, not a new H4 data point |
 | `20260803-122518Z` | macOS, developer machine, **already authenticated to FloxHub** | No | Verifies the issue #16 open-item fix for the Stage 4 false-PASS bug: H1 + H3 all PASS; Stage 4 now correctly reports **SKIP** ("sandbox is already authenticated... not attempted") instead of the old hardcoded false PASS, because the harness now checks `flox auth status` before running show/install/search. Not a new H4/search data point — this Mac is still authenticated — but confirms the fix works |
+| `20260803-131301Z` | macOS (Conductor `belgrade` workspace), **already authenticated to FloxHub** | No | Automatic provisioning run (`.conductor/settings.toml`), pre-dates the Phase D MVP work (issue #16 §9). H1 + H3 (all sub-stages) PASS; Stage 4 correctly SKIPs (already-authenticated, same as `20260803-122518Z`) |
+| `20260803-134541Z` | macOS (Conductor `belgrade` workspace), deliberately re-authenticated for `TEST_FLOXHUB_PROVISION=1` | No | New **Stage 7 (Phase D MVP) PASS** — `scripts/floxhub-provision.sh` (Infisical-first token lookup, falls back to `FLOXHUB_TOKEN`; `flox auth login --token-file` via `scripts/floxhub-login.sh`; `flox activate` against the combined `envs/floxhub-provision` manifest) resolves and runs all 7 tools (`uv`, `dolt`, `infisical`, `gh`, `git`, `bd` 1.1.2, `roborev` 0.63.0) under `.flox/run/.../bin`. Token confirmed absent from both the report and full log (grepped before committing). Only proven on `aarch64-darwin` so far — `elvis/bd`/`elvis/roborev` aren't yet published for Linux (tracked as an open follow-up, same shape as the original package's PR #7/#8 split). Stage 4's "SKIP" here is the expected already-authenticated result, not a new H4 data point |
 
 ## Current bottom line (as of the last run above)
 
@@ -101,6 +103,17 @@ and stages mean, and how to produce a new run.
   `gtm-sdk/scripts/conductor-workspace-setup.sh`: mint/obtain a token (via
   Infisical in real gtm-sdk provisioning) → `flox auth login
   --token-file=...` → `flox activate` against a `pkg-path` manifest.
+- **Phase D MVP (Stage 7, new, opt-in):** issue #16 §9's follow-up to
+  Stage 6 — prove the *actual* recipe, not just the mechanism. Published
+  real `elvis/bd@1.1.2` and `elvis/roborev@0.63.0` packages (the latter
+  never attempted before), built a combined `envs/floxhub-provision`
+  manifest (the 5 catalog tools + both), and a real setup script
+  (`scripts/floxhub-provision.sh`, Infisical-first token acquisition).
+  Run `20260803-134541Z`: **PASS** — all 7 tools resolve under
+  `.flox/run/.../bin`. **Known gap:** `elvis/bd`/`elvis/roborev` are only
+  published for `aarch64-darwin` so far (same trap 6 as the original
+  package); a Linux publish is still needed before this proves out on the
+  actual Conductor cloud target class.
 - Nothing from the original hypothesis set is still unexplained. The macOS
   `tar` extraction failure that was open for four runs is root-caused and
   fixed (see the H3 bullet above). Remaining work is tracked as the open-items
