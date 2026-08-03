@@ -1,0 +1,43 @@
+schema-version = "1.13.0"
+
+# Phase D MVP (issue #16 §9): the combined manifest a fresh Conductor
+# sandbox actually needs — the same five catalog-only tools already proven
+# in envs/prebuilt (H1) *plus* pkg-path installs for the real bd/roborev
+# packages published from envs/repackage (H3), not the trivial
+# single-package smoke test envs/floxhub-consume (Stage 6) used to prove
+# the auth mechanism. This is the manifest scripts/floxhub-provision.sh
+# activates, and the recipe eventually meant for
+# gtm-sdk/scripts/conductor-workspace-setup.sh (ported later, per issue #16
+# §8 — not from this repo).
+[install]
+uv.pkg-path = "uv"
+uv.version = "0.11.26"
+dolt.pkg-path = "dolt"
+infisical.pkg-path = "infisical"
+gh.pkg-path = "gh"
+git.pkg-path = "git"
+# elvis/bd and elvis/roborev are so far only published for aarch64-darwin
+# (flox publish only publishes the host's own system — issue #16 trap 6),
+# scoped here per-package so the env-wide systems list below doesn't force
+# a resolution failure on the Linux systems the catalog tools DO support.
+# An x86_64-linux/aarch64-linux publish from an authenticated Linux sandbox
+# is still needed before bd/roborev resolve on the actual Conductor cloud
+# target class — tracked as a known gap, not silently worked around.
+#
+# Explicit version pins (issue #16 §9 finding): a bare pkg-path with no
+# version constraint resolved to the OLDEST published version (1.1.0 /
+# 0.62.1, both pre-existing/undocumented — see PR description), not
+# "Latest" as `flox show` reports it — pin explicitly to get what was
+# actually just published and tested.
+bd.pkg-path = "elvis/bd"
+bd.version = "^1.1.2"
+bd.systems = ["aarch64-darwin"]
+bd.pkg-group = "floxhub-published"
+roborev.pkg-path = "elvis/roborev"
+roborev.version = "^0.63.0"
+roborev.systems = ["aarch64-darwin"]
+roborev.pkg-group = "floxhub-published"
+
+[options]
+# Mirrors envs/prebuilt/envs/repackage.
+systems = ["aarch64-darwin", "aarch64-linux", "x86_64-linux"]
