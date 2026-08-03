@@ -19,10 +19,23 @@ echo "=== setup started $(date -u +%FT%TZ) ==="
 # the FLOXHUB_TOKEN auth-login block below runs after it, not before.
 bash scripts/sandbox-test.sh
 
-# Auto-authenticate flox whenever FLOXHUB_TOKEN is present in the
-# environment (set via this user's ~/.conductor/settings.toml
-# [environment_variables.cloud]) so every fresh sandbox is ready to
-# publish/consume from FloxHub without a manual `flox auth login` step.
+# Auto-authenticate flox — opt-in only, via FLOXHUB_AUTOLOGIN=1 — when
+# FLOXHUB_TOKEN is present in the environment (set via this user's
+# ~/.conductor/settings.toml [environment_variables.cloud]). Skipped by
+# default even when FLOXHUB_TOKEN is present, so every fresh sandbox stays
+# genuinely unauthenticated unless a task explicitly asks for auth (e.g. a
+# publish task, or Phase D MVP's scripts/floxhub-provision.sh). This is what
+# keeps a fresh sandbox usable for Stage 4 (H4, issue #16), which requires a
+# never-authenticated sandbox to mean anything.
+#
+# Previously (2f731a5) this ran unconditionally whenever FLOXHUB_TOKEN was
+# set, trading that away for provisioning convenience — but that silently
+# disqualified every fresh sandbox from ever being usable for Stage 4,
+# contradicting issue #16's own trap #5 ("never wire auth into the default
+# provisioning path"). Reverted to opt-in: set FLOXHUB_AUTOLOGIN=1 (alongside
+# FLOXHUB_TOKEN) for a workspace/task that specifically wants a
+# pre-authenticated sandbox.
+#
 # --insecure-storage is required: cloud sandboxes have no dbus/keyring for
 # flox's default token storage. Never hard-fails setup.
 #
@@ -31,23 +44,15 @@ bash scripts/sandbox-test.sh
 # earlier in this setup script always fails with "flox: command not found"
 # and is never retried (see ~/.conductor-setup.log from any sandbox
 # provisioned before this fix).
-#
-# Known, accepted tradeoff (deliberate, not an oversight): this
-# permanently authenticates every cloud sandbox for this repo, so Stage 4
-# (H4, issue #16), which specifically requires a genuinely
-# never-authenticated sandbox, cannot PASS/FAIL/SKIP meaningfully on a
-# sandbox provisioned with FLOXHUB_TOKEN set. If Stage 4 needs to be
-# re-run, use a sandbox/workspace that deliberately does not have
-# FLOXHUB_TOKEN set.
-if [ -n "${FLOXHUB_TOKEN:-}" ]; then
-  echo "Attempting flox auth login with FLOXHUB_TOKEN from environment..."
+if [ -n "${FLOXHUB_AUTOLOGIN:-}" ] && [ -n "${FLOXHUB_TOKEN:-}" ]; then
+  echo "FLOXHUB_AUTOLOGIN=1 and FLOXHUB_TOKEN set; attempting flox auth login..."
   if echo "$FLOXHUB_TOKEN" | flox auth login --token-file=- --insecure-storage; then
     echo "flox auth login succeeded"
   else
     echo "flox auth login failed (see output above); continuing unauthenticated"
   fi
 else
-  echo "FLOXHUB_TOKEN not set; skipping flox auth login"
+  echo "FLOXHUB_AUTOLOGIN not set (or FLOXHUB_TOKEN absent); skipping flox auth login — sandbox stays unauthenticated by default"
 fi
 
 echo "=== setup finished $(date -u +%FT%TZ) ==="
