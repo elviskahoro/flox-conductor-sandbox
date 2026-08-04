@@ -45,7 +45,15 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 if [[ -z "${FLOXHUB_TOKEN:-}" ]] && command -v infisical >/dev/null 2>&1; then
   SECRET_NAME="${FLOXHUB_TOKEN_SECRET_NAME:-FLOXHUB_TOKEN}"
-  if TOKEN_FROM_INFISICAL="$(infisical secrets get "${SECRET_NAME}" --plain 2>/dev/null)" &&
+  INFISICAL_ARGS=(--env="${INFISICAL_ENV:-dev}" --plain --silent)
+  # A fresh Conductor workspace has no Infisical project context file. Pass
+  # the project explicitly when the machine-identity variables are present;
+  # the token remains an environment variable so it never appears in a
+  # process argument list or in setup logs.
+  if [[ -n "${INFISICAL_PROJECT_ID:-}" ]]; then
+    INFISICAL_ARGS+=(--projectId "${INFISICAL_PROJECT_ID}")
+  fi
+  if TOKEN_FROM_INFISICAL="$(infisical secrets get "${SECRET_NAME}" "${INFISICAL_ARGS[@]}" 2>/dev/null)" &&
     [[ -n "${TOKEN_FROM_INFISICAL}" ]]; then
     export FLOXHUB_TOKEN="${TOKEN_FROM_INFISICAL}"
   fi

@@ -29,4 +29,7 @@ jobs:
       - name: Run FloxHub provisioning check
         env:
           FLOXHUB_TOKEN: ${{ secrets.FLOXHUB_TOKEN }}
+          INFISICAL_TOKEN: ${{ secrets.INFISICAL_TOKEN }}
+          INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
+          REQUIRE_BEADS_CHECK: "1"
         run: uv run dagger run python scripts/dagger_provision_test.py
