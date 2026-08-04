@@ -253,13 +253,14 @@ EOF
 fi
 
 # ---------------------------------------------------------------------------
-# Stage 3 (H3): manifest builds — hello smoke test, then the bd repackage
+# Stage 3 (H3): manifest builds — hello smoke test, then CLI repackages
 # ---------------------------------------------------------------------------
 section "Stage 3 — H3: flox manifest builds (Option-A repackage shape)"
 if ! command -v flox >/dev/null 2>&1; then
   record "3a hello build" "SKIP" "no flox"
   record "3b bd repackage build" "SKIP" "no flox"
   record "3c bd flag surface" "SKIP" "no flox"
+  record "3d hookdeck repackage build" "SKIP" "no flox"
 else
   STAGE3_START=$(date +%s)
   BUILD_DIR="${REPO_ROOT}/envs/repackage"
@@ -300,6 +301,20 @@ else
     note_excerpt "${BD_LOG}"
     record "3b bd repackage build" "FAIL" "repackage build failed — see body"
     record "3c bd flag surface" "SKIP" "no bd build"
+  fi
+
+  HOOKDECK_START=$(date +%s)
+  HOOKDECK_LOG="$(mktemp)"
+  if run_logged "${HOOKDECK_LOG}" flox build --dir "${BUILD_DIR}" hookdeck; then
+    HOOKDECK_BIN="${BUILD_DIR}/result-hookdeck/bin/hookdeck"
+    if out="$("${HOOKDECK_BIN}" version 2>&1)"; then
+      record "3d hookdeck repackage build" "PASS" "built + \`hookdeck version\` → $(printf '%s' "${out}" | head -1) ($(elapsed "${HOOKDECK_START}"))"
+    else
+      record "3d hookdeck repackage build" "FAIL" "built but binary does not run: ${out}"
+    fi
+  else
+    note_excerpt "${HOOKDECK_LOG}"
+    record "3d hookdeck repackage build" "FAIL" "repackage build failed — see body"
   fi
 fi
 
