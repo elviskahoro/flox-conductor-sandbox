@@ -22,9 +22,12 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install Dagger CLI
-        run: curl -fsSL https://dagger.io/install.sh | sh
+        run: curl -fsSL https://dl.dagger.io/dagger/install.sh | sh
         env:
           BIN_DIR: /usr/local/bin
+
+      - name: Verify Dagger CLI
+        run: dagger version
 
       - name: Run FloxHub provisioning check
         env:
