@@ -19,6 +19,24 @@ echo "=== setup started $(date -u +%FT%TZ) ==="
 # the FLOXHUB_TOKEN auth-login block below runs after it, not before.
 bash scripts/sandbox-test.sh
 
+# Make the tools that the harness just validated available to every subsequent
+# agent command. Flox activation is process-scoped, so its run-bin directory
+# disappears from PATH when setup exits. Pointing /usr/local/bin at the
+# immutable Nix-store binaries keeps both CLIs usable without an activation
+# shell and does not require FloxHub authentication: Infisical comes from the
+# public catalog and bd is built locally by Stage 3b above.
+INFISICAL_BIN="$(readlink -f "$(flox activate --dir "$PWD/envs/prebuilt" --mode run -- sh -c 'command -v infisical')")"
+BD_BIN="$(readlink -f "$PWD/envs/repackage/result-bd/bin/bd")"
+if [ ! -x "$INFISICAL_BIN" ] || [ ! -x "$BD_BIN" ]; then
+  echo "error: setup did not produce a runnable infisical and bd binary" >&2
+  exit 1
+fi
+sudo install -d -m 755 /usr/local/bin
+sudo ln -sfn "$INFISICAL_BIN" /usr/local/bin/infisical
+sudo ln -sfn "$BD_BIN" /usr/local/bin/bd
+infisical --version
+bd version
+
 # Auto-authenticate flox — opt-in only, via FLOXHUB_AUTOLOGIN=1 — when
 # FLOXHUB_TOKEN is present in the environment (set via this user's
 # ~/.conductor/settings.toml [environment_variables.cloud]). Skipped by
