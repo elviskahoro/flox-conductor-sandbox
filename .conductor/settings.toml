@@ -37,6 +37,29 @@ sudo ln -sfn "$INFISICAL_BIN" /usr/local/bin/infisical
 infisical --version
 bd version
 
+# Provision the published roborev CLI when this workspace has an explicit
+# FloxHub token. Like bd above, expose the immutable Flox/Nix binary through
+# /usr/local/bin so subsequent non-interactive agent commands can find it
+# after the process-scoped Flox activation exits. Keep this opt-in: a
+# tokenless sandbox must remain usable without FloxHub authentication.
+if [ -n "${FLOXHUB_TOKEN:-}" ]; then
+  echo "FLOXHUB_TOKEN set; provisioning roborev from FloxHub..."
+  if ! bash "$PWD/scripts/floxhub-provision.sh"; then
+    echo "error: FloxHub provisioning failed; roborev was not installed" >&2
+    exit 1
+  fi
+  ROBOREV_BIN="$(readlink -f "$(flox activate --dir "$PWD/envs/floxhub-provision" --mode run -- sh -c 'command -v roborev')")"
+  if [ ! -x "$ROBOREV_BIN" ]; then
+    echo "error: setup did not produce a runnable roborev binary" >&2
+    exit 1
+  fi
+  sudo ln -sfn "$ROBOREV_BIN" /usr/local/bin/roborev
+  sudo ln -sfn "$ROBOREV_BIN" /usr/local/bin/git-roborev
+  roborev version
+else
+  echo "FLOXHUB_TOKEN absent; skipping roborev FloxHub provisioning"
+fi
+
 # Validate workspace-provided Infisical machine credentials without exposing
 # secret values. The export output is discarded; only the command status is
 # used. Keep this optional so workspaces that only need the CLI still set up
