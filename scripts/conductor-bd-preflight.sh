@@ -39,6 +39,16 @@ bootstrap_flox() {
   rm -f "${tmp_pkg}"
 }
 
+ensure_proc_fd() {
+  [[ "$(uname -s)" == Linux ]] || return 0
+  [[ -e /dev/fd ]] && return 0
+  if ! sudo -n ln -sfn /proc/self/fd /dev/fd 2>/dev/null; then
+    log "error: /dev/fd is missing and could not be created (passwordless sudo is required)"
+    return 1
+  fi
+  log "created /dev/fd -> /proc/self/fd"
+}
+
 start_nix_daemon_if_needed() {
   [[ -S /nix/var/nix/daemon-socket/socket ]] && return 0
   local daemon=""
@@ -63,6 +73,7 @@ if [[ -x "${BD_RESULT}" ]]; then
   log "reusing existing pinned bd artifact: ${BD_BIN}"
 else
   bootstrap_flox
+  ensure_proc_fd
   start_nix_daemon_if_needed
   log "pinned bd artifact missing; building ${BUILD_DIR}"
   flox build --dir "${BUILD_DIR}" bd
