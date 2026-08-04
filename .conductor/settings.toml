@@ -37,6 +37,22 @@ sudo ln -sfn "$BD_BIN" /usr/local/bin/bd
 infisical --version
 bd version
 
+# Validate workspace-provided Infisical machine credentials without exposing
+# secret values. The export output is discarded; only the command status is
+# used. Keep this optional so workspaces that only need the CLI still set up
+# without Infisical credentials.
+if [ -n "${INFISICAL_TOKEN:-}" ] && [ -n "${INFISICAL_PROJECT_ID:-}" ]; then
+  echo "INFISICAL_TOKEN and INFISICAL_PROJECT_ID set; validating Infisical read access..."
+  if infisical export --env=dev --projectId "$INFISICAL_PROJECT_ID" --silent >/dev/null; then
+    echo "Infisical authenticated read succeeded"
+  else
+    echo "error: Infisical authenticated read failed" >&2
+    exit 1
+  fi
+else
+  echo "INFISICAL_TOKEN or INFISICAL_PROJECT_ID absent; skipping Infisical auth validation"
+fi
+
 # Auto-authenticate flox — opt-in only, via FLOXHUB_AUTOLOGIN=1 — when
 # FLOXHUB_TOKEN is present in the environment (set via this user's
 # ~/.conductor/settings.toml [environment_variables.cloud]). Skipped by
