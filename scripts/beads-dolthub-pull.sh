@@ -62,7 +62,7 @@ cd "${REPO_ROOT}"
 export DOLT_ROOT_PATH="${CREDENTIAL_ROOT}"
 
 if [[ ! -d .beads ]]; then
-  bd init --remote "${REMOTE}" --non-interactive --skip-agents --skip-hooks
+  bd init --remote "${REMOTE}" --non-interactive --stealth --skip-agents --skip-hooks
 else
   bd dolt pull
 fi
