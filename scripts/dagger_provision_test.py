@@ -132,11 +132,8 @@ def beads_cmd() -> str:
         "bash scripts/beads-dolthub-pull.sh; "
         "pull_rc=$?; "
         "if [ $pull_rc -eq 0 ]; then "
-        "  flox activate --dir envs/floxhub-provision --mode run -- sh -c "
-        "'set -e; bd ready --json >/tmp/bd-ready.json; "
-        "bd list --json >/tmp/bd-list.json; "
-        "id=$(grep -o '\"id\":\"[^\"]*\"' /tmp/bd-list.json | head -1 | cut -d '\"' -f4); "
-        "[ -n \"$id\" ]; bd show \"$id\" >/tmp/bd-show.txt'; "
+        "  flox activate --dir envs/floxhub-provision --mode run -- "
+        "bash scripts/beads-read-check.sh; "
         "  check_rc=$?; "
         "else check_rc=$pull_rc; fi; "
         "echo $check_rc > " + BEADS_RC_PATH
