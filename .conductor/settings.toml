@@ -13,6 +13,17 @@ SETUP_LOG="$HOME/.conductor-setup.log"
 exec >> "$SETUP_LOG" 2>&1
 echo "=== setup started $(date -u +%FT%TZ) ==="
 
+# Provision the Trunk Launcher before the long-running harness. Trunk checks
+# are local and intentionally unauthenticated; no Trunk token or login is
+# needed. The preflight exposes the launcher through /usr/local/bin so it is
+# still available after this setup process exits.
+bash scripts/conductor-trunk-preflight.sh
+trunk --version
+if ! trunk check --ci --no-fix --all; then
+  echo "error: trunk check failed during workspace setup" >&2
+  exit 1
+fi
+
 # Provision the pinned Beads CLI before the long-running harness. Conductor can
 # start an agent command while setup is still running, so this must not be
 # deferred until the harness's Stage 3b. The script records the exact binary
