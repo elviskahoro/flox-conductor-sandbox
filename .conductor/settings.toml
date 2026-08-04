@@ -13,27 +13,27 @@ SETUP_LOG="$HOME/.conductor-setup.log"
 exec >> "$SETUP_LOG" 2>&1
 echo "=== setup started $(date -u +%FT%TZ) ==="
 
+# Provision the pinned Beads CLI before the long-running harness. Conductor can
+# start an agent command while setup is still running, so this must not be
+# deferred until the harness's Stage 3b. The script records the exact binary
+# path in the setup log and fails clearly if provisioning is impossible.
+bash scripts/conductor-bd-preflight.sh
+
 # The whole point of this repo: run the gtm-sdk#445 hypothesis harness on a
 # fresh sandbox. It never hard-fails; findings land in findings/report-*.md.
-# This is also what installs the `flox` binary (its Stage 1), which is why
-# the FLOXHUB_TOKEN auth-login block below runs after it, not before.
 bash scripts/sandbox-test.sh
 
-# Make the tools that the harness just validated available to every subsequent
-# agent command. Flox activation is process-scoped, so its run-bin directory
-# disappears from PATH when setup exits. Pointing /usr/local/bin at the
-# immutable Nix-store binaries keeps both CLIs usable without an activation
-# shell and does not require FloxHub authentication: Infisical comes from the
-# public catalog and bd is built locally by Stage 3b above.
-INFISICAL_BIN="$(readlink -f "$(flox activate --dir "$PWD/envs/prebuilt" --mode run -- sh -c 'command -v infisical')")"
-BD_BIN="$(readlink -f "$PWD/envs/repackage/result-bd/bin/bd")"
-if [ ! -x "$INFISICAL_BIN" ] || [ ! -x "$BD_BIN" ]; then
-  echo "error: setup did not produce a runnable infisical and bd binary" >&2
+# Make Infisical available to subsequent agent commands. Flox activation is
+# process-scoped, so its run-bin directory disappears from PATH when setup
+# exits. bd is provisioned by the preflight above so it is available before
+# the harness starts.
+INFISICAL_BIN="$(flox activate --dir "$PWD/envs/prebuilt" --mode run -- sh -c 'command -v infisical')"
+if [ ! -x "$INFISICAL_BIN" ] || ! command -v bd >/dev/null 2>&1; then
+  echo "error: setup did not produce a runnable infisical and bd command" >&2
   exit 1
 fi
 sudo install -d -m 755 /usr/local/bin
 sudo ln -sfn "$INFISICAL_BIN" /usr/local/bin/infisical
-sudo ln -sfn "$BD_BIN" /usr/local/bin/bd
 infisical --version
 bd version
 
