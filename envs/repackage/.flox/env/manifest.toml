@@ -72,6 +72,47 @@ command = '''
   install -m755 "${tmp}/bd" "$out/bin/bd"
 '''
 
+# Same build-once shape for Hookdeck: fetch the pinned official release binary
+# for the current platform, verify the upstream checksum, and install it into
+# $out/bin. Hookdeck is not presently available as a Flox catalog package.
+[build.hookdeck]
+description = "Hookdeck CLI repackaged from official upstream release binaries"
+version = "2.3.1"
+sandbox = "off"
+command = '''
+  set -euo pipefail
+  version="2.3.1"
+  case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64)
+      asset="hookdeck_${version}_linux_amd64.tar.gz"
+      sha256="0a1c149f960393aaacc3630d1c09af3950004658fdf2dc21f1edce9a4ae0b732"
+      ;;
+    Linux-aarch64)
+      asset="hookdeck_${version}_linux_arm64.tar.gz"
+      sha256="737c3243e4ba5b679d89d3f7b698162b6aec7761319142cf3813dd856a55eab7"
+      ;;
+    Darwin-arm64)
+      asset="hookdeck_${version}_darwin_arm64.tar.gz"
+      sha256="fe11673ad1379f75947f5e095f429ecee570ecf8c03c5d58c3d0e6e3396e981a"
+      ;;
+    *)
+      echo "error: no pinned Hookdeck asset for $(uname -s)-$(uname -m)" >&2
+      exit 1
+      ;;
+  esac
+  if [ -z "${SSL_CERT_FILE:-}" ] && [ -f "${FLOX_ENV}/etc/ssl/certs/ca-bundle.crt" ]; then
+    export SSL_CERT_FILE="${FLOX_ENV}/etc/ssl/certs/ca-bundle.crt"
+  fi
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "${tmp}"' EXIT
+  curl -fsSL -o "${tmp}/${asset}" \
+    "https://github.com/hookdeck/hookdeck-cli/releases/download/v${version}/${asset}"
+  echo "${sha256}  ${tmp}/${asset}" | sha256sum --check -
+  tar -xzf "${tmp}/${asset}" -C "${tmp}"
+  mkdir -p "$out/bin"
+  install -m755 "${tmp}/hookdeck" "$out/bin/hookdeck"
+'''
+
 # Same Option-A shape as [build.bd] above, mirrored for roborev (issue #16
 # §9/gtm-sdk#445 §7): fetch the pinned upstream release tarball for the
 # current platform, verify its official sha256 (from the release's
