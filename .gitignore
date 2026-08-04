@@ -1,2 +1,5 @@
 # flox build output symlinks (created next to the env that ran the build)
 result-*
+
+# Beads' local Dolt database and runtime state are not repository content.
+.beads/

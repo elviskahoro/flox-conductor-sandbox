@@ -91,6 +91,38 @@ TEST_AUTH_PLUMBING=1 FLOXHUB_TOKEN=<token> bash scripts/sandbox-test.sh  # opt-i
 TEST_FLOXHUB_PROVISION=1 FLOXHUB_TOKEN=<token> bash scripts/sandbox-test.sh  # opt-in Phase D MVP (stage 7) — permanently authenticates this sandbox
 ```
 
+### Pulling Beads tickets from DoltHub
+
+This repository can initialize and refresh its Beads database from the
+private DoltHub remote `dolthub://elviskahoro/gtm-sdk`. Pulling is explicit
+and runs automatically during Conductor workspace setup when
+`INFISICAL_TOKEN` and `INFISICAL_PROJECT_ID` are available. Workspaces without
+those credentials skip the pull.
+
+DoltHub remotes authenticate with a Dolt credential JWK, rather than a
+generic API token. On an authenticated machine, create or select a credential
+with `dolt creds new` (or `dolt login`), register its public key in DoltHub,
+and store the private JWK contents in Infisical as
+`DOLTHUB_DOLT_CREDENTIAL_JWK`. The secret must be the JWK JSON itself; do not
+commit it or put it in a repository config file.
+
+For a manual pull, or to refresh outside workspace setup, run this with
+`INFISICAL_TOKEN` and `INFISICAL_PROJECT_ID` available in the shell:
+
+```bash
+bash scripts/beads-dolthub-pull.sh
+bd ready --json
+bd list --json
+bd show <bead-id>
+```
+
+The script imports the JWK into a temporary Dolt credential directory and
+removes that directory on exit. The local `.beads` database and remote
+configuration are retained for subsequent pulls. Override the defaults when
+needed with `BEADS_DOLTHUB_REMOTE` and
+`DOLTHUB_DOLT_CREDENTIAL_SECRET_NAME`; use `INFISICAL_ENV` for a non-`dev`
+Infisical environment.
+
 The harness writes `findings/report-<UTC timestamp>.md` with a PASS/FAIL/SKIP
 table plus evidence, and a full transcript alongside. Commit the findings back
 (or paste the report into #445).

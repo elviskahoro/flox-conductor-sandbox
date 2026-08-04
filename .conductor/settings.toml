@@ -53,6 +53,20 @@ else
   echo "INFISICAL_TOKEN or INFISICAL_PROJECT_ID absent; skipping Infisical auth validation"
 fi
 
+# Initialize or refresh the Beads database during workspace bootstrap when
+# this workspace has the Infisical credentials required for DoltHub access.
+# The pull script imports the Dolt JWK into a temporary credential root and
+# never persists the secret. Run it inside the prebuilt environment so dolt is
+# available even though Flox activation is process-scoped. Workspaces without
+# Infisical credentials retain the sandbox's existing no-remote behavior.
+if [ -n "${INFISICAL_TOKEN:-}" ] && [ -n "${INFISICAL_PROJECT_ID:-}" ]; then
+  echo "Infisical credentials present; initializing or pulling Beads from DoltHub..."
+  flox activate --dir "$PWD/envs/prebuilt" --mode run -- \
+    bash "$PWD/scripts/beads-dolthub-pull.sh"
+else
+  echo "Infisical credentials absent; skipping automatic Beads DoltHub pull"
+fi
+
 # Auto-authenticate flox — opt-in only, via FLOXHUB_AUTOLOGIN=1 — when
 # FLOXHUB_TOKEN is present in the environment (set via this user's
 # ~/.conductor/settings.toml [environment_variables.cloud]). Skipped by
