@@ -14,7 +14,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-REMOTE="${BEADS_DOLTHUB_REMOTE:-dolthub://elviskahoro/gtm-sdk}"
+# The dolt CLI/embedded engine version pinned for this workspace (2.1.10)
+# doesn't recognize the `dolthub://` shorthand scheme ("unknown url scheme:
+# 'dolthub'"); the equivalent doltremoteapi HTTPS URL works on every version
+# and is what `dolthub://` resolves to internally on versions that support it.
+REMOTE="${BEADS_DOLTHUB_REMOTE:-https://doltremoteapi.dolthub.com/elviskahoro/gtm-sdk}"
 SECRET_NAME="${DOLTHUB_DOLT_CREDENTIAL_SECRET_NAME:-DOLTHUB_DOLT_CREDENTIAL_JWK}"
 INFISICAL_ENV="${INFISICAL_ENV:-dev}"
 
