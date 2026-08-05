@@ -22,7 +22,6 @@
     "options": {
       "systems": [
         "aarch64-darwin",
-        "aarch64-linux",
         "x86_64-linux"
       ]
     },
@@ -88,39 +87,6 @@
     {
       "attr_path": "cacert",
       "broken": false,
-      "derivation": "/nix/store/63fygv8v06aq71lynpv7519iqlnbjb29-nss-cacert-3.125.drv",
-      "description": "Bundle of X.509 certificates of public Certificate Authorities (CA)",
-      "install_id": "cacert",
-      "license": "MPL-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=0954f7ee2f6bb3dc7d4e3d0d8bcb8fd4bde4cfc5",
-      "name": "nss-cacert-3.125",
-      "pname": "cacert",
-      "rev": "0954f7ee2f6bb3dc7d4e3d0d8bcb8fd4bde4cfc5",
-      "rev_count": 1043649,
-      "rev_date": "2026-07-29T09:51:10Z",
-      "scrape_date": "2026-07-30T05:24:28.249628Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "3.125",
-      "outputs_to_install": [
-        "out",
-        "out"
-      ],
-      "outputs": {
-        "hashed": "/nix/store/cn84vx21idxj152amaiasjbnx265d6p8-nss-cacert-3.125-hashed",
-        "out": "/nix/store/8617x2m3lwpjcd91b6h94qhn7grgwavn-nss-cacert-3.125",
-        "p11kit": "/nix/store/cnvvcq18j5bjq45c238xkgh3ifx2wm57-nss-cacert-3.125-p11kit",
-        "unbundled": "/nix/store/vip80c00ilf00kl3cbimklm3jipw4b2n-nss-cacert-3.125-unbundled"
-      },
-      "system": "aarch64-linux",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "cacert",
-      "broken": false,
       "derivation": "/nix/store/9qwshbld48rp6lvnq003pkb09zbnbj2r-nss-cacert-3.125.drv",
       "description": "Bundle of X.509 certificates of public Certificate Authorities (CA)",
       "install_id": "cacert",
@@ -179,38 +145,6 @@
         "out": "/nix/store/h4pzlycrx2dp24ga9zvx9dj7zlw5qbki-coreutils-9.11"
       },
       "system": "aarch64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "coreutils",
-      "broken": false,
-      "derivation": "/nix/store/swa73nlp8c0ac9gcl6m72xkqapdzy35c-coreutils-9.11.drv",
-      "description": "GNU Core Utilities",
-      "install_id": "coreutils",
-      "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=0954f7ee2f6bb3dc7d4e3d0d8bcb8fd4bde4cfc5",
-      "name": "coreutils-9.11",
-      "pname": "coreutils",
-      "rev": "0954f7ee2f6bb3dc7d4e3d0d8bcb8fd4bde4cfc5",
-      "rev_count": 1043649,
-      "rev_date": "2026-07-29T09:51:10Z",
-      "scrape_date": "2026-07-30T05:24:28.633177Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "9.11",
-      "outputs_to_install": [
-        "out",
-        "out"
-      ],
-      "outputs": {
-        "debug": "/nix/store/6nmiaarsiz5cpw3mpjcl7aq944n4lrdd-coreutils-9.11-debug",
-        "info": "/nix/store/fygp2s57gscp87f6vrvkd11mg3dzbms3-coreutils-9.11-info",
-        "out": "/nix/store/3da6dbbp462hxhhxxrlilv3022fn2mc5-coreutils-9.11"
-      },
-      "system": "aarch64-linux",
       "group": "toplevel",
       "priority": 5
     },
@@ -284,43 +218,6 @@
     {
       "attr_path": "curl",
       "broken": false,
-      "derivation": "/nix/store/5m837hkv105a9b8a7xkv60773afcyl4k-curl-8.21.0.drv",
-      "description": "Command line tool for transferring files with URL syntax",
-      "install_id": "curl",
-      "license": "curl",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=0954f7ee2f6bb3dc7d4e3d0d8bcb8fd4bde4cfc5",
-      "name": "curl-8.21.0",
-      "pname": "curl",
-      "rev": "0954f7ee2f6bb3dc7d4e3d0d8bcb8fd4bde4cfc5",
-      "rev_count": 1043649,
-      "rev_date": "2026-07-29T09:51:10Z",
-      "scrape_date": "2026-07-30T05:24:28.733948Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "8.21.0",
-      "outputs_to_install": [
-        "bin",
-        "bin",
-        "man",
-        "man"
-      ],
-      "outputs": {
-        "bin": "/nix/store/nzw3bi83arcfpzbwa7vqa3acnwm513q1-curl-8.21.0-bin",
-        "debug": "/nix/store/w052ydlz2kqc4rxcsdi9sfdiypahcx16-curl-8.21.0-debug",
-        "dev": "/nix/store/k623mwvk1salfiz3fa6j1ckg7k25kzlq-curl-8.21.0-dev",
-        "devdoc": "/nix/store/jjfw8nshbfcyhvb975z8wdxnz05b0bkg-curl-8.21.0-devdoc",
-        "man": "/nix/store/jm9xyf8d150fk8rb4392wlx93pnqyfw8-curl-8.21.0-man",
-        "out": "/nix/store/i644qglj29sii7d66lm4garmsas1ayv2-curl-8.21.0"
-      },
-      "system": "aarch64-linux",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "curl",
-      "broken": false,
       "derivation": "/nix/store/4ni0jvdv125369h2mw7x1k1fz06mh9m1-curl-8.21.0.drv",
       "description": "Command line tool for transferring files with URL syntax",
       "install_id": "curl",
@@ -388,36 +285,6 @@
     {
       "attr_path": "gnutar",
       "broken": false,
-      "derivation": "/nix/store/777wz9r3sdwqv0gsgix6dsk0j0xq6l58-gnutar-1.35.drv",
-      "description": "GNU implementation of the `tar` archiver",
-      "install_id": "gnutar",
-      "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=0954f7ee2f6bb3dc7d4e3d0d8bcb8fd4bde4cfc5",
-      "name": "gnutar-1.35",
-      "pname": "gnutar",
-      "rev": "0954f7ee2f6bb3dc7d4e3d0d8bcb8fd4bde4cfc5",
-      "rev_count": 1043649,
-      "rev_date": "2026-07-29T09:51:10Z",
-      "scrape_date": "2026-07-30T05:24:30.638083Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "1.35",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "info": "/nix/store/dgy56x9qq4ac8ilfw9jy7dh5051ikhwy-gnutar-1.35-info",
-        "out": "/nix/store/7sw1d6d7kv88ppd02s3fwjmrjvf3gn1i-gnutar-1.35"
-      },
-      "system": "aarch64-linux",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "gnutar",
-      "broken": false,
       "derivation": "/nix/store/frplv4ziprj2f0cs9w8hvjkkg1ciczbj-gnutar-1.35.drv",
       "description": "GNU implementation of the `tar` archiver",
       "install_id": "gnutar",
@@ -474,39 +341,6 @@
         "out": "/nix/store/rc3na6ji52dqy3pkxy7zwyg554a6jk9v-gzip-1.14"
       },
       "system": "aarch64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "gzip",
-      "broken": false,
-      "derivation": "/nix/store/2j3rxivb89x67qf0i6qppfh5y7axv9i3-gzip-1.14.drv",
-      "description": "GNU zip compression program",
-      "install_id": "gzip",
-      "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=0954f7ee2f6bb3dc7d4e3d0d8bcb8fd4bde4cfc5",
-      "name": "gzip-1.14",
-      "pname": "gzip",
-      "rev": "0954f7ee2f6bb3dc7d4e3d0d8bcb8fd4bde4cfc5",
-      "rev_count": 1043649,
-      "rev_date": "2026-07-29T09:51:10Z",
-      "scrape_date": "2026-07-30T05:24:31.044518Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "1.14",
-      "outputs_to_install": [
-        "man",
-        "out",
-        "out"
-      ],
-      "outputs": {
-        "info": "/nix/store/38i7917ghn9g8xibrsf1gly71bsnbbaj-gzip-1.14-info",
-        "man": "/nix/store/341rhxk9qq05b2180yx94akv4lnrqqwf-gzip-1.14-man",
-        "out": "/nix/store/064nqn0kfcgxr1v30m9ym8cz3zyy58as-gzip-1.14"
-      },
-      "system": "aarch64-linux",
       "group": "toplevel",
       "priority": 5
     },

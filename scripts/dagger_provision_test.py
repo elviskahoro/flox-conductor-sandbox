@@ -28,18 +28,13 @@ verification step's exit code into a file inside the container (so
 `with_exec` stays green and its stdout is always exportable) and re-raises the
 real failure afterward, instead of an `... || true` that would swallow it.
 
-Platform note (same known gap as Stage 7 in scripts/sandbox-test.sh):
-`elvis/bd`/`elvis/roborev` are only published for `x86_64-linux` and
-`aarch64-darwin`, not `aarch64-linux`. This pipeline runs the container at
-the *host's own* platform by default (fast, no emulation) — on an Apple
-Silicon Mac that's `aarch64-linux`, so `bd`/`roborev` are expected to be
-absent and only the 5 catalog tools are verified; a full 7/7 check needs a
-genuine `x86_64-linux` host (e.g. a real Conductor cloud sandbox), which is
-also the actual target class this whole repo validates against. Force
-`x86_64-linux` explicitly with `DAGGER_PLATFORM=linux/amd64` if you want to
-try it anyway — expect it to be slow and to hit QEMU-emulation quirks
-unrelated to Flox (confirmed: nix's build sandbox fails under emulation with
-"getting pseudoterminal attributes: Function not implemented").
+Platform note: the provisioning environment intentionally supports only
+`x86_64-linux` and `aarch64-darwin`. `aarch64-linux` is not a Conductor target
+and is excluded from the manifest, so a host-native Dagger run on an Apple
+Silicon Mac cannot activate this Linux container successfully. Use a genuine
+`x86_64-linux` host (the actual Conductor target class), or explicitly force
+`DAGGER_PLATFORM=linux/amd64`; the latter may hit QEMU/Nix quirks unrelated
+to Flox.
 """
 
 from __future__ import annotations
@@ -87,11 +82,16 @@ NIX_DAEMON_START_CMD = (
 PROVISION_CMD = ["bash", "scripts/floxhub-provision.sh"]
 
 # elvis/bd and elvis/roborev are published for x86_64-linux and
-# aarch64-darwin only (envs/floxhub-provision/.flox/env/manifest.toml) — on
-# aarch64-linux (e.g. an unforced run on Apple Silicon) they're absent by
-# design, not a provisioning failure, so don't check for them there.
-CATALOG_TOOLS = ["uv --version", "dolt version", "infisical --version", "gh --version", "git version"]
-FULL_TOOLS = ["bd version", "roborev version", *CATALOG_TOOLS]
+# aarch64-darwin only (envs/floxhub-provision/.flox/env/manifest.toml).
+FULL_TOOLS = [
+    "bd version",
+    "roborev version",
+    "uv --version",
+    "dolt version",
+    "infisical --version",
+    "gh --version",
+    "git version",
+]
 
 # Verify each tool actually resolves post-activation, don't just trust
 # floxhub-provision.sh's exit code — a partial resolution failure (e.g.
@@ -101,20 +101,15 @@ BEADS_RC_PATH = "/tmp/beads_rc"
 
 
 def verify_cmd(arch: str) -> str:
-    # arch is uname -m from *inside* the container — not the Python-side
-    # PLATFORM string, which is None (host-native) in the common case and
-    # would otherwise make CATALOG_TOOLS-vs-FULL_TOOLS a guess rather than a
-    # fact about what actually got built.
-    tools = FULL_TOOLS if arch == "x86_64" else CATALOG_TOOLS
-    if tools is CATALOG_TOOLS:
-        print(
-            "note: platform is aarch64-linux — elvis/bd/elvis/roborev aren't "
-            "published for it, so only the 5 catalog tools are verified "
-            "(same known gap as Stage 7). Set DAGGER_PLATFORM=linux/amd64 for "
-            "the full 7-tool check.",
-            file=sys.stderr,
+    # The manifest intentionally excludes aarch64-linux. Fail with a direct
+    # platform message instead of attempting a partial five-tool activation.
+    if arch != "x86_64":
+        raise RuntimeError(
+            "unsupported Dagger container architecture: "
+            f"{arch}; this environment supports x86_64-linux only. "
+            "Use DAGGER_PLATFORM=linux/amd64 or run on x86_64-linux."
         )
-    check = " && ".join(tools)
+    check = " && ".join(FULL_TOOLS)
     return (
         "set +e; "
         f"flox activate --dir envs/floxhub-provision --mode run -- sh -c '{check}'; "
@@ -225,8 +220,10 @@ async def main() -> None:
                 )
             print("Beads/DoltHub bootstrap and bd ready/list/show checks passed.")
 
-    tools = FULL_TOOLS if arch == "x86_64" else CATALOG_TOOLS
-    print(f"All {len(tools)} tools resolved under envs/floxhub-provision in a disposable container.")
+    print(
+        f"All {len(FULL_TOOLS)} tools resolved under envs/floxhub-provision "
+        "in a disposable container."
+    )
 
 
 if __name__ == "__main__":

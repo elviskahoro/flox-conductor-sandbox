@@ -10,4 +10,4 @@ schema-version = "1.13.0"
 bd.flake = "github:gastownhall/beads/v1.1.0"
 
 [options]
-systems = ["aarch64-darwin", "aarch64-linux", "x86_64-linux"]
+systems = ["aarch64-darwin", "x86_64-linux"]

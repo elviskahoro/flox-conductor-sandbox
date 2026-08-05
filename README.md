@@ -226,7 +226,9 @@ service account rather than a real person's token, to keep CI blast radius
 scoped to read/install only. **Known gap:** `elvis/bd`/`elvis/roborev` are
 so far only published for `aarch64-darwin` and `x86_64-linux` (see [Known
 scope reductions](#known-scope-reductions)); Stage 7 doesn't yet PASS on
-`aarch64-linux`.
+`aarch64-linux`; that platform is intentionally out of scope because it is
+not a Conductor target and the published `bd`/`roborev` packages do not cover
+it.
 
 ### Staging check: the provisioning recipe in a disposable container (Dagger)
 
