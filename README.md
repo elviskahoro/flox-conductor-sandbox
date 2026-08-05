@@ -127,6 +127,39 @@ The harness writes `findings/report-<UTC timestamp>.md` with a PASS/FAIL/SKIP
 table plus evidence, and a full transcript alongside. Commit the findings back
 (or paste the report into #445).
 
+### Pulling Linear AI issues into local Beads
+
+This repository also includes an opt-in Linear intake pilot. It creates a
+separate stealth `.beads` database in the workspace and pulls issues from the
+Linear **AI** team. Linear remains authoritative: the workflow is pull-only,
+does not configure a DoltHub remote, and is never run automatically by
+Conductor setup.
+
+The script reads `LINEAR_API_KEY` from Infisical using the existing
+`INFISICAL_TOKEN` and `INFISICAL_PROJECT_ID` environment variables. The API key
+is held only in the process environment and is not written to the repository:
+
+```bash
+bash scripts/beads-linear-pull.sh --dry-run  # preview the first pull
+bash scripts/beads-linear-pull.sh             # import/update local issues
+bd ready --json
+bd list --json
+bd linear status --json
+```
+
+For an already initialized pilot database, the equivalent explicit pull is:
+
+```bash
+LINEAR_API_KEY="$(infisical secrets get LINEAR_API_KEY --env=dev \
+  --projectId "$INFISICAL_PROJECT_ID" --plain)" \
+  bd linear sync --pull --relations
+```
+
+The Linear script refuses to reuse a `.beads` database that already has a
+configured Dolt remote, preventing this pilot from mixing with the separate
+DoltHub-backed Beads workflow above. It is safe to run repeatedly; existing
+Linear references are updated rather than duplicated.
+
 ### Authenticating a publisher sandbox
 
 Stage 4 (H4) only means anything if the sandbox running it has *never*
