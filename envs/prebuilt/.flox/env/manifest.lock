@@ -23,7 +23,6 @@
     "options": {
       "systems": [
         "aarch64-darwin",
-        "aarch64-linux",
         "x86_64-linux"
       ]
     }
@@ -56,36 +55,6 @@
         "out": "/nix/store/jy4b0hr5h5jr987wd9rwvcb4qm8pvsz3-dolt-2.1.10"
       },
       "system": "aarch64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "dolt",
-      "broken": false,
-      "derivation": "/nix/store/7ba3ipgzw1pcfavk526id2k1x77fgcg2-dolt-2.1.10.drv",
-      "description": "Relational database with version control and CLI a-la Git",
-      "install_id": "dolt",
-      "license": "Apache-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=753cc8a3a87467296ddd1fa93f0cc3e81120ee46",
-      "name": "dolt-2.1.10",
-      "pname": "dolt",
-      "rev": "753cc8a3a87467296ddd1fa93f0cc3e81120ee46",
-      "rev_count": 1035164,
-      "rev_date": "2026-07-15T13:07:34Z",
-      "scrape_date": "2026-07-17T05:21:46.641975Z",
-      "stabilities": [
-        "unstable",
-        "staging"
-      ],
-      "unfree": false,
-      "version": "2.1.10",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/gcllp3lhsaqx6a4yg7qbdp0w2f28dj6c-dolt-2.1.10"
-      },
-      "system": "aarch64-linux",
       "group": "toplevel",
       "priority": 5
     },
@@ -152,36 +121,6 @@
     {
       "attr_path": "gh",
       "broken": false,
-      "derivation": "/nix/store/6557md8nzqrqcy69a0gwcjvnqm181dfx-gh-2.96.0.drv",
-      "description": "GitHub CLI tool",
-      "install_id": "gh",
-      "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=753cc8a3a87467296ddd1fa93f0cc3e81120ee46",
-      "name": "gh-2.96.0",
-      "pname": "gh",
-      "rev": "753cc8a3a87467296ddd1fa93f0cc3e81120ee46",
-      "rev_count": 1035164,
-      "rev_date": "2026-07-15T13:07:34Z",
-      "scrape_date": "2026-07-17T05:21:47.498151Z",
-      "stabilities": [
-        "unstable",
-        "staging"
-      ],
-      "unfree": false,
-      "version": "2.96.0",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/85s40vacs1ajn0x7b3vszvlqwnflh0dq-gh-2.96.0"
-      },
-      "system": "aarch64-linux",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "gh",
-      "broken": false,
       "derivation": "/nix/store/0wh6avi717rbm1kyxqli0fhx3gdfc80v-gh-2.96.0.drv",
       "description": "GitHub CLI tool",
       "install_id": "gh",
@@ -237,38 +176,6 @@
         "out": "/nix/store/01258rj9fvamcl4bf7yjffysmwyvd72i-git-2.54.0"
       },
       "system": "aarch64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "git",
-      "broken": false,
-      "derivation": "/nix/store/9qws0dpk8k46pllp8jbywn7hwjghlgxh-git-2.54.0.drv",
-      "description": "Distributed version control system",
-      "install_id": "git",
-      "license": "GPL-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=753cc8a3a87467296ddd1fa93f0cc3e81120ee46",
-      "name": "git-2.54.0",
-      "pname": "git",
-      "rev": "753cc8a3a87467296ddd1fa93f0cc3e81120ee46",
-      "rev_count": 1035164,
-      "rev_date": "2026-07-15T13:07:34Z",
-      "scrape_date": "2026-07-17T05:21:47.557003Z",
-      "stabilities": [
-        "unstable",
-        "staging"
-      ],
-      "unfree": false,
-      "version": "2.54.0",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "debug": "/nix/store/pf9h57hj6j7s6p16y9j3xlhqgzn60nin-git-2.54.0-debug",
-        "doc": "/nix/store/hypxgl3rcxiyj56dq1ixwihqg23asklm-git-2.54.0-doc",
-        "out": "/nix/store/r0581vs09k8g2pkd41w4g7m8y14rnpbc-git-2.54.0"
-      },
-      "system": "aarch64-linux",
       "group": "toplevel",
       "priority": 5
     },
@@ -337,36 +244,6 @@
     {
       "attr_path": "infisical",
       "broken": false,
-      "derivation": "/nix/store/1kl8ajw11i9pm91bl8r7icw1lk9xpafp-infisical-0.41.90.drv",
-      "description": "Official Infisical CLI",
-      "install_id": "infisical",
-      "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=753cc8a3a87467296ddd1fa93f0cc3e81120ee46",
-      "name": "infisical-0.41.90",
-      "pname": "infisical",
-      "rev": "753cc8a3a87467296ddd1fa93f0cc3e81120ee46",
-      "rev_count": 1035164,
-      "rev_date": "2026-07-15T13:07:34Z",
-      "scrape_date": "2026-07-17T05:22:07.917108Z",
-      "stabilities": [
-        "unstable",
-        "staging"
-      ],
-      "unfree": false,
-      "version": "0.41.90",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/m4mjvavidr2kq56y88r08pyvd2g145gn-infisical-0.41.90"
-      },
-      "system": "aarch64-linux",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "infisical",
-      "broken": false,
       "derivation": "/nix/store/6fy5i4ahdmfwh9czncqg8yhcl4abb0q9-infisical-0.41.90.drv",
       "description": "Official Infisical CLI",
       "install_id": "infisical",
@@ -421,36 +298,6 @@
         "out": "/nix/store/q9yngkdm5ysr51bgc36pyq14k5g3x42n-uv-0.11.26"
       },
       "system": "aarch64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "uv",
-      "broken": false,
-      "derivation": "/nix/store/d7jkhswv1jymbs7w9ialyzv718gdridl-uv-0.11.26.drv",
-      "description": "Extremely fast Python package installer and resolver, written in Rust",
-      "install_id": "uv",
-      "license": "[ Apache-2.0, MIT ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=753cc8a3a87467296ddd1fa93f0cc3e81120ee46",
-      "name": "uv-0.11.26",
-      "pname": "uv",
-      "rev": "753cc8a3a87467296ddd1fa93f0cc3e81120ee46",
-      "rev_count": 1035164,
-      "rev_date": "2026-07-15T13:07:34Z",
-      "scrape_date": "2026-07-17T05:25:26.514736Z",
-      "stabilities": [
-        "unstable",
-        "staging"
-      ],
-      "unfree": false,
-      "version": "0.11.26",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/hv7n7hqzxmxkvw6s8vg1gngr44b50mlm-uv-0.11.26"
-      },
-      "system": "aarch64-linux",
       "group": "toplevel",
       "priority": 5
     },

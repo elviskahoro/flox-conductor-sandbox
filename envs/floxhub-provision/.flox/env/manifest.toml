@@ -16,12 +16,11 @@ dolt.pkg-path = "dolt"
 infisical.pkg-path = "infisical"
 gh.pkg-path = "gh"
 git.pkg-path = "git"
-# elvis/bd and elvis/roborev are now published for aarch64-darwin AND
+# elvis/bd and elvis/roborev are published for aarch64-darwin AND
 # x86_64-linux (issue #16 §9 gap, closed from an x86_64-linux Conductor
-# cloud sandbox). Neither is published for aarch64-linux yet, so the
-# per-package systems override stays (narrower than the env-wide systems
-# list below) rather than being dropped, to avoid a resolution failure on
-# that system.
+# cloud sandbox). aarch64-linux is intentionally outside this environment's
+# support policy because Conductor does not use that target and the packages
+# are not published for it.
 #
 # Explicit version pins (issue #16 §9 finding): a bare pkg-path with no
 # version constraint resolved to the OLDEST published version (1.1.0 /
@@ -39,4 +38,4 @@ roborev.pkg-group = "floxhub-published"
 
 [options]
 # Mirrors envs/prebuilt/envs/repackage.
-systems = ["aarch64-darwin", "aarch64-linux", "x86_64-linux"]
+systems = ["aarch64-darwin", "x86_64-linux"]
