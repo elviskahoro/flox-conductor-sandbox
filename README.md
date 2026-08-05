@@ -308,19 +308,15 @@ a repo secret of the same name.
   (`scripts/floxhub-provision.sh`) works end-to-end against the *combined*
   manifest (5 catalog tools + real `elvis/bd`/`elvis/roborev`), not just
   Stage 6's single trivial package — this is the actual recipe issue #16 §9
-  scopes for `gtm-sdk/scripts/conductor-workspace-setup.sh`. Currently only
-  PASSes on `aarch64-darwin`, since `elvis/bd`/`elvis/roborev` aren't yet
-  published for Linux (see Known scope reductions below) — a FAIL/SKIP on a
-  Linux sandbox right now means that, not a recipe defect.
+  scopes for `gtm-sdk/scripts/conductor-workspace-setup.sh`. It is expected
+  to PASS on both supported systems, `aarch64-darwin` and `x86_64-linux`;
+  `aarch64-linux` is intentionally outside the Conductor support policy.
 
 ## Known scope reductions
 
-- **`elvis/bd` and `elvis/roborev` are only published for `aarch64-darwin`
-  so far** (issue #16 §9). `flox publish` only publishes the host's own
-  system (trap 6) — the original throwaway package needed a separate Mac
-  publish (PR #7) and Linux publish (PR #8) for the same reason; the same
-  follow-up is still needed here before Stage 7 / `envs/floxhub-provision`
-  work on the actual `x86_64-linux` Conductor cloud target class.
+- **`elvis/bd@1.1.2` and `elvis/roborev@0.63.0` are published for both
+  supported systems**, `aarch64-darwin` and `x86_64-linux`. The manifest pins
+  those versions and excludes `aarch64-linux`, which is not a Conductor target.
 - No DoltHub/beads-DB bootstrap, no uv sync — tool *provisioning* is the
   main thing under test (Stage 7 does exercise real Infisical-first token
   acquisition in `scripts/floxhub-provision.sh`, but doesn't bootstrap any
