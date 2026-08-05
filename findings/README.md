@@ -17,6 +17,12 @@ timestamp:
 See the top-level [README](../README.md) for what the hypotheses (H1-H4)
 and stages mean, and how to produce a new run.
 
+## Additional reports
+
+- [Beads + Linear integration report](linear-beads-integration-report.md) —
+  native integration findings, Linear team discovery, worktree database
+  redirect hazard, and target-repository setup guidance.
+
 ## Runs so far, oldest to newest
 
 | Stamp | Environment | Target class? | Headline result |

@@ -1,2 +1,5 @@
 # flox build output symlinks (created next to the env that ran the build)
 result-*
+
+# Local-only Linear intake database; never commit Beads state from this pilot.
+.beads/
