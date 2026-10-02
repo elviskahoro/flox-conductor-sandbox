@@ -44,6 +44,25 @@ else
 
   log "downloading the official Trunk launcher"
   curl -fsSL https://trunk.io/releases/trunk -o "${TMP_BIN}"
+
+  # Content-pin the launcher (roborev review finding: it was previously
+  # downloaded unpinned and executed). Trunk publishes no versioned launcher
+  # URL — trunk.io/releases/trunk is latest-only — but the artifact is a
+  # portable bash script that has been byte-stable since 2024-11-06 (S3
+  # last-modified), so fail closed on any upstream change and bump this
+  # deliberately. Keep in sync with conductor-cloud-install.sh's
+  # TRUNK_LAUNCHER_SHA256; scripts/validate-pins.sh cross-checks the two.
+  TRUNK_LAUNCHER_SHA256="89fbdd8c7b63649eeb1479415757b898903c041e73b49b78028dbd64eca3087a"
+  LAUNCHER_CHECK_TOOL="sha256sum"
+  if ! command -v sha256sum >/dev/null 2>&1 && command -v shasum >/dev/null 2>&1; then
+    LAUNCHER_CHECK_TOOL="shasum -a 256"
+  fi
+  # shellcheck disable=SC2086  # intentional two-word command (shasum -a 256), not a path to quote
+  if ! echo "${TRUNK_LAUNCHER_SHA256}  ${TMP_BIN}" | ${LAUNCHER_CHECK_TOOL} -c -; then
+    log "error: Trunk launcher checksum mismatch (expected ${TRUNK_LAUNCHER_SHA256}); refusing to install"
+    exit 1
+  fi
+
   chmod 755 "${TMP_BIN}"
 
   if [[ -w "${INSTALL_DIR}" ]]; then

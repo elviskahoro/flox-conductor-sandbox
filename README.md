@@ -61,6 +61,8 @@ envs/floxhub-provision/ Phase D MVP: [install] the 5 catalog tools + elvis/bd + 
 scripts/sandbox-test.sh   the harness — runs all stages, never hard-fails
 scripts/floxhub-provision.sh  Phase D MVP setup-script recipe (token → login → activate envs/floxhub-provision)
 scripts/conductor-cloud-install.sh  cloud-sandbox provisioning: python3.11 + priority CLIs (roborev, trunk, rwx), wired into setup before the harness
+scripts/validate-pins.sh  pin-drift check: roborev/trunk pins vs the Flox manifests (CI)
+scripts/conductor-cloud-install-test.sh  codified amazonlinux:2023 container verification of conductor-cloud-install.sh (CI)
 findings/          harness output: report-*.md (summary + evidence) and full-log-*.txt
                    — see findings/README.md for a run-by-run index
 ```

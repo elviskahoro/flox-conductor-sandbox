@@ -12,23 +12,32 @@
 #
 # Installs, in the user-set priority order (context: gtm-sdk#702 for trunk,
 # gtm-sdk#506 for roborev):
-#   roborev      reuse if present → defer to the FloxHub path when
-#                FLOXHUB_TOKEN is set (the production path —
-#                .conductor/settings.toml provisions it right after this
-#                script) → pinned kenn-io release tarball, fail-closed
-#                sha256 (same pins as envs/repackage's [build.roborev]).
-#   trunk        reuse if present → official launcher binary, the same
-#                download scripts/conductor-trunk-preflight.sh installs
-#                (direct binary, no piped remote shell — gtm-sdk#702's
-#                `curl ... | bash -s -- -y` shape also works but executes
-#                a fetched script; prefer the artifact).
+#   roborev      reuse if present → pinned kenn-io release tarball,
+#                fail-closed sha256 (same pins as envs/repackage's
+#                [build.roborev]; scripts/validate-pins.sh cross-checks
+#                them). This pinned binary is the guaranteed floor:
+#                .conductor/settings.toml's later FloxHub block re-points
+#                /usr/local/bin/roborev at the published elvis/roborev
+#                package when it succeeds (the production path, gtm-sdk#506)
+#                and warns — non-fatal — when it fails, leaving this
+#                binary in place.
+#   trunk        reuse if present → the official launcher (same download
+#                as scripts/conductor-trunk-preflight.sh), content-pinned
+#                by sha256: trunk publishes no versioned launcher URL
+#                (trunk.io/releases/trunk is latest-only), but the
+#                artifact is a portable bash script that has been
+#                byte-stable since 2024-11-06 (S3 last-modified) — fail
+#                closed on any upstream change, bump deliberately. What
+#                the launcher then fetches is trunk's own managed update
+#                channel, out of this script's control.
 #   rwx          reuse if present → pinned static release binary,
 #                checksum-verified; idiom and pins lifted from the rwx
 #                block gtm-sdk#699 added to conductor-workspace-setup.sh.
 #   python3.11   AL2023's default `python3` is 3.9 while pyproject.toml
 #                requires >=3.11. FATAL when this is the target class and
 #                3.11 cannot be provided (a stated requirement, not a
-#                nice-to-have).
+#                nice-to-have); settings.toml runs the harness regardless
+#                and fails setup at the very end instead.
 #
 # Design rules inherited from this repo's / gtm-sdk's provisioning scripts:
 #   - NO process substitution (`<(...)`) anywhere: Conductor cloud sandboxes
@@ -38,9 +47,10 @@
 #   - Non-fatal per CLI tool (gtm-sdk#702's stated fallback-installer
 #     idiom): a failed tool is recorded in the summary and setup continues.
 #     Only a Python 3.11 failure on the target class aborts.
+#   - One WORK dir for every stage's temp files, cleaned by a single EXIT
+#     trap (same idiom as scripts/conductor-trunk-preflight.sh), so an
+#     abort mid-stage leaves nothing behind.
 set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 log() { printf '[cloud-install] %s\n' "$*"; }
 
@@ -50,10 +60,32 @@ export PATH="${HOME}/.local/bin:${PATH}"
 LOCAL_BIN="/usr/local/bin"
 RESULTS=""
 PYTHON_OK=1
+# Tools that had to land in ~/.local/bin because /usr/local/bin was not
+# writable and no passwordless sudo existed. They are NOT on the default
+# PATH of later setup steps; the summary warns about them and settings.toml
+# exports ~/.local/bin for the rest of setup.
+LOCAL_FALLBACK_TOOLS=""
+
+# WORK: one temp dir for every stage (per-stage subdirectories); the EXIT
+# trap below is the only cleanup path, so a stage abort leaves nothing
+# behind (roborev review finding: hand-rolled rm on each error path).
+WORK="$(mktemp -d)"
+cleanup() { rm -rf "${WORK}"; }
+trap cleanup EXIT HUP INT TERM
 
 record() { # <status> <name> <detail> — one summary row + one log line
   RESULTS="${RESULTS}$(printf ' %-10s | %-4s | %s' "$2" "$1" "$3")"$'\n'
   log "[$1] $2 — $3"
+}
+
+# note_placement <path>: record tools whose install landed in the
+# ~/.local/bin fallback (see LOCAL_FALLBACK_TOOLS above).
+note_placement() {
+  case "$1" in
+  "${HOME}/.local/bin/"*)
+    LOCAL_FALLBACK_TOOLS="${LOCAL_FALLBACK_TOOLS} $(basename "$1")"
+    ;;
+  esac
 }
 
 # TARGET_CLASS: this is the real AL2023/Vercel/Conductor-cloud environment
@@ -125,23 +157,21 @@ checksum_verify() {
 # --- roborev (priority 1) ----------------------------------------------------
 ROBOREV_PIN="0.63.0"
 # Keep in sync with envs/repackage/.flox/env/manifest.toml's [build.roborev]
-# and envs/floxhub-provision's roborev.version (^0.63.0). Bump runbook: new
+# and envs/floxhub-provision's roborev.version (^0.63.0) —
+# scripts/validate-pins.sh cross-checks all of them in CI. Bump runbook: new
 # pin + sha256s from the release's checksums file, then republish the
 # FloxHub package — don't hand-edit any lock.
+#
+# No FloxHub deferral here, deliberately (roborev review finding): this
+# pinned binary is the guaranteed floor, installed immediately. In
+# .conductor/settings.toml's flow, the later FloxHub roborev block re-points
+# /usr/local/bin/roborev at the published elvis/roborev package when it
+# succeeds and warns — non-fatally — when it fails, so roborev is always
+# present either way and a FloxHub outage never leaves a gap.
 
 roborev_stage() {
   if command -v roborev >/dev/null 2>&1; then
     record PASS roborev "reused $(command -v roborev) ($(roborev version 2>&1 | head -1 || true))"
-    return 0
-  fi
-  # FloxHub-published roborev is the production path (gtm-sdk#506): when
-  # this setup runs with a FloxHub token, settings.toml's roborev block
-  # provisions elvis/roborev right after this script — don't double-install
-  # a second copy from the fallback path. The sibling-script check keeps
-  # this defer scoped to this repo's setup flow; standalone/ported runs
-  # always take the pinned-binary path below.
-  if [[ -n "${FLOXHUB_TOKEN:-}" ]] && [[ -f "${SCRIPT_DIR}/floxhub-provision.sh" ]]; then
-    record SKIP roborev "FLOXHUB_TOKEN set; deferring to FloxHub provisioning (the production path, gtm-sdk#506)"
     return 0
   fi
   local asset sha256
@@ -163,28 +193,26 @@ roborev_stage() {
     return 1
     ;;
   esac
-  local tmp path
-  tmp="$(mktemp -d)"
-  if ! curl -fsSLo "${tmp}/${asset}" \
+  local dir="${WORK}/roborev"
+  mkdir -p "${dir}"
+  if ! curl -fsSLo "${dir}/${asset}" \
     "https://github.com/kenn-io/roborev/releases/download/v${ROBOREV_PIN}/${asset}"; then
-    rm -rf "${tmp}"
     return 1
   fi
-  if ! checksum_verify "${sha256}" "${tmp}/${asset}"; then
-    rm -rf "${tmp}"
+  if ! checksum_verify "${sha256}" "${dir}/${asset}"; then
     return 1
   fi
-  if ! tar -xzf "${tmp}/${asset}" -C "${tmp}" || [[ ! -x "${tmp}/roborev" ]]; then
-    rm -rf "${tmp}"
+  if ! tar -xzf "${dir}/${asset}" -C "${dir}" || [[ ! -x "${dir}/roborev" ]]; then
     log "error: roborev tarball did not yield an executable ./roborev"
     return 1
   fi
-  path="$(install_bin "${tmp}/roborev" roborev || true)"
-  rm -rf "${tmp}"
+  local path
+  path="$(install_bin "${dir}/roborev" roborev || true)"
   if [[ -z "${path}" ]]; then
     log "error: could not place the roborev binary in a bin directory"
     return 1
   fi
+  note_placement "${path}"
   link_bin "${path}" git-roborev || true
   hash -r 2>/dev/null || true
   if ! command -v roborev >/dev/null 2>&1; then
@@ -195,28 +223,37 @@ roborev_stage() {
 }
 
 # --- trunk (priority 2) ------------------------------------------------------
+# Same launcher download as scripts/conductor-trunk-preflight.sh (which
+# .conductor/settings.toml runs before this script, so this stage is
+# normally verify-only reuse there; the preflight pins the same checksum —
+# scripts/validate-pins.sh cross-checks the two constants). Kept inline so
+# the script stays a self-contained recipe for porting (gtm-sdk#702).
+TRUNK_LAUNCHER_URL="https://trunk.io/releases/trunk"
+TRUNK_LAUNCHER_SHA256="89fbdd8c7b63649eeb1479415757b898903c041e73b49b78028dbd64eca3087a"
+# Bump runbook: trunk publishes no versioned launcher URL, so re-download
+# ${TRUNK_LAUNCHER_URL} by hand, re-hash it, and update this constant (and
+# the preflight's copy) in the same commit.
+
 trunk_stage() {
   if command -v trunk >/dev/null 2>&1; then
     record PASS trunk "reused $(command -v trunk) ($(trunk --version 2>&1 | head -1 || true))"
     return 0
   fi
-  # Same launcher download as scripts/conductor-trunk-preflight.sh (which
-  # .conductor/settings.toml runs before this script, so this stage is
-  # normally verify-only reuse there). Kept inline so the script stays a
-  # self-contained recipe for porting (gtm-sdk#702).
-  local tmp path
-  tmp="$(mktemp)"
-  if ! curl -fsSL https://trunk.io/releases/trunk -o "${tmp}"; then
-    rm -f "${tmp}"
+  local launcher="${WORK}/trunk"
+  if ! curl -fsSL "${TRUNK_LAUNCHER_URL}" -o "${launcher}"; then
     return 1
   fi
-  chmod 755 "${tmp}"
-  path="$(install_bin "${tmp}" trunk || true)"
-  rm -f "${tmp}"
+  if ! checksum_verify "${TRUNK_LAUNCHER_SHA256}" "${launcher}"; then
+    return 1
+  fi
+  chmod 755 "${launcher}"
+  local path
+  path="$(install_bin "${launcher}" trunk || true)"
   if [[ -z "${path}" ]]; then
     log "error: could not place the trunk launcher in a bin directory"
     return 1
   fi
+  note_placement "${path}"
   hash -r 2>/dev/null || true
   # The launcher bootstraps (downloads the real binary) on first invocation;
   # that cold start was observed to fail transiently once in a container
@@ -244,7 +281,7 @@ rwx_stage() {
     record PASS rwx "reused $(command -v rwx) ($(rwx --version 2>&1 | head -1 || true))"
     return 0
   fi
-  local os arch sha256 tmp path
+  local os arch sha256 binary path
   os="$(uname -s | tr '[:upper:]' '[:lower:]')"
   arch="$(uname -m | sed s/arm64/aarch64/)"
   case "${os}-${arch}" in
@@ -257,22 +294,21 @@ rwx_stage() {
     return 1
     ;;
   esac
-  tmp="$(mktemp)"
-  if ! curl -fsSLo "${tmp}" "https://github.com/rwx-cloud/rwx/releases/download/${RWX_PIN}/rwx-${os}-${arch}"; then
-    rm -f "${tmp}"
+  local binary="${WORK}/rwx"
+  if ! curl -fsSLo "${binary}" "https://github.com/rwx-cloud/rwx/releases/download/${RWX_PIN}/rwx-${os}-${arch}"; then
     return 1
   fi
-  if ! checksum_verify "${sha256}" "${tmp}"; then
-    rm -f "${tmp}"
+  if ! checksum_verify "${sha256}" "${binary}"; then
     return 1
   fi
-  chmod 755 "${tmp}"
-  path="$(install_bin "${tmp}" rwx || true)"
-  rm -f "${tmp}"
+  chmod 755 "${binary}"
+  local path
+  path="$(install_bin "${binary}" rwx || true)"
   if [[ -z "${path}" ]]; then
     log "error: could not place the rwx binary in a bin directory"
     return 1
   fi
+  note_placement "${path}"
   hash -r 2>/dev/null || true
   if ! rwx --version >/dev/null 2>&1; then
     log "error: installed rwx binary failed its version check"
@@ -305,9 +341,17 @@ python311_stage() {
   fi
   # Install 3.11 ALONGSIDE 3.9, never as a replacement: AL2023's
   # /usr/bin/python3 -> python3.9 is load-bearing for absolute-path system
-  # callers (dnf's own machinery). /usr/local/bin precedes /usr/bin on PATH
-  # in these sandboxes (the same convention every other tool in this repo's
-  # setup relies on), so symlinks there shadow PATH lookups only.
+  # callers. /usr/local/bin precedes /usr/bin on PATH in these sandboxes
+  # (the same convention every other tool in this repo's setup relies on),
+  # so symlinks there shadow PATH lookups only.
+  #
+  # Shadow blast radius, verified empirically on the stock amazonlinux:2023
+  # image (asserted on every run by scripts/conductor-cloud-install-test.sh):
+  # dnf's shebang is the absolute `#!/usr/bin/python3` (dnf-3 likewise), so
+  # it resolves through /usr/bin and never sees the /usr/local/bin shadow;
+  # /usr/bin and /usr/sbin contain zero `#!/usr/bin/env python3` consumers;
+  # and a post-shadow `dnf repolist` still succeeds. A future AL2023 update
+  # that adds env-shebang system tooling would be caught by that test.
   log "installing python3.11 (AL2023 default python3 is 3.9; pyproject.toml requires >=3.11)"
   if [[ "$(id -u)" == 0 ]]; then
     if ! dnf install -y python3.11; then
@@ -378,10 +422,16 @@ fi
 log ""
 log "---- conductor-cloud-install summary ----"
 printf '%s' "${RESULTS}"
+if [[ -n "${LOCAL_FALLBACK_TOOLS}" ]]; then
+  log ""
+  log "warning: tools landed in ~/.local/bin (no writable /usr/local/bin, no passwordless sudo):${LOCAL_FALLBACK_TOOLS}"
+  log "warning: that directory is not on the default PATH of later setup steps — .conductor/settings.toml exports it for the rest of setup; other callers must add it themselves"
+fi
 log "------------------------------------------"
 
 if [[ ${PYTHON_OK} != 1 && ${TARGET_CLASS} == 1 ]]; then
   log "error: Python 3.11 is required on this sandbox class (pyproject.toml requires >=3.11) and could not be provided; aborting"
+  log "error: settings.toml's setup continues to the harness before failing at the end (roborev review finding); this exit code is what tells it to"
   exit 1
 fi
 if [[ ${PYTHON_OK} != 1 ]]; then

@@ -33,12 +33,22 @@ bash scripts/conductor-bd-preflight.sh
 # Python 3.11 + the priority CLIs (roborev, trunk, rwx) for this workspace
 # class: AL2023/Vercel sandboxes ship python3=3.9 while pyproject.toml
 # requires >=3.11, and nothing here provisions rwx at all. Runs before
-# sandbox-test.sh so the tools exist before the harness. Python 3.11 failure
-# is fatal on this sandbox class; CLI failures are non-fatal and summarized
-# (the gtm-sdk#702 fallback-installer idiom). The FloxHub roborev block below
-# stays the production path when FLOXHUB_TOKEN is set — the install script
-# defers roborev to it rather than double-installing (gtm-sdk#506).
-bash scripts/conductor-cloud-install.sh
+# sandbox-test.sh so the tools exist before the harness. CLI failures are
+# non-fatal and summarized (the gtm-sdk#702 fallback-installer idiom).
+# A Python 3.11 failure exits non-zero (the stated requirement), but the
+# harness below still runs first — setup tolerates that exit here and
+# fails at the very end instead (roborev review finding: a provisioning
+# failure must not block the harness findings).
+CLOUD_INSTALL_RC=0
+bash scripts/conductor-cloud-install.sh || CLOUD_INSTALL_RC=$?
+if [ "$CLOUD_INSTALL_RC" -ne 0 ]; then
+  echo "error: conductor-cloud-install.sh failed (exit $CLOUD_INSTALL_RC); continuing setup so the harness still runs, but setup will fail at the end" >&2
+fi
+# The install script's no-sudo fallback can land tools in ~/.local/bin,
+# which is NOT on later steps' default PATH — export it for the rest of
+# setup (harmless when nothing landed there). The script's own PATH export
+# is process-scoped and dies with it.
+export PATH="${HOME}/.local/bin:${PATH}"
 
 # The whole point of this repo: run the gtm-sdk#445 hypothesis harness on a
 # fresh sandbox. It never hard-fails; findings land in findings/report-*.md.
@@ -59,26 +69,34 @@ infisical --version
 bd version
 
 # Provision the published roborev CLI when this workspace has an explicit
-# FloxHub token. Like bd above, expose the immutable Flox/Nix binary through
-# /usr/local/bin so subsequent non-interactive agent commands can find it
-# after the process-scoped Flox activation exits. Keep this opt-in: a
-# tokenless sandbox must remain usable without FloxHub authentication.
+# FloxHub token — the production path (gtm-sdk#506). Like bd above, expose
+# the immutable Flox/Nix binary through /usr/local/bin so subsequent
+# non-interactive agent commands can find it after the process-scoped Flox
+# activation exits. Keep this opt-in: a tokenless sandbox must remain
+# usable without FloxHub authentication (conductor-cloud-install.sh above
+# already installed the pinned release binary by then, so roborev is
+# present either way).
+#
+# Non-fatal by design (roborev review finding): conductor-cloud-install.sh
+# above installs the pinned 0.63.0 release binary as the guaranteed floor,
+# and this block re-points /usr/local/bin/roborev at the published
+# elvis/roborev package when it succeeds. A FloxHub failure (expired
+# token, outage, platform gap) warns loudly and leaves the pinned binary
+# in place instead of aborting setup — the failure stays visible in this
+# log without costing the workspace its roborev.
 if [ -n "${FLOXHUB_TOKEN:-}" ]; then
   echo "FLOXHUB_TOKEN set; provisioning roborev from FloxHub..."
-  if ! bash "$PWD/scripts/floxhub-provision.sh"; then
-    echo "error: FloxHub provisioning failed; roborev was not installed" >&2
-    exit 1
+  if bash "$PWD/scripts/floxhub-provision.sh" &&
+    ROBOREV_BIN="$(readlink -f "$(flox activate --dir "$PWD/envs/floxhub-provision" --mode run -- sh -c 'command -v roborev')")" &&
+    [ -x "$ROBOREV_BIN" ]; then
+    sudo ln -sfn "$ROBOREV_BIN" /usr/local/bin/roborev
+    sudo ln -sfn "$ROBOREV_BIN" /usr/local/bin/git-roborev
+    roborev version
+  else
+    echo "error: FloxHub provisioning failed (see output above); keeping the pinned roborev binary installed by conductor-cloud-install.sh" >&2
   fi
-  ROBOREV_BIN="$(readlink -f "$(flox activate --dir "$PWD/envs/floxhub-provision" --mode run -- sh -c 'command -v roborev')")"
-  if [ ! -x "$ROBOREV_BIN" ]; then
-    echo "error: setup did not produce a runnable roborev binary" >&2
-    exit 1
-  fi
-  sudo ln -sfn "$ROBOREV_BIN" /usr/local/bin/roborev
-  sudo ln -sfn "$ROBOREV_BIN" /usr/local/bin/git-roborev
-  roborev version
 else
-  echo "FLOXHUB_TOKEN absent; skipping roborev FloxHub provisioning"
+  echo "FLOXHUB_TOKEN absent; roborev stays on the pinned binary installed by conductor-cloud-install.sh"
 fi
 
 # Validate workspace-provided Infisical machine credentials without exposing
@@ -148,4 +166,14 @@ else
 fi
 
 echo "=== setup finished $(date -u +%FT%TZ) ==="
+
+# Deferred provisioning failure (roborev review finding): a
+# conductor-cloud-install.sh failure earlier in setup must not block the
+# harness above, but it must still fail setup — Python 3.11 is a hard
+# requirement of this workspace (pyproject.toml requires >=3.11). Fail
+# here, after every step has had its chance to run and report.
+if [ "$CLOUD_INSTALL_RC" -ne 0 ]; then
+  echo "error: setup finished with provisioning failures (conductor-cloud-install.sh exit $CLOUD_INSTALL_RC); see $HOME/.conductor-setup.log" >&2
+  exit 1
+fi
 """
