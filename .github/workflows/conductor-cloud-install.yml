@@ -1,0 +1,39 @@
+name: conductor-cloud-install checks
+
+# Automated validation for the cloud-install recipe (roborev review
+# finding: pins were duplicated across files with only comments keeping them
+# in sync, and the container verification existed only in a commit message).
+# No secrets and no FloxHub auth here — public network only — so unlike
+# floxhub-provision-check.yml this is safe to run on every push/PR.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pin sync (roborev/trunk pins vs the Flox manifests)
+        run: bash scripts/validate-pins.sh
+
+      - name: Shellcheck the provisioning scripts
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q shellcheck
+          shellcheck \
+            scripts/conductor-cloud-install.sh \
+            scripts/conductor-trunk-preflight.sh \
+            scripts/validate-pins.sh \
+            scripts/conductor-cloud-install-test.sh
+
+      - name: Container test (amazonlinux:2023, non-root + passwordless sudo, x86_64)
+        run: |
+          docker run --platform linux/amd64 --rm \
+            -v "$PWD":/src:ro -w /src \
+            amazonlinux:2023 bash scripts/conductor-cloud-install-test.sh
