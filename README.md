@@ -60,6 +60,7 @@ envs/floxhub-consume/ Phase D' prototype: [install] pkg-path = "elvis/conductor-
 envs/floxhub-provision/ Phase D MVP: [install] the 5 catalog tools + elvis/bd + elvis/roborev (opt-in stage 7, needs auth)
 scripts/sandbox-test.sh   the harness — runs all stages, never hard-fails
 scripts/floxhub-provision.sh  Phase D MVP setup-script recipe (token → login → activate envs/floxhub-provision)
+scripts/conductor-cloud-install.sh  cloud-sandbox provisioning: python3.11 + priority CLIs (roborev, trunk, rwx), wired into setup before the harness
 findings/          harness output: report-*.md (summary + evidence) and full-log-*.txt
                    — see findings/README.md for a run-by-run index
 ```

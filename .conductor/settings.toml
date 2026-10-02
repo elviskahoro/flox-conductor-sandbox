@@ -30,6 +30,16 @@ fi
 # path in the setup log and fails clearly if provisioning is impossible.
 bash scripts/conductor-bd-preflight.sh
 
+# Python 3.11 + the priority CLIs (roborev, trunk, rwx) for this workspace
+# class: AL2023/Vercel sandboxes ship python3=3.9 while pyproject.toml
+# requires >=3.11, and nothing here provisions rwx at all. Runs before
+# sandbox-test.sh so the tools exist before the harness. Python 3.11 failure
+# is fatal on this sandbox class; CLI failures are non-fatal and summarized
+# (the gtm-sdk#702 fallback-installer idiom). The FloxHub roborev block below
+# stays the production path when FLOXHUB_TOKEN is set — the install script
+# defers roborev to it rather than double-installing (gtm-sdk#506).
+bash scripts/conductor-cloud-install.sh
+
 # The whole point of this repo: run the gtm-sdk#445 hypothesis harness on a
 # fresh sandbox. It never hard-fails; findings land in findings/report-*.md.
 bash scripts/sandbox-test.sh
