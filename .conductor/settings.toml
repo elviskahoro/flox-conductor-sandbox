@@ -24,12 +24,6 @@ if ! trunk check --ci --no-fix --all; then
   exit 1
 fi
 
-# Provision the pinned Beads CLI before the long-running harness. Conductor can
-# start an agent command while setup is still running, so this must not be
-# deferred until the harness's Stage 3b. The script records the exact binary
-# path in the setup log and fails clearly if provisioning is impossible.
-bash scripts/conductor-bd-preflight.sh
-
 # Python 3.11 + the priority CLIs (roborev, trunk, rwx) for this workspace
 # class: AL2023/Vercel sandboxes ship python3=3.9 while pyproject.toml
 # requires >=3.11, and nothing here provisions rwx at all. Runs before
@@ -52,52 +46,19 @@ export PATH="${HOME}/.local/bin:${PATH}"
 
 # The whole point of this repo: run the gtm-sdk#445 hypothesis harness on a
 # fresh sandbox. It never hard-fails; findings land in findings/report-*.md.
-bash scripts/sandbox-test.sh
+CONDUCTOR_STARTUP_MODE=1 bash scripts/sandbox-test.sh
 
 # Make Infisical available to subsequent agent commands. Flox activation is
 # process-scoped, so its run-bin directory disappears from PATH when setup
-# exits. bd is provisioned by the preflight above so it is available before
-# the harness starts.
+# exits.
 INFISICAL_BIN="$(flox activate --dir "$PWD/envs/prebuilt" --mode run -- sh -c 'command -v infisical')"
-if [ ! -x "$INFISICAL_BIN" ] || ! command -v bd >/dev/null 2>&1; then
-  echo "error: setup did not produce a runnable infisical and bd command" >&2
+if [ ! -x "$INFISICAL_BIN" ]; then
+  echo "error: setup did not produce a runnable infisical command" >&2
   exit 1
 fi
 sudo install -d -m 755 /usr/local/bin
 sudo ln -sfn "$INFISICAL_BIN" /usr/local/bin/infisical
 infisical --version
-bd version
-
-# Provision the published roborev CLI when this workspace has an explicit
-# FloxHub token — the production path (gtm-sdk#506). Like bd above, expose
-# the immutable Flox/Nix binary through /usr/local/bin so subsequent
-# non-interactive agent commands can find it after the process-scoped Flox
-# activation exits. Keep this opt-in: a tokenless sandbox must remain
-# usable without FloxHub authentication (conductor-cloud-install.sh above
-# already installed the pinned release binary by then, so roborev is
-# present either way).
-#
-# Non-fatal by design (roborev review finding): conductor-cloud-install.sh
-# above installs the pinned 0.63.0 release binary as the guaranteed floor,
-# and this block re-points /usr/local/bin/roborev at the published
-# elvis/roborev package when it succeeds. A FloxHub failure (expired
-# token, outage, platform gap) warns loudly and leaves the pinned binary
-# in place instead of aborting setup — the failure stays visible in this
-# log without costing the workspace its roborev.
-if [ -n "${FLOXHUB_TOKEN:-}" ]; then
-  echo "FLOXHUB_TOKEN set; provisioning roborev from FloxHub..."
-  if bash "$PWD/scripts/floxhub-provision.sh" &&
-    ROBOREV_BIN="$(readlink -f "$(flox activate --dir "$PWD/envs/floxhub-provision" --mode run -- sh -c 'command -v roborev')")" &&
-    [ -x "$ROBOREV_BIN" ]; then
-    sudo ln -sfn "$ROBOREV_BIN" /usr/local/bin/roborev
-    sudo ln -sfn "$ROBOREV_BIN" /usr/local/bin/git-roborev
-    roborev version
-  else
-    echo "error: FloxHub provisioning failed (see output above); keeping the pinned roborev binary installed by conductor-cloud-install.sh" >&2
-  fi
-else
-  echo "FLOXHUB_TOKEN absent; roborev stays on the pinned binary installed by conductor-cloud-install.sh"
-fi
 
 # Validate workspace-provided Infisical machine credentials without exposing
 # secret values. The export output is discarded; only the command status is
@@ -113,20 +74,6 @@ if [ -n "${INFISICAL_TOKEN:-}" ] && [ -n "${INFISICAL_PROJECT_ID:-}" ]; then
   fi
 else
   echo "INFISICAL_TOKEN or INFISICAL_PROJECT_ID absent; skipping Infisical auth validation"
-fi
-
-# Initialize or refresh the Beads database during workspace bootstrap when
-# this workspace has the Infisical credentials required for DoltHub access.
-# The pull script imports the Dolt JWK into a temporary credential root and
-# never persists the secret. Run it inside the prebuilt environment so dolt is
-# available even though Flox activation is process-scoped. Workspaces without
-# Infisical credentials retain the sandbox's existing no-remote behavior.
-if [ -n "${INFISICAL_TOKEN:-}" ] && [ -n "${INFISICAL_PROJECT_ID:-}" ]; then
-  echo "Infisical credentials present; initializing or pulling Beads from DoltHub..."
-  flox activate --dir "$PWD/envs/prebuilt" --mode run -- \
-    bash "$PWD/scripts/beads-dolthub-pull.sh"
-else
-  echo "Infisical credentials absent; skipping automatic Beads DoltHub pull"
 fi
 
 # Auto-authenticate flox — opt-in only, via FLOXHUB_AUTOLOGIN=1 — when

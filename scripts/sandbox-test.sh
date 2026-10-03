@@ -43,6 +43,7 @@ FLAKE_REPRO="${FLAKE_REPRO:-0}"
 FLAKE_REPRO_TIMEOUT="${FLAKE_REPRO_TIMEOUT:-1800}"
 TEST_AUTH_PLUMBING="${TEST_AUTH_PLUMBING:-0}"
 TEST_FLOXHUB_PROVISION="${TEST_FLOXHUB_PROVISION:-0}"
+CONDUCTOR_STARTUP_MODE="${CONDUCTOR_STARTUP_MODE:-0}"
 
 STAMP="$(date -u +%Y%m%d-%H%M%SZ)"
 mkdir -p findings
@@ -273,34 +274,39 @@ else
     record "3a hello build" "FAIL" "trivial build failed — flox build mechanics broken here; see body"
   fi
 
-  BD_START=$(date +%s)
-  BD_LOG="$(mktemp)"
-  if run_logged "${BD_LOG}" flox build --dir "${BUILD_DIR}" bd; then
-    BD_BIN="${BUILD_DIR}/result-bd/bin/bd"
-    if out="$("${BD_BIN}" version 2>&1)"; then
-      record "3b bd repackage build" "PASS" "built + \`bd version\` → $(printf '%s' "${out}" | head -1) ($(elapsed "${BD_START}"))"
-      # Flag-surface check (#445 Phase C3): every flag the gtm-sdk setup
-      # script passes to bd must still exist on v1.1.2.
-      HELP_INIT="$("${BD_BIN}" init --help 2>&1)"
-      HELP_ROOT="$("${BD_BIN}" --help 2>&1)"
-      MISSING=""
-      for flag in --non-interactive --skip-agents --skip-hooks --init-if-missing --remote; do
-        printf '%s' "${HELP_INIT}" | grep -qe "${flag}" || MISSING="${MISSING} ${flag}(init)"
-      done
-      printf '%s' "${HELP_ROOT}" | grep -qe '-C' || MISSING="${MISSING} -C(global)"
-      if [[ -z ${MISSING} ]]; then
-        record "3c bd flag surface" "PASS" "all conductor-workspace-setup.sh flags present on v1.1.2"
+  if [[ ${CONDUCTOR_STARTUP_MODE} == 1 ]]; then
+    record "3b bd repackage build" "SKIP" "omitted during Conductor startup"
+    record "3c bd flag surface" "SKIP" "omitted during Conductor startup"
+  else
+    BD_START=$(date +%s)
+    BD_LOG="$(mktemp)"
+    if run_logged "${BD_LOG}" flox build --dir "${BUILD_DIR}" bd; then
+      BD_BIN="${BUILD_DIR}/result-bd/bin/bd"
+      if out="$("${BD_BIN}" version 2>&1)"; then
+        record "3b bd repackage build" "PASS" "built + \`bd version\` → $(printf '%s' "${out}" | head -1) ($(elapsed "${BD_START}"))"
+        # Flag-surface check (#445 Phase C3): every flag the gtm-sdk setup
+        # script passes to bd must still exist on v1.1.2.
+        HELP_INIT="$("${BD_BIN}" init --help 2>&1)"
+        HELP_ROOT="$("${BD_BIN}" --help 2>&1)"
+        MISSING=""
+        for flag in --non-interactive --skip-agents --skip-hooks --init-if-missing --remote; do
+          printf '%s' "${HELP_INIT}" | grep -qe "${flag}" || MISSING="${MISSING} ${flag}(init)"
+        done
+        printf '%s' "${HELP_ROOT}" | grep -qe '-C' || MISSING="${MISSING} -C(global)"
+        if [[ -z ${MISSING} ]]; then
+          record "3c bd flag surface" "PASS" "all conductor-workspace-setup.sh flags present on v1.1.2"
+        else
+          record "3c bd flag surface" "FAIL" "missing:${MISSING} — v1.1.0→v1.1.2 drift (publish v1.1.0 like-for-like instead)"
+        fi
       else
-        record "3c bd flag surface" "FAIL" "missing:${MISSING} — v1.1.0→v1.1.2 drift (publish v1.1.0 like-for-like instead)"
+        record "3b bd repackage build" "FAIL" "built but binary does not run: ${out}"
+        record "3c bd flag surface" "SKIP" "no runnable bd binary"
       fi
     else
-      record "3b bd repackage build" "FAIL" "built but binary does not run: ${out}"
-      record "3c bd flag surface" "SKIP" "no runnable bd binary"
+      note_excerpt "${BD_LOG}"
+      record "3b bd repackage build" "FAIL" "repackage build failed — see body"
+      record "3c bd flag surface" "SKIP" "no bd build"
     fi
-  else
-    note_excerpt "${BD_LOG}"
-    record "3b bd repackage build" "FAIL" "repackage build failed — see body"
-    record "3c bd flag surface" "SKIP" "no bd build"
   fi
 
   HOOKDECK_START=$(date +%s)
@@ -361,7 +367,9 @@ fi
 # Stage 5 (H2, opt-in): flake source-build failure repro
 # ---------------------------------------------------------------------------
 section "Stage 5 — H2: flake source-build failure repro (control)"
-if [[ ${FLAKE_REPRO} != 1 ]]; then
+if [[ ${CONDUCTOR_STARTUP_MODE} == 1 ]]; then
+  record "5 H2 flake repro" "SKIP" "omitted during Conductor startup"
+elif [[ ${FLAKE_REPRO} != 1 ]]; then
   record "5 H2 flake repro" "SKIP" "opt-in: re-run with FLAKE_REPRO=1 (costs a doomed Go build, ~minutes)"
 elif ! command -v flox >/dev/null 2>&1; then
   record "5 H2 flake repro" "SKIP" "no flox"
@@ -424,7 +432,9 @@ fi
 # Stage 7 (opt-in): Phase D MVP — combined bd+roborev+catalog provisioning
 # ---------------------------------------------------------------------------
 section "Stage 7 — Phase D MVP: combined FloxHub provisioning (bd + roborev + catalog tools)"
-if [[ ${TEST_FLOXHUB_PROVISION} != 1 ]]; then
+if [[ ${CONDUCTOR_STARTUP_MODE} == 1 ]]; then
+  record "7 floxhub provision MVP" "SKIP" "omitted during Conductor startup"
+elif [[ ${TEST_FLOXHUB_PROVISION} != 1 ]]; then
   record "7 floxhub provision MVP" "SKIP" "opt-in: re-run with TEST_FLOXHUB_PROVISION=1 FLOXHUB_TOKEN=<token> (permanently authenticates this sandbox — never run on the one testing Stage 4)"
 elif ! command -v flox >/dev/null 2>&1; then
   record "7 floxhub provision MVP" "SKIP" "no flox"
