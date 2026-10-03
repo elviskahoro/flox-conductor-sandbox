@@ -1,0 +1,282 @@
+# One-shot RWX validation of the gtm-sdk#903 fix direction, run from this
+# sandbox repo (the playground for exactly this class of question) with:
+#
+#   rwx run .rwx/gtm-903-consume-published-image.yml --wait
+#
+# What it proves, from inside an RWX task container — the environment where
+# `flox containerize` can never work (non-root task user, root-owned
+# /nix/var/nix/db; gtm-sdk#903, same Nix-in-container class as gtm-sdk#445):
+#
+# 1. The deterministic image resolution the fixed gtm-sdk pipeline uses:
+#    newest first-parent commit touching the exact path set that triggers
+#    gtm-sdk's flox-image-publish.yml is, by construction, the newest commit
+#    whose image GHCR has.
+# 2. Consumption of the GHA-published image via a plain Dagger pull — zero
+#    flox involvement — with the fixed runtime provenance check (cut, not
+#    awk) passing inside it and the pre-fix awk variant failing (the #516
+#    publication outage repro).
+# 3. Authenticated Dagger pull of a private GHCR package with the
+#    x-access-token + PAT pattern the fixed pipeline needs for the
+#    private-by-default pytest-deps package.
+#
+# Self-contained by necessity: cli-dispatched RWX runs start with an EMPTY
+# task workspace (confirmed by run 5da9148f — repo content only appears when
+# a pipeline clones it itself, which is why every gtm-sdk pipeline begins
+# with a git/clone task). The smoke script is therefore embedded below
+# instead of living in scripts/ — the yaml is the whole harness. See
+# findings/gtm-903-*.md for the run report.
+#
+# No cron trigger: this is a validation harness, not a recurring pipeline,
+# and the sandbox repo deliberately carries no cron-shaped surface.
+on:
+  cli: {}
+
+base:
+  # Matches gtm-sdk's RWX pipelines and the ARM64 GHCR images under test.
+  image: ubuntu:24.04
+  config: rwx/base 1.2.0
+  arch: arm64
+
+tasks:
+  # Stand-in for gtm-sdk's resolve-dependency-image task. A blobless clone is
+  # enough: git log walks commits and trees without blob content, and the
+  # single manifest.lock blob needed for the uv pin is fetched on demand.
+  # Anonymous git-over-https from RWX task egress gets a 401 (observed live,
+  # run 5bb6dea6) — gtm-sdk's own pipelines always clone with the vault
+  # token, so this does too. The extraheader form keeps the token out of both
+  # the echoed command (unexpanded script text) and git's own URL redaction.
+  - key: resolve
+    run: |
+      set -euo pipefail
+      clone_dir="${TEMP_DIR:-/tmp}/gtm-sdk"
+      rm -rf "${clone_dir}"
+      auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64)"
+      # -c AFTER the subcommand: git clone -c persists the header into the
+      # clone's own config, so the lazy on-demand blob fetches below (partial
+      # clone) authenticate too. The clone lives in TEMP_DIR, which RWX
+      # cleans between tasks and does not upload as a task layer.
+      git clone --filter=blob:none --no-checkout \
+        -c "http.https://github.com/.extraheader=${auth}" \
+        https://github.com/elviskahoro/gtm-sdk.git "${clone_dir}"
+      # Same path set as gtm-sdk's flox-image-publish.yml push filter, and
+      # --first-parent for the same merge-safety reason as gtm-sdk's
+      # resolve-dependency-image task (walk the chain of main tips — what
+      # GitHub's push event reports).
+      image_sha="$(git -C "${clone_dir}" log --first-parent --format=%H -n1 "${GTM_SDK_REF}" -- \
+        flox/toolchain/.flox/env/manifest.toml \
+        flox/toolchain/.flox/env/manifest.lock \
+        .github/workflows/ci/flox_image_dagger.py \
+        .github/workflows/ci/pytest_dependency_image.py \
+        .github/workflows/ci/pytest_dependency_image_publish.py \
+        .github/workflows/flox-image-publish.yml \
+        pyproject.toml \
+        uv.lock)"
+      expected_uv="$(git -C "${clone_dir}" show "${image_sha}:flox/toolchain/.flox/env/manifest.lock" \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin)["manifest"]["install"]["uv"]["version"])')"
+      image_ref="ghcr.io/elviskahoro/gtm-sdk/flox-toolchain:${image_sha}-arm64"
+      echo "resolved toolchain image: ${image_ref}"
+      echo "manifest.lock uv pin: ${expected_uv}"
+      echo "${image_ref}" >> $RWX_ENV/FLOX_TOOLCHAIN_IMAGE
+      echo "${expected_uv}" >> $RWX_ENV/EXPECTED_UV_VERSION
+    env:
+      # Pinned main commit this validation was authored against. Deliberately
+      # hardcoded (findings reproducibility), not a moving ref.
+      GTM_SDK_REF: f49125cc6b459a0d9ded627e0c04336459272da6
+      # trunk-ignore(semgrep/yaml.github-actions.security.gha-workflow-env-secret.gha-workflow-env-secret): task-scoped `env:` in an RWX run definition, not a GHA workflow-level env block.
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Same manual-installer pattern as gtm-sdk's RWX pipelines (no packaged
+  # leaf confirmed there; same here).
+  - key: uv-install
+    use: [resolve]
+    run: |
+      set -euo pipefail
+      curl -LsSf https://astral.sh/uv/0.11.13/install.sh | sh
+      echo "$HOME/.local/bin" >> $RWX_ENV/PATH
+
+  # Dedicated dagger-io venv, same shape as gtm-sdk's dagger-sdk-install
+  # tasks — the smoke script must not depend on any repo's project env.
+  - key: dagger-sdk-install
+    use: [uv-install]
+    run: |
+      set -euo pipefail
+      export UV_PYTHON_INSTALL_DIR="$HOME/.dagger-sdk/uv-python"
+      dagger_venv="$HOME/.dagger-sdk/controller-venv"
+      mkdir -p "${dagger_venv}" "${UV_PYTHON_INSTALL_DIR}"
+      uv python install --reinstall 3.13
+      uv venv --python 3.13 "${dagger_venv}"
+      uv pip install --python "${dagger_venv}/bin/python" \
+        "dagger-io==0.21.7"
+      echo "${dagger_venv}/bin" >> $RWX_ENV/PATH
+
+  # Dagger CLI pinned in lockstep with the SDK pin above (gtm-sdk keeps the
+  # same pairing; a client/engine skew only shows up as a confusing runtime
+  # error inside the pipeline).
+  - key: dagger-cli-install
+    use: [dagger-sdk-install]
+    run: |
+      set -euo pipefail
+      curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.21.7 sh
+      echo "$PWD/bin" >> $RWX_ENV/PATH
+
+  # The actual smoke: pull the resolved public toolchain image and the
+  # stand-in private image inside Dagger, run the fixed provenance subset +
+  # the awk negative controls. docker: true starts the daemon `dagger run`
+  # needs; the engine image is pulled on first use (observed working in run
+  # 5da9148f — gtm-sdk's engine-warm retry task guards against registry
+  # brownouts on the daily cron, not a one-shot).
+  - key: consume
+    use: [dagger-cli-install]
+    docker: true
+    run: |
+      set -euo pipefail
+      smoke_dir="${TEMP_DIR:-/tmp}/gtm903-smoke"
+      mkdir -p "${smoke_dir}"
+      cat > "${smoke_dir}/gtm903_smoke_dagger.py" <<'PYEOF'
+      """One-shot Dagger smoke for the gtm-sdk#903 fix direction (sandbox side).
+
+      Embedded by .rwx/gtm-903-consume-published-image.yml (cli-dispatched RWX
+      runs start with an empty task workspace, so the pipeline carries its own
+      script). Proves, from inside an RWX task container — where `flox
+      containerize` cannot realise packages — the mechanics the gtm-sdk fix
+      relies on, against the real GHA-published artifacts:
+
+      1. No flox anywhere: the image arrives from GHCR via a plain Dagger pull.
+      2. The FIXED runtime provenance check passes inside the published
+         toolchain image (uv-version extraction via coreutils `cut`, not
+         `awk` — the #516 publication outage), while the original awk variant
+         fails on the same image — the A/B that isolates Bug A.
+      3. An authenticated Dagger pull of a *private* GHCR package works with
+         the x-access-token + PAT pattern the fixed RWX pipeline uses for the
+         private-by-default pytest-deps package (validated against gtm-sdk's
+         private `bazel-ci` image).
+
+      Scope note: the two writable-path provenance elements (`test -w
+      /opt/venv`, `test -w /home/runner/.cache/uv`) exist only in the *built*
+      pytest-deps image, not the raw toolchain image, so they are exercised
+      by the gtm-sdk publish pipeline itself, not here.
+      """
+
+      # ruff: noqa: INP001 -- one-shot validation harness script.
+
+      from __future__ import annotations
+
+      import os
+      import sys
+
+      import dagger
+      from dagger import dag
+
+      # Mirrors the fixed runtime_provenance_command in gtm-sdk's
+      # .github/workflows/ci/pytest_dependency_image.py (branch
+      # agent/integration-consume-published): same elements and order, minus
+      # the two /opt/venv + uv-cache checks that only exist in the built
+      # pytest-deps image. If gtm-sdk's command changes, update this to match
+      # — the point is to execute the exact contract the fixed publish step
+      # enforces.
+      PROVENANCE_SUBSET_TEMPLATE = (
+          'test "$(id -u)" = 1000 && '
+          "test \"$(uv --version | cut -d' ' -f2)\" = \"{expected}\" && "
+          "command -v uv && command -v git && command -v gh && command -v time && "
+          "echo PROVENANCE_SUBSET_OK"
+      )
+
+      # Negative control: the pre-fix variant piped through awk, which the
+      # toolchain manifest does not install. It must FAIL here — if it ever
+      # succeeds, the image under test is not actually the constrained
+      # published one and the PROVENANCE pass above is vacuous.
+      AWK_VARIANT_PROBE = (
+          "if uv --version | awk '{print $2}' >/dev/null 2>&1; then "
+          "echo UNEXPECTED_AWK_WORKS; exit 1; "
+          "else echo AWK_VARIANT_FAILS_AS_EXPECTED; fi"
+      )
+
+      # Belt-and-braces: awk must not merely fail to run — it must be absent.
+      AWK_ABSENT_PROBE = (
+          "if command -v awk >/dev/null 2>&1; then "
+          "echo UNEXPECTED_AWK_PRESENT; exit 1; "
+          "else echo AWK_ABSENT_AS_EXPECTED; fi"
+      )
+
+
+      def _required_env(name: str) -> str:
+          value = os.environ.get(name, "").strip()
+          if not value:
+              message = f"{name} is required (set by the resolve task via $RWX_ENV)"
+              raise RuntimeError(message)
+          return value
+
+
+      async def main() -> None:
+          toolchain_ref = _required_env("FLOX_TOOLCHAIN_IMAGE")
+          expected_uv = _required_env("EXPECTED_UV_VERSION")
+
+          print(f"toolchain image under test: {toolchain_ref}")
+          print(f"expected uv (from its manifest.lock): {expected_uv}")
+
+          async with dagger.connection(config=dagger.Config(log_output=sys.stderr)):
+              # Unauthenticated pull: the flox-toolchain package is public, which
+              # is also what makes it consumable from any pipeline with no secret
+              # wiring (dependency_base without registry auth, gtm-sdk side).
+              ctr = dag.container().from_(toolchain_ref)
+
+              await ctr.with_exec(["bash", "-c", AWK_ABSENT_PROBE]).sync()
+              print("PASS: awk absent in published toolchain image (as designed)")
+
+              await ctr.with_exec(["bash", "-c", AWK_VARIANT_PROBE]).sync()
+              print("PASS: pre-fix awk provenance variant fails on this image (Bug A repro)")
+
+              await ctr.with_exec(
+                  ["bash", "-c", PROVENANCE_SUBSET_TEMPLATE.format(expected=expected_uv)],
+              ).sync()
+              print("PASS: fixed provenance subset green inside published image")
+
+              # Private-pull auth check: mirrors the fixed gtm-sdk pipeline's
+              # dependency_base(..., registry_auth) consumption of the
+              # private-by-default pytest-deps package, using gtm-sdk's private
+              # bazel-ci image as the stand-in (pytest-deps has zero versions
+              # until the fix's first GHA publication lands).
+              private_ref = os.environ.get("PRIVATE_BAZEL_IMAGE", "").strip()
+              ghcr_username = os.environ.get("GHCR_USERNAME", "").strip()
+              ghcr_token = os.environ.get("GHCR_TOKEN", "").strip()
+              if not private_ref:
+                  print("SKIP: PRIVATE_BAZEL_IMAGE unset (public-pull-only run)")
+              elif not (ghcr_username and ghcr_token):
+                  print("SKIP: GHCR_USERNAME/GHCR_TOKEN unset — private-pull auth untested")
+              else:
+                  print(f"private image under test: {private_ref}")
+                  private = (
+                      dag.container()
+                      .with_registry_auth(
+                          "ghcr.io",
+                          ghcr_username,
+                          dag.set_secret("ghcr-smoke-token", ghcr_token),
+                      )
+                      .from_(private_ref)
+                      .with_exec(["bash", "-c", "echo PRIVATE_PULL_OK"])
+                  )
+                  await private.sync()
+                  print("PASS: authenticated Dagger pull of private GHCR package")
+
+          print("gtm-903 smoke: ALL CHECKS PASSED")
+
+
+      if __name__ == "__main__":
+          import anyio
+
+          anyio.run(main)
+      PYEOF
+      dagger run python "${smoke_dir}/gtm903_smoke_dagger.py"
+    env:
+      # Private stand-in for the private-by-default pytest-deps package:
+      # the newest published bazel-ci tag at authoring time. GHCR versions
+      # persist, so this stays pullable unless the version is ever deleted —
+      # in that case the task fails loudly on the pull (by design: a silent
+      # skip could mask an auth regression).
+      PRIVATE_BAZEL_IMAGE: ghcr.io/elviskahoro/gtm-sdk/bazel-ci:bcf0a37a2e4d5c420a07484358cbd5369bee7c81-arm64
+      # "x-access-token" is the PAT-style placeholder GHCR accepts, confirmed
+      # by gtm-sdk's live bazel-full cron runs since 2026-08-29 (#692 Gap 7).
+      # The token itself comes from the org-wide default vault.
+      GHCR_USERNAME: x-access-token
+      # trunk-ignore(semgrep/yaml.github-actions.security.gha-workflow-env-secret.gha-workflow-env-secret): task-scoped `env:` in an RWX run definition, not a GHA workflow-level env block.
+      GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
