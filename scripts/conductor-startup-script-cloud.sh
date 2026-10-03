@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2312  # $(...) in assignments and rows: stage failures surface through the stages' own || returns and the summary, not by killing the script mid-row
 # The single Conductor workspace startup script: roborev + trunk + rwx +
-# Python 3.11, then the auth/init that makes them work rather than merely
-# exist.
+# Python 3.11 + the opt-in Python dev tools (uv/pytest/reflex), then the
+# auth/init that makes them work rather than merely exist.
 #
 # Two consumers, one file (it replaced the former conductor-cloud-install.sh
 # + conductor-startup-script.sh pair, whose duplicated pins were exactly the
@@ -35,7 +35,10 @@
 #      assumes a particular project — safe in any workspace, local or cloud.
 #      The trunk and python stages are reuse-if-present and SKIP cleanly off
 #      the target class, so pasting this into a repo that needs neither
-#      costs nothing.
+#      costs nothing. The uv/pytest/reflex stage (issue #44) is opt-in via
+#      STARTUP_PY_DEV_TOOLS=1 and SKIPs when unset, so the paste surface is
+#      exactly what it was before that stage existed — only this repo's
+#      own settings.toml turns it on.
 #
 # What "work" means here, beyond the binaries landing on PATH:
 #   roborev  installed (pinned, checksum-verified) + `git roborev` alias +
@@ -58,16 +61,36 @@
 #            every later shell is authenticated, not just setup.
 #   python3.11  installed ALONGSIDE 3.9, never as a replacement, on the
 #            AL2023 class only (see the stage body for the shadow-safety
-#            facts); SKIP elsewhere. The only stage whose failure is a
-#            stated requirement rather than a nice-to-have.
+#            facts); SKIP elsewhere. The only always-on stage whose failure
+#            is a stated requirement rather than a nice-to-have.
+#   uv/pytest/reflex  opt-in (STARTUP_PY_DEV_TOOLS=1, this repo's
+#            settings.toml): uv as a pinned, checksum-verified release
+#            binary placed like every other tool; pytest and reflex as
+#            pinned packages in one uv-managed venv, ~/.conductor-pytools
+#            (Python 3.11), with their console scripts symlinked into the
+#            same bin dirs so later agent shells get `uv`, `pytest`, and
+#            `reflex` as commands. The venv is the intended Python
+#            environment for the two packages — the documented module
+#            invocations are ~/.conductor-pytools/bin/python -m pytest and
+#            ... -c 'import reflex' (issue #44's managed-environment
+#            allowance). A failure in this stage is fatal under BOTH
+#            postures: it only runs when the workspace explicitly asked
+#            for these tools, and a requested tool that failed to
+#            provision must fail setup loudly, never leave a workspace
+#            that appears ready but lacks them.
 #
-# Pins: ROBOREV_PIN/RWX_PIN and every sha256 below are the single in-repo
-# home of those constants. The roborev pin is kept in sync with
-# envs/repackage/.flox/env/manifest.toml's [build.roborev] and
-# envs/floxhub-provision's roborev.version — scripts/validate-pins.sh
-# cross-checks them in CI; bump runbook: new pin + sha256s from the
-# release's checksums file, then republish the FloxHub package — don't
-# hand-edit any lock. The rwx block's sibling copy in gtm-sdk's
+# Pins: ROBOREV_PIN/RWX_PIN/UV_PIN/PYTEST_PIN/REFLEX_PIN and every sha256
+# below are the single in-repo home of those constants. The roborev pin is
+# kept in sync with envs/repackage/.flox/env/manifest.toml's [build.roborev]
+# and envs/floxhub-provision's roborev.version; the uv pin is kept in sync
+# with envs/prebuilt and envs/floxhub-provision's uv.version —
+# scripts/validate-pins.sh cross-checks both families in CI. Bump runbooks:
+# roborev: new pin + sha256s from the release's checksums file, then
+# republish the FloxHub package — don't hand-edit any lock. uv: new pin +
+# sha256s (hand-hash the release tarballs), then bump both Flox manifests
+# and re-lock their envs together. pytest/reflex: no Flox counterpart —
+# the pins live only here, and validate-pins.sh asserts they stay exact
+# x.y.z pins. The rwx block's sibling copy in gtm-sdk's
 # conductor-workspace-setup.sh (its PR #699) is comment-synced only — that
 # repo is private, so no machine check can reach it; bump both together.
 #
@@ -92,8 +115,10 @@
 # fallback-installer idiom) by exporting STARTUP_BEST_EFFORT=1: then the
 # tool stages (roborev/trunk/rwx install, rwx auth, roborev init) record
 # their FAIL rows but do not fail the run, and only a Python 3.11 failure
-# on the AL2023 target class (the stated >=3.11 requirement) exits
-# non-zero.
+# on the AL2023 target class (the stated >=3.11 requirement) or a
+# pytools-stage failure when STARTUP_PY_DEV_TOOLS=1 requested them
+# (issue #44: a requested tool that cannot be provisioned must never
+# leave a workspace that appears ready but lacks it) exits non-zero.
 #
 # Environment variables (set them in Conductor's environment variables
 # settings — never inline them in this script: settings values are plain
@@ -108,6 +133,11 @@
 #   STARTUP_BEST_EFFORT  set to 1 (this repo's settings.toml does) to make
 #                     the tool stages recorded-but-non-fatal; see the
 #                     failure-semantics section above.
+#   STARTUP_PY_DEV_TOOLS  set to 1 (this repo's settings.toml does) to
+#                     provision uv/pytest/reflex; see the tool list and
+#                     the pytools stage body. Unset or any other value
+#                     records a SKIP row and changes nothing else — the
+#                     paste-ready consumer's surface stays as it was.
 set -euo pipefail
 
 # Save the original stdout/stderr as fd 3/4 BEFORE the log redirect: the
@@ -203,6 +233,34 @@ link_bin() {
   else
     ln -sfn "${target}" "${dir}/${name}"
   fi
+}
+
+# expose_link <target> <name>: symlink <name> -> <target> as a command in
+# /usr/local/bin (the repo's persistent-tool convention) when root or
+# passwordless sudo allows it, else under ~/.local/bin — the same
+# placement rules as install_bin, but a symlink instead of a copy, so the
+# source (the pytools venv) stays the single source of truth: re-running
+# setup or upgrading a package updates the command too. ln -sfn makes it
+# naturally idempotent. Echoes the link path on success (nothing on
+# failure). Like install_bin, it does NOT call note_placement itself:
+# callers run it inside command substitution, where the variable update
+# would be lost with the subshell (the trap link_bin's comment warns
+# about) — callers note the returned path instead.
+expose_link() {
+  local target="$1" name="$2" dir
+  if [[ "$(id -u)" == 0 || -w "${LOCAL_BIN}" ]]; then
+    ln -sfn "${target}" "${LOCAL_BIN}/${name}" || return 1
+    dir="${LOCAL_BIN}"
+  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    sudo ln -sfn "${target}" "${LOCAL_BIN}/${name}" || return 1
+    dir="${LOCAL_BIN}"
+  else
+    mkdir -p "${HOME}/.local/bin" || return 1
+    ln -sfn "${target}" "${HOME}/.local/bin/${name}" || return 1
+    dir="${HOME}/.local/bin"
+  fi
+  printf '%s' "${dir}/${name}"
+  echo
 }
 
 # checksum_verify <sha256> <file>: works with sha256sum (AL2023) and
@@ -465,6 +523,235 @@ python311_stage() {
   record PASS python3.11 "${detail}"
 }
 
+# --- python dev tools: uv + pytest + reflex (opt-in) -------------------------
+# Issue #44: a fresh Conductor cloud workspace has python3 but none of the
+# Python dev tools agents need — `uv` and `reflex` are not on PATH (the
+# Flox manifests' uv is process-scoped, activation-only) and `python3 -m
+# pytest` fails with "No module named pytest". This stage provisions all
+# three into the persistent workspace environment when (and only when)
+# STARTUP_PY_DEV_TOOLS=1 asked for them; it runs after python311_stage so
+# the AL2023 class's system 3.11 is already in place by then.
+#
+# Design, and why not the alternatives:
+#   uv        a standalone release binary — same pinned, checksum-verified
+#             download idiom as roborev/rwx (astral-sh/uv release tarballs;
+#             digests hand-hashed from the ${UV_PIN} downloads, the same
+#             method as the rwx pin — no checksum file is published on the
+#             release), placed by install_bin into /usr/local/bin
+#             (~/.local/bin fallback). Never the Flox catalog copy:
+#             activation binaries disappear with the process.
+#   pytest/   Python packages, not binaries. Installed as exact pins into
+#   reflex    ONE uv-managed venv, ~/.conductor-pytools (Python 3.11: the
+#             system 3.11 on the AL2023 class, a uv-managed CPython 3.11
+#             download elsewhere — uv finds or fetches it either way, no
+#             pip needed anywhere), with the console scripts symlinked into
+#             the bin dirs by expose_link. The venv is the intended Python
+#             environment for these packages (issue #44's
+#             managed-environment allowance): `pytest`/`reflex` work as
+#             commands from any later shell, and the module invocations
+#             are ~/.conductor-pytools/bin/python -m pytest and
+#             ~/.conductor-pytools/bin/python -c 'import reflex'. Per-tool
+#             isolated shims (uv tool install) were rejected: they would
+#             leave `python -m pytest` and `import reflex` with no single
+#             home. Installing into the system python3's site-packages was
+#             rejected too: same bare invocation but dnf-owned interpreter
+#             pollution and PEP 668 friction, and it cannot stay clean on
+#             local macOS workspaces where this setup also runs.
+#
+# Idempotence: uv is reuse-if-present (a functional `uv --version` check,
+# not just command -v — a present-but-broken binary FAILs instead of being
+# trusted; a functional uv of ANY version is reused as-is, the same
+# contract as roborev/trunk/rwx — a UV_PIN bump applies to fresh installs,
+# and validate-pins.sh guards the file-level drift); the venv is reused
+# when its bin/python is functional (a half-created venv from an
+# interrupted run is removed and recreated); `uv pip install` only runs
+# when the venv does not already satisfy the exact pins, so re-runs reuse
+# everything and a package-pin bump upgrades in place — no duplicate or
+# competing installs, ever.
+#
+# Fatal under BOTH postures (see the header's failure-semantics section):
+# this stage only runs on explicit request, and a requested tool that
+# cannot be provisioned must fail setup loudly.
+UV_PIN="0.11.26"
+PYTEST_PIN="9.1.1"
+REFLEX_PIN="0.9.12"
+PYTOOLS_VENV="${HOME}/.conductor-pytools"
+PYTOOLS_PY="${PYTOOLS_VENV}/bin/python"
+
+pytools_uv_install() {
+  if command -v uv >/dev/null 2>&1; then
+    if uv --version >/dev/null 2>&1; then
+      record PASS uv "reused $(command -v uv) ($(uv --version 2>&1 | head -1 || true))"
+      return 0
+    fi
+    record FAIL uv "uv present at $(command -v uv) but not functional (uv --version failed) — remove it and re-run setup"
+    return 1
+  fi
+  # Asset names are uv-<arch>-<vendor>-<os>.tar.gz (uv's own naming, NOT
+  # the os-arch triple roborev/rwx use); each extracts into a directory of
+  # the same name containing ./uv.
+  local asset sha256 dir path
+  case "$(uname -s)-$(uname -m)" in
+  Linux-x86_64)
+    asset="uv-x86_64-unknown-linux-gnu.tar.gz"
+    sha256="6426a73c3837e6e2483ee344cbc00f36394d179afcba6183cb77437e67db4af0"
+    ;;
+  Linux-aarch64)
+    asset="uv-aarch64-unknown-linux-gnu.tar.gz"
+    sha256="befa1a59c91e96eb601b0fd9a97c03dd666f17baba644b2b4db9c59a767e387e"
+    ;;
+  Darwin-x86_64)
+    asset="uv-x86_64-apple-darwin.tar.gz"
+    sha256="922b460202707dd5f4ccacbadbe7f6a546cc46e82a99bf50ca99a7977a78eddd"
+    ;;
+  Darwin-arm64)
+    asset="uv-aarch64-apple-darwin.tar.gz"
+    sha256="8f7fbf1708399b921857bce71e1d60f0d3ccf52a30caebc1c1a2f175dce13ab6"
+    ;;
+  *)
+    record FAIL uv "no pinned uv ${UV_PIN} asset for $(uname -s)-$(uname -m)"
+    return 1
+    ;;
+  esac
+  dir="${WORK}/uv"
+  mkdir -p "${dir}"
+  if ! curl -fsSLo "${dir}/${asset}" "https://github.com/astral-sh/uv/releases/download/${UV_PIN}/${asset}"; then
+    return 1
+  fi
+  if ! checksum_verify "${sha256}" "${dir}/${asset}"; then
+    return 1
+  fi
+  if ! tar -xzf "${dir}/${asset}" -C "${dir}" || [[ ! -x "${dir}/${asset%.tar.gz}/uv" ]]; then
+    log "error: uv tarball did not yield an executable ${asset%.tar.gz}/uv"
+    return 1
+  fi
+  path="$(install_bin "${dir}/${asset%.tar.gz}/uv" uv || true)"
+  if [[ -z "${path}" ]]; then
+    log "error: could not place the uv binary in a bin directory"
+    return 1
+  fi
+  note_placement "${path}"
+  hash -r 2>/dev/null || true
+  if ! uv --version >/dev/null 2>&1; then
+    log "error: installed uv binary failed its version check"
+    return 1
+  fi
+  record PASS uv "v${UV_PIN} (${path})"
+}
+
+# venv_version <dist>: the venv's installed version of distribution <dist>
+# via importlib.metadata (works for every installed dist; no import of the
+# package itself, which would be slow for reflex). Prints nothing on
+# failure.
+venv_version() {
+  "${PYTOOLS_PY}" -c "import importlib.metadata as m; print(m.version('$1'))" 2>/dev/null || true
+}
+
+pytools_stage() {
+  if [[ "${STARTUP_PY_DEV_TOOLS:-0}" != "1" ]]; then
+    record SKIP pytools "not requested — set STARTUP_PY_DEV_TOOLS=1 to provision uv/pytest/reflex (this repo's settings.toml does)"
+    return 0
+  fi
+  pytools_uv_install || return 1
+  # Heal a half-created venv (an interrupted earlier run): a directory
+  # without a functional bin/python is removed so uv can recreate it.
+  if [[ -d "${PYTOOLS_VENV}" && ! -x "${PYTOOLS_PY}" ]]; then
+    log "removing broken pytools venv at ${PYTOOLS_VENV} (no functional bin/python)"
+    rm -rf "${PYTOOLS_VENV}"
+  fi
+  local venv_reused=1
+  if [[ ! -x "${PYTOOLS_PY}" ]]; then
+    venv_reused=0
+    if ! uv venv --python 3.11 "${PYTOOLS_VENV}"; then
+      record FAIL pytools-venv "uv venv --python 3.11 ${PYTOOLS_VENV} failed (see output above)"
+      return 1
+    fi
+  fi
+  if [[ ! -x "${PYTOOLS_PY}" ]]; then
+    record FAIL pytools-venv "venv at ${PYTOOLS_VENV} has no functional bin/python"
+    return 1
+  fi
+  local pyver
+  pyver="$("${PYTOOLS_PY}" --version 2>&1 | head -1 || true)"
+  if [[ ${venv_reused} == 1 ]]; then
+    record PASS pytools-venv "reused ${PYTOOLS_VENV} (${pyver})"
+  else
+    record PASS pytools-venv "${pyver} at ${PYTOOLS_VENV}"
+  fi
+  # Packages: install to the exact pins only when the venv does not
+  # already satisfy them — a satisfied pin is left untouched (the reuse
+  # path stays network-free), a stale or missing one is upgraded/healed in
+  # place by the same command.
+  local pytest_before reflex_before
+  pytest_before="$(venv_version pytest)"
+  reflex_before="$(venv_version reflex)"
+  if [[ "${pytest_before}" != "${PYTEST_PIN}" || "${reflex_before}" != "${REFLEX_PIN}" ]]; then
+    if ! uv pip install --python "${PYTOOLS_PY}" "pytest==${PYTEST_PIN}" "reflex==${REFLEX_PIN}"; then
+      record FAIL pytools-pkg "uv pip install pytest==${PYTEST_PIN} reflex==${REFLEX_PIN} failed (see output above)"
+      return 1
+    fi
+  fi
+  local pytest_after reflex_after
+  pytest_after="$(venv_version pytest)"
+  reflex_after="$(venv_version reflex)"
+  if [[ "${pytest_after}" != "${PYTEST_PIN}" ]]; then
+    record FAIL pytest "venv does not provide pytest ${PYTEST_PIN} after install (resolved: ${pytest_after:-<none>})"
+    return 1
+  fi
+  if [[ "${reflex_after}" != "${REFLEX_PIN}" ]]; then
+    record FAIL reflex "venv does not provide reflex ${REFLEX_PIN} after install (resolved: ${reflex_after:-<none>})"
+    return 1
+  fi
+  # Expose the console scripts as commands for later shells. note_placement
+  # happens HERE, not inside expose_link: the link helpers run inside
+  # command substitution and a subshell's LOCAL_FALLBACK_TOOLS update
+  # would die there (the same trap roborev/trunk/rwx sidestep by noting
+  # the captured path at the call site).
+  local pytest_link reflex_link
+  pytest_link="$(expose_link "${PYTOOLS_VENV}/bin/pytest" pytest || true)"
+  reflex_link="$(expose_link "${PYTOOLS_VENV}/bin/reflex" reflex || true)"
+  if [[ -z "${pytest_link}" || -z "${reflex_link}" ]]; then
+    record FAIL pytools "could not expose pytest/reflex commands (pytest link: ${pytest_link:-<none>}, reflex link: ${reflex_link:-<none>})"
+    return 1
+  fi
+  note_placement "${pytest_link}"
+  note_placement "${reflex_link}"
+  hash -r 2>/dev/null || true
+  # Final verification — the acceptance surface itself, re-proven on every
+  # run so a REUSED install is proven functional, not just presumed:
+  # commands resolve and report versions, and the documented module
+  # invocations work in the venv.
+  local pytest_cmd reflex_cmd
+  pytest_cmd="$(command -v pytest || true)"
+  reflex_cmd="$(command -v reflex || true)"
+  if [[ -z "${pytest_cmd}" ]] || ! pytest --version >/dev/null 2>&1; then
+    record FAIL pytest "pytest command does not resolve or run after exposure (resolved: ${pytest_cmd:-<none>})"
+    return 1
+  fi
+  if [[ -z "${reflex_cmd}" ]] || ! reflex --version >/dev/null 2>&1; then
+    record FAIL reflex "reflex command does not resolve or run after exposure (resolved: ${reflex_cmd:-<none>})"
+    return 1
+  fi
+  if ! "${PYTOOLS_PY}" -m pytest --version >/dev/null 2>&1; then
+    record FAIL pytest "venv python -m pytest failed — the module is not runnable in the intended environment"
+    return 1
+  fi
+  if ! "${PYTOOLS_PY}" -c 'import reflex' >/dev/null 2>&1; then
+    record FAIL reflex "import reflex failed in the intended environment"
+    return 1
+  fi
+  if [[ "${pytest_before}" == "${PYTEST_PIN}" ]]; then
+    record PASS pytest "reused ${pytest_after} (command: ${pytest_cmd}; env: ~/.conductor-pytools)"
+  else
+    record PASS pytest "${pytest_after} installed into ~/.conductor-pytools (command: ${pytest_cmd})"
+  fi
+  if [[ "${reflex_before}" == "${REFLEX_PIN}" ]]; then
+    record PASS reflex "reused ${reflex_after} (command: ${reflex_cmd}; env: ~/.conductor-pytools)"
+  else
+    record PASS reflex "${reflex_after} installed into ~/.conductor-pytools (command: ${reflex_cmd})"
+  fi
+}
+
 # --- rwx authentication -----------------------------------------------------
 # Validate FIRST via the env var (rwx reads RWX_ACCESS_TOKEN on its own),
 # persist ONLY on success — a bad token must never overwrite a valid token
@@ -619,8 +906,10 @@ roborev_setup() {
 # former cloud-install contract: tool-stage failures are recorded but do
 # not fail the run (gtm-sdk#702's fallback-installer idiom). Default
 # (pasted standalone): any FAIL row fails the run. Python 3.11 on the
-# target class is a hard requirement either way; its SKIP paths return 0
-# and never reach the FAILED assignment.
+# target class and the pytools stage (when STARTUP_PY_DEV_TOOLS=1
+# requested it) are hard requirements under EITHER posture — their SKIP
+# paths return 0 and never reach the FAILED assignment; pytools' gate
+# SKIP likewise returns 0.
 BEST_EFFORT="${STARTUP_BEST_EFFORT:-0}"
 
 maybe_fail() { # tool-stage failure: fatal unless best-effort mode is on
@@ -635,6 +924,7 @@ if roborev_install; then :; else record FAIL roborev "provisioning failed — se
 if trunk_stage; then :; else record FAIL trunk "provisioning failed — see messages above"; maybe_fail; fi
 if rwx_install; then :; else record FAIL rwx "provisioning failed — see messages above"; maybe_fail; fi
 if python311_stage; then :; else FAILED=1; record FAIL python3.11 "provisioning failed — see messages above"; fi
+if pytools_stage; then :; else FAILED=1; record FAIL pytools "provisioning failed — see the rows above"; fi
 if rwx_auth; then :; else maybe_fail; fi
 if roborev_setup; then :; else maybe_fail; fi
 
@@ -667,8 +957,9 @@ echo "=== setup finished $(date -u +%FT%TZ) ==="
 # provisioning or auth failure in the tools this workspace exists for must
 # fail setup loudly, not pass silently — every stage still ran and reported
 # above, so this is loud-and-late, never an early abort. Under
-# STARTUP_BEST_EFFORT=1 only a target-class Python 3.11 failure reaches
-# this exit; tool FAIL rows were recorded and the run exits 0 (the
+# STARTUP_BEST_EFFORT=1 only a target-class Python 3.11 failure or a
+# pytools-stage failure (the requested-tools requirement, issue #44)
+# reaches this exit; tool FAIL rows were recorded and the run exits 0 (the
 # gtm-sdk#702 idiom this repo's settings.toml contracts for). The error
 # goes to the original stderr (fd 4) as well as the log.
 if [[ "${FAILED}" != 0 ]]; then

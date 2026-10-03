@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Pin-sync validation for the workspace startup provisioning pins.
 #
-# The roborev version + sha256 pins and the trunk launcher checksum are
-# deliberately duplicated across files (roborev review finding: previously
-# only comments kept them in sync). This is the automated drift check — run
-# in CI (.github/workflows/conductor-startup-script-cloud.yml) and usable
+# The roborev version + sha256 pins, the trunk launcher checksum, and the
+# uv/pytest/reflex pins are deliberately duplicated across files (roborev
+# review finding: previously only comments kept them in sync). This is the
+# automated drift check — run in CI
+# (.github/workflows/conductor-startup-script-cloud.yml) and usable
 # locally:
 #
 #   1. roborev version: scripts/conductor-startup-script-cloud.sh's
@@ -20,12 +21,21 @@
 #      serializes the GUI setup field into a TOML multiline string, and
 #      either would corrupt the paste. Comment-enforced constraints rot
 #      silently; this makes CI fail instead.
+#   5. uv version (issue #44): the startup script's UV_PIN == envs/prebuilt
+#      uv.version == envs/floxhub-provision uv.version — the Flox uv is a
+#      separate (process-scoped) install of the same tool; two different
+#      uv versions in one workspace is the same confusion class as the
+#      roborev drift.
+#   6. pytest/reflex pins (issue #44): single-home pins with no Flox
+#      counterpart — the check is presence-and-shape, so an accidental
+#      unpinning (empty, or a floating range instead of an exact x.y.z)
+#      fails CI instead of silently floating.
 #
 # The former checks that cross-compared two in-repo scripts
 # (conductor-cloud-install.sh vs conductor-startup-script.sh, before they
 # merged into the single startup script) died with that merge: one file is
 # now the only in-repo pin home. The remaining sync surfaces are the Flox
-# manifests (checks 1-2), the trunk preflight (check 3), and gtm-sdk's
+# manifests (checks 1-2, 5), the trunk preflight (check 3), and gtm-sdk's
 # conductor-workspace-setup.sh — a private repo, so comment-synced only,
 # no machine check can reach it; bump both together per the startup
 # script's header.
@@ -40,6 +50,7 @@ STARTUP="${REPO_ROOT}/scripts/conductor-startup-script-cloud.sh"
 PREFLIGHT="${REPO_ROOT}/scripts/conductor-trunk-preflight.sh"
 REPACKAGE_MANIFEST="${REPO_ROOT}/envs/repackage/.flox/env/manifest.toml"
 PROVISION_MANIFEST="${REPO_ROOT}/envs/floxhub-provision/.flox/env/manifest.toml"
+PREBUILT_MANIFEST="${REPO_ROOT}/envs/prebuilt/.flox/env/manifest.toml"
 
 WORK="$(mktemp -d)"
 cleanup() { rm -rf "${WORK}"; }
@@ -127,6 +138,35 @@ elif grep -nE '\\$' "${STARTUP}" >/dev/null; then
 else
   pass "startup paste-safety" "no triple-double-quotes, no backslash line-continuations"
 fi
+
+# 5. uv version across the startup script and the two Flox manifests that
+# pin it (issue #44). The manifests' uv is a process-scoped activation
+# install; the startup script's UV_PIN is the persistent PATH binary —
+# different installs of the SAME tool, so version drift between them is
+# exactly the confusion the roborev check above exists to prevent.
+UV_PIN_V="$(sed -n 's/^UV_PIN="\([^"]*\)".*/\1/p' "${STARTUP}")"
+PREBUILT_UV="$(sed -n 's/^uv\.version *= *"\([^"]*\)".*/\1/p' "${PREBUILT_MANIFEST}")"
+PROVISION_UV="$(sed -n 's/^uv\.version *= *"\([^"]*\)".*/\1/p' "${PROVISION_MANIFEST}")"
+if [[ -n "${UV_PIN_V}" && "${UV_PIN_V}" == "${PREBUILT_UV}" && "${UV_PIN_V}" == "${PROVISION_UV}" ]]; then
+  pass "uv version" "pin ${UV_PIN_V} == prebuilt ${PREBUILT_UV} == floxhub-provision ${PROVISION_UV}"
+else
+  fail "uv version" "drift: startup-script=${UV_PIN_V:-<missing>}, prebuilt=${PREBUILT_UV:-<missing>}, floxhub-provision=${PROVISION_UV:-<missing>}"
+fi
+
+# 6. pytest/reflex pins (issue #44): single-home pins (no Flox
+# counterpart), so there is nothing to cross-check — the invariant is
+# that they stay EXACT x.y.z pins in the startup script. An empty value
+# or a floating spec (>=, ~=, ^) must fail CI rather than silently float;
+# a pre/post release (e.g. 9.1.1rc1) also fails, forcing a deliberate
+# pin decision instead of an accidental one.
+for pin_name in PYTEST_PIN REFLEX_PIN; do
+  pin_value="$(sed -n "s/^${pin_name}=\"\([^\"]*\)\".*/\1/p" "${STARTUP}")"
+  if [[ "${pin_value}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    pass "${pin_name}" "exact pin ${pin_value}"
+  else
+    fail "${pin_name}" "missing or not an exact x.y.z pin: ${pin_value:-<missing>}"
+  fi
+done
 
 if [[ ${FAILED} -ne 0 ]]; then
   log "pin validation FAILED"

@@ -60,7 +60,7 @@ envs/floxhub-consume/ Phase D' prototype: [install] pkg-path = "elvis/conductor-
 envs/floxhub-provision/ Phase D MVP: [install] the 5 catalog tools + elvis/bd + elvis/roborev (opt-in stage 7, needs auth)
 scripts/sandbox-test.sh   the harness — runs all stages, never hard-fails
 scripts/floxhub-provision.sh  Phase D MVP setup-script recipe (token → login → activate envs/floxhub-provision)
-scripts/conductor-startup-script-cloud.sh  the single workspace startup script: pinned roborev/trunk/rwx + python3.11 for the AL2023 class + rwx auth + roborev init/hooks — wired into this repo's setup, and paste-ready for other repos' workspaces
+scripts/conductor-startup-script-cloud.sh  the single workspace startup script: pinned roborev/trunk/rwx + python3.11 for the AL2023 class + opt-in uv/pytest/reflex (issue #44) + rwx auth + roborev init/hooks — wired into this repo's setup, and paste-ready for other repos' workspaces
 scripts/validate-pins.sh  pin-drift check: roborev/trunk pins vs the Flox manifests and the trunk preflight (CI)
 scripts/conductor-startup-script-cloud-test.sh  codified amazonlinux:2023 container verification of conductor-startup-script-cloud.sh (CI)
 prompts/conductor/   canonical cross-repo Conductor prompts (create-pr.md today)
@@ -127,6 +127,71 @@ settings' environment variables, never inline in the script. The rwx
 pin's sibling copy in gtm-sdk's conductor-workspace-setup.sh is
 comment-synced (that repo is private, so no machine check reaches it).
 
+### Python dev tools: uv, pytest, Reflex (opt-in, issue #44)
+
+A fresh Conductor cloud workspace has Python but not the Python dev
+tools agents need: `uv` and `reflex` are not on PATH (the Flox manifests'
+uv is process-scoped — activation-only), and `python3 -m pytest` fails
+with `No module named pytest`. The startup script therefore carries an
+opt-in stage, enabled by `STARTUP_PY_DEV_TOOLS=1`, which this repo's
+`.conductor/settings.toml` exports. Pasted standalone (or in a repo that
+sets only its own flags) the stage records a SKIP row and the surface is
+unchanged.
+
+What it provisions:
+
+- **uv** — the pinned, checksum-verified release binary
+  (`UV_PIN="0.11.26"` in the startup script, deliberately the same
+  version `envs/prebuilt` and `envs/floxhub-provision` pin;
+  `scripts/validate-pins.sh` cross-checks all three in CI), placed in
+  `/usr/local/bin` like every other persistent tool, with the same
+  `~/.local/bin` no-sudo fallback.
+- **pytest + Reflex** — exact-pinned Python packages (`PYTEST_PIN="9.1.1"`,
+  `REFLEX_PIN="0.9.12"`, single-homed in the startup script and
+  shape-checked by `scripts/validate-pins.sh`) installed into one
+  uv-managed venv at `~/.conductor-pytools`, Python 3.11 — the system 3.11
+  the startup script installs on the AL2023 class, or a uv-managed
+  CPython 3.11 download elsewhere. The console scripts are symlinked into
+  the same bin dirs, so later agent shells get `pytest` and `reflex` as
+  commands.
+
+That venv is the intended Python environment for the two packages (the
+issue's managed-environment allowance), so the supported invocations are:
+
+```bash
+pytest --version                                   # command form
+reflex --version
+~/.conductor-pytools/bin/python -m pytest ...       # module form
+~/.conductor-pytools/bin/python -c 'import reflex'
+```
+
+Bare `python3 -m pytest` in an arbitrary later shell is not one of them —
+the system python3's site-packages stay clean; use the venv's interpreter
+(or activate `~/.conductor-pytools`) instead. The stage provisions the
+Reflex *package* (`reflex --version`, `import reflex`); Reflex's frontend
+toolchain (bun/node, needed by `reflex init`/`reflex run`) is out of
+scope.
+
+Availability and version policy: every run records each tool's resolved
+version and path in the startup summary (and `~/.conductor-setup.log`).
+Re-running setup reuses what is already functional, with the split the
+stage body documents: uv is reused as-is when functional — the same
+reuse-if-present contract as roborev/trunk/rwx, with the resolved version
+recorded in its row — so a `UV_PIN` bump applies to fresh installs (and
+to re-running after removing a stale binary), while
+`scripts/validate-pins.sh` guards the file-level drift against the Flox
+manifests; the pytest/reflex pins are satisfied in place — left untouched
+when they already match, upgraded or healed in place when stale — so the
+venv never accumulates duplicate or competing installs. Every run
+re-proves the commands, the module invocation, and the import, so a
+reused install is verified, not presumed. A provisioning failure is fatal
+under both failure postures (default and `STARTUP_BEST_EFFORT=1`): the
+stage only runs when the workspace explicitly requested these tools, and
+a requested tool that cannot be provisioned must fail setup loudly, never
+leave a workspace that appears ready but lacks them. Pin bumps: uv must
+be bumped in the startup script and both Flox manifests (and their locks)
+together; pytest/reflex live only in the startup script.
+
 ### Standardized Conductor prompts for other repos' workspaces
 
 `prompts/conductor/` is the canonical home for Conductor prompts shared
@@ -157,10 +222,10 @@ gtm-sdk's version.
 ### Pulling Beads tickets from DoltHub
 
 This repository can initialize and refresh its Beads database from the
-private DoltHub remote `dolthub://elviskahoro/gtm-sdk`. Pulling is explicit
-and runs automatically during Conductor workspace setup when
-`INFISICAL_TOKEN` and `INFISICAL_PROJECT_ID` are available. Workspaces without
-those credentials skip the pull.
+private DoltHub remote `dolthub://elviskahoro/gtm-sdk`. Pulling is
+manual only (#45 removed the automatic startup pull along with the rest
+of Beads from the Conductor setup path) — run the script below by hand
+when you want a refresh.
 
 DoltHub remotes authenticate with a Dolt credential JWK, rather than a
 generic API token. On an authenticated machine, create or select a credential
@@ -416,7 +481,10 @@ a repo secret of the same name.
 - No DoltHub/beads-DB bootstrap, no uv sync — tool *provisioning* is the
   main thing under test (Stage 7 does exercise real Infisical-first token
   acquisition in `scripts/floxhub-provision.sh`, but doesn't bootstrap any
-  Infisical secrets beyond that one lookup).
+  Infisical secrets beyond that one lookup). The startup script does
+  provision the uv binary itself in the persistent environment when
+  `STARTUP_PY_DEV_TOOLS=1` is set (issue #44), but it never syncs this
+  repo's own Python project environment.
 - The repackage env carries `curl`/`gnutar`/`gzip`/`coreutils`/`cacert` as
   build-time deps because `sandbox = "off"` builds run inside the activated
   env. If gtm-sdk adopts this shape, those deps land in whatever env hosts
