@@ -125,6 +125,11 @@ case "${RUN3_OUTPUT}" in
 *FAIL*) fail "generic fresh run recorded FAIL row(s)" ;;
 *reused*) fail "generic fresh run recorded a reused row — the rm above did not take effect" ;;
 esac
+# Positive assertions: the WARN rows must actually appear. Absence-of-FAIL
+# checks alone would stay green if a stage regressed into a silent no-op
+# that records no summary row at all (roborev review finding).
+case "${RUN3_OUTPUT}" in *"cwd is not a git worktree"*) ;; *) fail "generic fresh run missing the non-git-init WARN row" ;; esac
+case "${RUN3_OUTPUT}" in *"RWX_ACCESS_TOKEN not set"*) ;; *) fail "generic fresh run missing the no-token WARN row" ;; esac
 su - sandbox-user -c "
   set -e
   fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
@@ -148,5 +153,9 @@ case "${RUN4_OUTPUT}" in
 *FAIL*) fail "generic second run recorded FAIL row(s) — not idempotent" ;;
 *"~/.local/bin"*) fail "generic second run used the ~/.local/bin fallback — unexpected on the target class" ;;
 esac
+# Positive assertion: the second run must show REUSE rows — a re-download
+# instead of reuse would pass the FAIL/fallback checks above unnoticed
+# (roborev review finding).
+case "${RUN4_OUTPUT}" in *"reused"*) ;; *) fail "generic second run missing reuse rows — re-downloaded instead of reusing" ;; esac
 
 echo "=== ALL CHECKS PASSED ==="

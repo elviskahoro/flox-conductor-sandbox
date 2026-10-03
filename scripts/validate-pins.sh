@@ -43,7 +43,14 @@ PROVISION_MANIFEST="${REPO_ROOT}/envs/floxhub-provision/.flox/env/manifest.toml"
 
 WORK="$(mktemp -d)"
 cleanup() { rm -rf "${WORK}"; }
-trap cleanup EXIT HUP INT TERM
+# EXIT does the cleanup; the signal traps exit with the conventional codes
+# instead — a cleanup-only trap lets bash resume the script with WORK
+# already deleted, and the next redirect into WORK then dies confusingly
+# under set -e (the same finding fixed in the generic setup script).
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 log() { printf '[validate-pins] %s\n' "$*"; }
 FAILED=0

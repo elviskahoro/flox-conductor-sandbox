@@ -22,10 +22,10 @@
 # What "work" means here, beyond the binaries landing on PATH:
 #   roborev  installed (pinned, checksum-verified) + `git roborev` alias +
 #            repo init when unconfigured (daemon started) + post-commit hook
-#            ensured independently of init + agent smoke check. Hooks are
-#            never installed when core.hooksPath is set: that points at a
-#            machine-global hooks dir (often another tool's, e.g. git-lfs)
-#            this script must not touch.
+#            ensured independently of init + agent smoke check. When
+#            core.hooksPath points at a machine-global hooks dir (often
+#            another tool's, e.g. git-lfs's), init is skipped too — roborev
+#            init installs the hook itself — and no hook is ever written.
 #   rwx      installed (pinned, checksum-verified) + token validated BEFORE
 #            it is persisted (a bad token never overwrites a good one), so
 #            every later shell is authenticated, not just setup
@@ -263,14 +263,20 @@ rwx_auth() {
   if [[ -n "${RWX_ACCESS_TOKEN:-}" ]]; then
     if rwx whoami; then
       mkdir -p "${HOME}/.config/rwx"
-      if (umask 077; printf '%s' "${RWX_ACCESS_TOKEN}" > "${HOME}/.config/rwx/accesstoken"); then
-        # chmod after the fact only matters when overwriting a pre-existing
-        # file with wrong perms (a redirect truncates, it does not recreate);
-        # creation itself is already 600-from-birth via the umask subshell.
-        chmod 600 "${HOME}/.config/rwx/accesstoken"
+      # Atomic persist: write a temp file in the same directory, then mv -f
+      # (rename) into place. A truncate-then-write redirect could destroy a
+      # previously valid token when the write itself fails mid-way
+      # (ENOSPC/EIO); a failed rename leaves the old file intact. The temp
+      # file is created 600 via the umask subshell and mv carries those
+      # perms to the final name; rm -f on the failure path so a broken
+      # persist leaves nothing behind.
+      local token_tmp="${HOME}/.config/rwx/accesstoken.tmp"
+      if (umask 077; printf '%s' "${RWX_ACCESS_TOKEN}" > "${token_tmp}") &&
+        mv -f "${token_tmp}" "${HOME}/.config/rwx/accesstoken"; then
         record PASS rwx-auth "token validated (rwx whoami) and persisted to ~/.config/rwx/accesstoken"
       else
-        record FAIL rwx-auth "token validated but persisting to ~/.config/rwx/accesstoken failed"
+        rm -f "${token_tmp}"
+        record FAIL rwx-auth "token validated but persisting to ~/.config/rwx/accesstoken failed; any previously persisted token was left untouched"
         return 1
       fi
     else
@@ -295,11 +301,12 @@ rwx_auth() {
 # .roborev.toml — a committed one is the repo's own configuration and is
 # never clobbered. The hook is ensured INDEPENDENTLY of init (a committed
 # .roborev.toml in a fresh checkout must not leave the hook missing:
-# .git/hooks is never cloned), but never when core.hooksPath is set — that
-# points at a machine-global hooks dir this script has no business mutating
-# (it is often another tool's, e.g. git-lfs's) — and never over an existing
-# non-roborev hook. Everything is anchored to `git rev-parse
-# --show-toplevel` so running setup from a subdirectory cannot misfire.
+# .git/hooks is never cloned), never over an existing non-roborev hook, and
+# never — including via init itself, which installs the hook and has no
+# flag to suppress it — when core.hooksPath points at a machine-global
+# hooks dir (often another tool's, e.g. git-lfs's). Everything is anchored
+# to `git rev-parse --show-toplevel` so running setup from a subdirectory
+# cannot misfire.
 ROBOREV_AGENT_DEFAULT="claude-code"
 
 roborev_setup() {
@@ -318,37 +325,61 @@ roborev_setup() {
   local repo_root
   repo_root="$(git rev-parse --show-toplevel)"
   cd "${repo_root}"
-  if [[ ! -f "${repo_root}/.roborev.toml" ]]; then
-    if roborev init --agent "${agent}"; then
-      record PASS roborev-init "initialized (agent: ${agent}); daemon started"
-    else
-      record FAIL roborev-init "roborev init failed (see output above)"
-      return 1
-    fi
-  else
-    if roborev status >/dev/null 2>&1; then
-      record PASS roborev-init ".roborev.toml already present; daemon running"
-    elif roborev daemon start; then
-      record PASS roborev-init ".roborev.toml already present; daemon revived"
-    else
-      record FAIL roborev-init "daemon not running and 'roborev daemon start' failed"
-      return 1
-    fi
-  fi
-  # Hook ensure, independent of init. `git rev-parse --git-path hooks/...`
-  # resolves correctly in worktrees and with core.hooksPath alike.
-  local hook
+  # Hoisted ABOVE init: roborev init installs the post-commit hook itself
+  # and has no flag to suppress that (only --agent/--no-daemon), so when
+  # core.hooksPath points at a machine-global dir, init must not run either
+  # — the guard has to cover every code path that can install a hook, not
+  # just the explicit install-hook step (roborev review finding).
+  local hook hooks_external=0
   hook="$(git rev-parse --git-path hooks/post-commit)"
   if [[ -n "$(git config core.hooksPath)" ]]; then
+    hooks_external=1
+  fi
+  if [[ ${hooks_external} == 1 ]]; then
+    if [[ ! -f "${repo_root}/.roborev.toml" ]]; then
+      record WARN roborev-init "core.hooksPath is set — skipping roborev init, which would install a post-commit hook into the machine-global hooks dir; run 'roborev init --agent ${agent}' manually if wanted"
+    else
+      record PASS roborev-init ".roborev.toml already present; init not needed (core.hooksPath set)"
+    fi
+    if roborev status >/dev/null 2>&1; then
+      record PASS roborev-daemon "daemon running"
+    elif roborev daemon start; then
+      record PASS roborev-daemon "daemon revived"
+    else
+      record FAIL roborev-daemon "daemon not running and 'roborev daemon start' failed"
+      return 1
+    fi
     record WARN roborev-hook "core.hooksPath is set — hooks resolve to a machine-global dir this script will not touch; run 'roborev install-hook' manually if auto-review on commit is wanted"
-  elif [[ -f "${hook}" ]] && grep -q roborev "${hook}"; then
-    record PASS roborev-hook "post-commit hook present (${hook})"
-  elif [[ -f "${hook}" ]]; then
-    record WARN roborev-hook "a non-roborev post-commit hook exists at ${hook} — left untouched; run 'roborev install-hook --force' manually to replace it"
-  elif roborev install-hook; then
-    record PASS roborev-hook "post-commit hook installed (${hook})"
   else
-    record WARN roborev-hook "roborev install-hook failed — auto-review on commit is off; manual 'git roborev review' still works"
+    if [[ ! -f "${repo_root}/.roborev.toml" ]]; then
+      if roborev init --agent "${agent}"; then
+        record PASS roborev-init "initialized (agent: ${agent}); daemon started"
+      else
+        record FAIL roborev-init "roborev init failed (see output above)"
+        return 1
+      fi
+    else
+      if roborev status >/dev/null 2>&1; then
+        record PASS roborev-init ".roborev.toml already present; daemon running"
+      elif roborev daemon start; then
+        record PASS roborev-init ".roborev.toml already present; daemon revived"
+      else
+        record FAIL roborev-init "daemon not running and 'roborev daemon start' failed"
+        return 1
+      fi
+    fi
+    # Hook ensure, independent of init: a committed .roborev.toml in a fresh
+    # checkout must not leave the hook missing (.git/hooks is never cloned).
+    # `git rev-parse --git-path` resolves worktrees correctly.
+    if [[ -f "${hook}" ]] && grep -q roborev "${hook}"; then
+      record PASS roborev-hook "post-commit hook present (${hook})"
+    elif [[ -f "${hook}" ]]; then
+      record WARN roborev-hook "a non-roborev post-commit hook exists at ${hook} — left untouched; run 'roborev install-hook --force' manually to replace it"
+    elif roborev install-hook; then
+      record PASS roborev-hook "post-commit hook installed (${hook})"
+    else
+      record WARN roborev-hook "roborev install-hook failed — auto-review on commit is off; manual 'git roborev review' still works"
+    fi
   fi
   # Smoke-check that the review agent actually responds — this is what makes
   # reviews work end to end. Non-fatal: a wrong agent choice or a transient
