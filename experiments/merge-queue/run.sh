@@ -4,7 +4,9 @@ set -euo pipefail
 BASE=mq-experiment-base
 N=${1:-3}
 git fetch origin main
-git push origin origin/main:refs/heads/$BASE 2>/dev/null || true
+if ! git ls-remote --exit-code --heads origin "$BASE" >/dev/null; then
+  git push origin "origin/main:refs/heads/$BASE"  # fails loudly (auth, protection) under set -e
+fi
 git fetch origin $BASE
 for i in $(seq 1 "$N"); do
   b=mq-exp-$i-$(date +%s)
