@@ -17,7 +17,7 @@
 # Repo-agnostic by design: no repo paths, no repo scripts, nothing that
 # assumes a particular project — safe in any workspace, local or cloud.
 # (This repo's own .conductor/settings.toml deliberately does NOT call it:
-# its setup is repo-specific — the flox harness, bd, infisical, FloxHub.)
+# its setup is repo-specific — the flox harness, infisical, FloxHub.)
 #
 # What "work" means here, beyond the binaries landing on PATH:
 #   roborev  installed (pinned, checksum-verified) + `git roborev` alias +

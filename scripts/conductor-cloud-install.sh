@@ -102,7 +102,7 @@ fi
 
 # install_bin <src> <name>: place a file as an executable under
 # /usr/local/bin (the convention this repo's setup already uses for
-# bd/roborev/infisical/trunk) when root or passwordless sudo allows it,
+# roborev/infisical/trunk) when root or passwordless sudo allows it,
 # else under ~/.local/bin. Echoes the installed path on success (nothing on
 # failure).
 install_bin() {
