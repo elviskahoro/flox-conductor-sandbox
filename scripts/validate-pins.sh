@@ -13,10 +13,16 @@
 #      block == envs/repackage's [build.roborev] assets, as sets
 #   3. trunk launcher: TRUNK_LAUNCHER_SHA256 identical in
 #      conductor-cloud-install.sh and conductor-trunk-preflight.sh
-#
-# rwx's pin has no in-repo counterpart (its sibling constant lives in the
-# private gtm-sdk repo's conductor-workspace-setup.sh) — comment-synced
-# only; reported as SKIP.
+#   4. roborev pins vs the generic paste script:
+#      conductor-roborev-rwx-setup.sh's roborev_install() carries the same
+#      ROBOREV_PIN and (platform, sha256) pairs as conductor-cloud-install.sh
+#      — it provisions the same binary for repos with no committed setup
+#   5. rwx pins likewise: RWX_PIN and the (platform, sha256) pairs in its
+#      rwx_install() == conductor-cloud-install.sh's rwx_stage(). The
+#      generic script is the in-repo rwx counterpart this check previously
+#      reported SKIP for lacking (the sibling constant also lives in the
+#      private gtm-sdk repo's conductor-workspace-setup.sh — comment-synced
+#      there, machine-checked here).
 #
 # No process substitution anywhere (gtm-sdk#279 — same rule as every other
 # provisioning script in this repo).
@@ -26,6 +32,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 INSTALL="${REPO_ROOT}/scripts/conductor-cloud-install.sh"
 PREFLIGHT="${REPO_ROOT}/scripts/conductor-trunk-preflight.sh"
+GENERIC="${REPO_ROOT}/scripts/conductor-roborev-rwx-setup.sh"
 REPACKAGE_MANIFEST="${REPO_ROOT}/envs/repackage/.flox/env/manifest.toml"
 PROVISION_MANIFEST="${REPO_ROOT}/envs/floxhub-provision/.flox/env/manifest.toml"
 
@@ -46,6 +53,12 @@ pass() { log "PASS  $1 — $2"; }
 # with roborev asset/sha256 pairs (the rwx stage has sha256s but no assets,
 # and must stay out of this comparison).
 awk '/^roborev_stage\(\)/,/^}$/' "${INSTALL}" >"${WORK}/stage"
+# Function bodies the generic-vs-install checks (4-5) compare: the generic
+# paste script's roborev_install()/rwx_install() and conductor-cloud-install
+# .sh's rwx_stage() (its roborev_stage is already extracted above).
+awk '/^roborev_install\(\)/,/^}$/' "${GENERIC}" >"${WORK}/generic_roborev"
+awk '/^rwx_install\(\)/,/^}$/' "${GENERIC}" >"${WORK}/generic_rwx"
+awk '/^rwx_stage\(\)/,/^}$/' "${INSTALL}" >"${WORK}/rwx_stage"
 # The [build.roborev] manifest section (up to the next table header).
 awk 'BEGIN { f = 0 } /^\[build\.roborev\]$/ { f = 1; next } /^\[/ { f = 0 } f' \
   "${REPACKAGE_MANIFEST}" >"${WORK}/repackage_section"
@@ -91,12 +104,46 @@ else
   fail "trunk launcher sha256" "drift or missing: conductor-cloud-install=${INSTALL_LAUNCHER_SHA:-<missing>}, preflight=${PREFLIGHT_LAUNCHER_SHA:-<missing>}"
 fi
 
-# 4. rwx: no in-repo counterpart to compare against.
-RWX_PIN="$(sed -n 's/^RWX_PIN="\([^"]*\)".*/\1/p' "${INSTALL}")"
-if [[ -n "${RWX_PIN}" ]]; then
-  log "SKIP  rwx pin — ${RWX_PIN} has no in-repo counterpart (synced by comment with the private gtm-sdk repo's conductor-workspace-setup.sh)"
+# 4. roborev pins vs the generic paste script — same binary, second file:
+#    exactly the drift class this whole script exists for.
+GENERIC_ROBOREV_PIN="$(sed -n 's/^ROBOREV_PIN="\([^"]*\)".*/\1/p' "${GENERIC}")"
+if [[ -n "${GENERIC_ROBOREV_PIN}" && "${GENERIC_ROBOREV_PIN}" == "${PIN}" ]]; then
+  pass "generic roborev version" "conductor-roborev-rwx-setup.sh pin ${GENERIC_ROBOREV_PIN} == conductor-cloud-install.sh ${PIN}"
 else
-  fail "rwx pin" "RWX_PIN is missing from conductor-cloud-install.sh"
+  fail "generic roborev version" "drift: generic=${GENERIC_ROBOREV_PIN:-<missing>}, conductor-cloud-install=${PIN:-<missing>}"
+fi
+roborev_pairs "${WORK}/generic_roborev" "${WORK}/pairs_generic_roborev"
+# Non-empty guard first: two empty pair files would diff as a vacuous pass —
+# exactly the silent failure a pin checker must never have.
+if [[ ! -s "${WORK}/pairs_stage" || ! -s "${WORK}/pairs_generic_roborev" ]]; then
+  fail "generic roborev platform/sha256 pairs" "extraction produced no pairs (pairs_stage=$(wc -l <"${WORK}/pairs_stage" | tr -d ' '), generic=$(wc -l <"${WORK}/pairs_generic_roborev" | tr -d ' ')) — sed/awk pattern drift?"
+elif diff -q "${WORK}/pairs_stage" "${WORK}/pairs_generic_roborev" >/dev/null; then
+  pass "generic roborev platform/sha256 pairs" "conductor-roborev-rwx-setup.sh's roborev_install() case block matches conductor-cloud-install.sh's"
+else
+  fail "generic roborev platform/sha256 pairs" "conductor-roborev-rwx-setup.sh != conductor-cloud-install.sh; diff: $(diff "${WORK}/pairs_stage" "${WORK}/pairs_generic_roborev" | tr '\n' ' ')"
+fi
+
+# 5. rwx pins vs the generic paste script. Case lines pair platform and
+#    sha256 on one line, so extract with sed instead of the paste-based
+#    helper; sorted, so this is a set comparison like check 2.
+RWX_PIN="$(sed -n 's/^RWX_PIN="\([^"]*\)".*/\1/p' "${INSTALL}")"
+GENERIC_RWX_PIN="$(sed -n 's/^RWX_PIN="\([^"]*\)".*/\1/p' "${GENERIC}")"
+rwx_pairs() { # <rwx-stage-body> <out-file>: sorted "<platform> <sha256>" lines
+  sed -n 's/^[[:space:]]*\([a-z0-9]*-[a-z0-9_]*\)) sha256="\([0-9a-f]\{64\}\)".*/\1 \2/p' "$1" | sort >"$2"
+}
+rwx_pairs "${WORK}/rwx_stage" "${WORK}/pairs_rwx_install"
+rwx_pairs "${WORK}/generic_rwx" "${WORK}/pairs_rwx_generic"
+if [[ -n "${RWX_PIN}" && "${RWX_PIN}" == "${GENERIC_RWX_PIN}" ]]; then
+  pass "rwx version" "RWX_PIN ${RWX_PIN} identical in conductor-cloud-install.sh and conductor-roborev-rwx-setup.sh"
+else
+  fail "rwx version" "drift or missing: conductor-cloud-install=${RWX_PIN:-<missing>}, generic=${GENERIC_RWX_PIN:-<missing>}"
+fi
+if [[ ! -s "${WORK}/pairs_rwx_install" || ! -s "${WORK}/pairs_rwx_generic" ]]; then
+  fail "rwx platform/sha256 pairs" "extraction produced no pairs (install=$(wc -l <"${WORK}/pairs_rwx_install" | tr -d ' '), generic=$(wc -l <"${WORK}/pairs_rwx_generic" | tr -d ' ')) — sed pattern drift?"
+elif diff -q "${WORK}/pairs_rwx_install" "${WORK}/pairs_rwx_generic" >/dev/null; then
+  pass "rwx platform/sha256 pairs" "$(wc -l <"${WORK}/pairs_rwx_install" | tr -d ' ') pinned pairs identical in both scripts"
+else
+  fail "rwx platform/sha256 pairs" "conductor-cloud-install.sh's rwx_stage() != conductor-roborev-rwx-setup.sh's rwx_install(); diff: $(diff "${WORK}/pairs_rwx_install" "${WORK}/pairs_rwx_generic" | tr '\n' ' ')"
 fi
 
 if [[ ${FAILED} -ne 0 ]]; then
