@@ -20,7 +20,7 @@
 # python3-shadow safety facts the install script's comment records (dnf's
 # absolute shebang, zero env-python3 system consumers, dnf still working
 # after the shadow). RUN 3/4 do the same for the generic
-# conductor-roborev-rwx-setup.sh: a fresh run (the RUN 1/2 binaries are
+# conductor-startup-script.sh: a fresh run (the RUN 1/2 binaries are
 # removed first, so its own pinned download path is exercised, not the
 # reuse branch) and an idempotent re-run, both from a non-git cwd with no
 # RWX_ACCESS_TOKEN — exactly the container's reality — asserting pinned
@@ -123,9 +123,9 @@ echo "=== RUN 3: fresh run of the generic roborev+rwx setup script ==="
 # stages must take their WARN rows and the run must still exit 0 — proving
 # the non-fatal paths rather than pretending to test authenticated ones.
 rm -f /usr/local/bin/roborev /usr/local/bin/git-roborev /usr/local/bin/rwx
-GENERIC_SCRIPT="/src/scripts/conductor-roborev-rwx-setup.sh"
+GENERIC_SCRIPT="/src/scripts/conductor-startup-script.sh"
 RUN3_OUTPUT="$(su - sandbox-user -c "cd /tmp && bash ${GENERIC_SCRIPT}")" ||
-  fail "fresh conductor-roborev-rwx-setup.sh exited non-zero"
+  fail "fresh conductor-startup-script.sh exited non-zero"
 printf '%s' "${RUN3_OUTPUT}"
 case "${RUN3_OUTPUT}" in
 *FAIL*) fail "generic fresh run recorded FAIL row(s)" ;;
@@ -153,7 +153,7 @@ su - sandbox-user -c "
 
 echo "=== RUN 4: generic script idempotent re-run ==="
 RUN4_OUTPUT="$(su - sandbox-user -c "cd /tmp && bash ${GENERIC_SCRIPT}")" ||
-  fail "second conductor-roborev-rwx-setup.sh exited non-zero"
+  fail "second conductor-startup-script.sh exited non-zero"
 printf '%s' "${RUN4_OUTPUT}"
 case "${RUN4_OUTPUT}" in
 *FAIL*) fail "generic second run recorded FAIL row(s) — not idempotent" ;;
@@ -181,6 +181,9 @@ dnf install -y git >/dev/null
 GLOBAL_HOOKS=/tmp/global-hooks
 rm -rf "${GLOBAL_HOOKS}" /tmp/guard-repo /tmp/roborev-stub
 mkdir -p "${GLOBAL_HOOKS}" /tmp/roborev-stub
+# "$1" must stay literal — this printf emits a stub script whose own case
+# statement reads "$1", so single quotes are required, not an oversight.
+# shellcheck disable=SC2016
 printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub/roborev
 chmod 755 /tmp/roborev-stub/roborev
 su - sandbox-user -c "git init -q /tmp/guard-repo"
@@ -208,6 +211,8 @@ echo "=== RUN 6: atomic token persist (stubbed rwx) ==="
 # rename would trip one of the two assertions).
 rm -rf /tmp/stubbin
 mkdir -p /tmp/stubbin
+# Same as RUN 5's stub: "$1" must stay literal inside the emitted script.
+# shellcheck disable=SC2016
 printf '#!/bin/sh\ncase "$1" in whoami) echo stub-ok; exit 0;; esac\nexit 0\n' > /tmp/stubbin/rwx
 chmod 755 /tmp/stubbin/rwx
 su - sandbox-user -c "mkdir -p ~/.config/rwx && printf '%s' OLD-STUB-TOKEN > ~/.config/rwx/accesstoken && chmod 600 ~/.config/rwx/accesstoken"
