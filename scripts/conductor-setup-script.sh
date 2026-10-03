@@ -12,7 +12,7 @@
 # text is reviewable and pin-checked instead of hand-carried. It also runs
 # standalone, unchanged:
 #
-#   bash scripts/conductor-roborev-rwx-setup.sh
+#   bash scripts/conductor-setup-script.sh
 #
 # Repo-agnostic by design: no repo paths, no repo scripts, nothing that
 # assumes a particular project — safe in any workspace, local or cloud.

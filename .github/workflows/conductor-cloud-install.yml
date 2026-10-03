@@ -29,7 +29,7 @@ jobs:
           shellcheck \
             scripts/conductor-cloud-install.sh \
             scripts/conductor-trunk-preflight.sh \
-            scripts/conductor-roborev-rwx-setup.sh \
+            scripts/conductor-setup-script.sh \
             scripts/validate-pins.sh \
             scripts/conductor-cloud-install-test.sh
 

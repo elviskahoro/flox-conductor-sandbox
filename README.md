@@ -61,7 +61,7 @@ envs/floxhub-provision/ Phase D MVP: [install] the 5 catalog tools + elvis/bd + 
 scripts/sandbox-test.sh   the harness — runs all stages, never hard-fails
 scripts/floxhub-provision.sh  Phase D MVP setup-script recipe (token → login → activate envs/floxhub-provision)
 scripts/conductor-cloud-install.sh  cloud-sandbox provisioning: python3.11 + priority CLIs (roborev, trunk, rwx), wired into setup before the harness
-scripts/conductor-roborev-rwx-setup.sh  generic repo-agnostic workspace setup (pinned roborev + rwx + auth/init) — paste its contents into the Conductor GUI setup field for repos with no committed setup
+scripts/conductor-setup-script.sh  generic repo-agnostic workspace setup (pinned roborev + rwx + auth/init) — paste its contents into the Conductor GUI setup field for repos with no committed setup
 scripts/validate-pins.sh  pin-drift check: roborev/trunk/rwx pins vs the Flox manifests and the generic setup script (CI)
 scripts/conductor-cloud-install-test.sh  codified amazonlinux:2023 container verification of conductor-cloud-install.sh (CI)
 findings/          harness output: report-*.md (summary + evidence) and full-log-*.txt
@@ -97,7 +97,7 @@ TEST_FLOXHUB_PROVISION=1 FLOXHUB_TOKEN=<token> bash scripts/sandbox-test.sh  # o
 
 ### Generic roborev + rwx setup for other repos' workspaces
 
-`scripts/conductor-roborev-rwx-setup.sh` is the repo-agnostic distillation
+`scripts/conductor-setup-script.sh` is the repo-agnostic distillation
 of the provisioning recipe: the same pinned, checksum-verified roborev and
 rwx binaries as `conductor-cloud-install.sh`, plus the pieces that make
 them work rather than merely exist — `RWX_ACCESS_TOKEN` validated before it

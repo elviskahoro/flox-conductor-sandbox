@@ -20,7 +20,7 @@
 # python3-shadow safety facts the install script's comment records (dnf's
 # absolute shebang, zero env-python3 system consumers, dnf still working
 # after the shadow). RUN 3/4 do the same for the generic
-# conductor-roborev-rwx-setup.sh: a fresh run (the RUN 1/2 binaries are
+# conductor-setup-script.sh: a fresh run (the RUN 1/2 binaries are
 # removed first, so its own pinned download path is exercised, not the
 # reuse branch) and an idempotent re-run, both from a non-git cwd with no
 # RWX_ACCESS_TOKEN — exactly the container's reality — asserting pinned
@@ -123,9 +123,9 @@ echo "=== RUN 3: fresh run of the generic roborev+rwx setup script ==="
 # stages must take their WARN rows and the run must still exit 0 — proving
 # the non-fatal paths rather than pretending to test authenticated ones.
 rm -f /usr/local/bin/roborev /usr/local/bin/git-roborev /usr/local/bin/rwx
-GENERIC_SCRIPT="/src/scripts/conductor-roborev-rwx-setup.sh"
+GENERIC_SCRIPT="/src/scripts/conductor-setup-script.sh"
 RUN3_OUTPUT="$(su - sandbox-user -c "cd /tmp && bash ${GENERIC_SCRIPT}")" ||
-  fail "fresh conductor-roborev-rwx-setup.sh exited non-zero"
+  fail "fresh conductor-setup-script.sh exited non-zero"
 printf '%s' "${RUN3_OUTPUT}"
 case "${RUN3_OUTPUT}" in
 *FAIL*) fail "generic fresh run recorded FAIL row(s)" ;;
@@ -153,7 +153,7 @@ su - sandbox-user -c "
 
 echo "=== RUN 4: generic script idempotent re-run ==="
 RUN4_OUTPUT="$(su - sandbox-user -c "cd /tmp && bash ${GENERIC_SCRIPT}")" ||
-  fail "second conductor-roborev-rwx-setup.sh exited non-zero"
+  fail "second conductor-setup-script.sh exited non-zero"
 printf '%s' "${RUN4_OUTPUT}"
 case "${RUN4_OUTPUT}" in
 *FAIL*) fail "generic second run recorded FAIL row(s) — not idempotent" ;;
