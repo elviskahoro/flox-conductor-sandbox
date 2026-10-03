@@ -27,7 +27,8 @@
 # versions resolve and auth/init take their WARN rows rather than FAIL.
 # RUN 5/6 codify the two headline guards of the generic script: a
 # core.hooksPath-injected run (git's env-config mechanism, the same one
-# the live verification used) must skip init and leave the machine-global
+# the live verification used; roborev stubbed so only the guard branch's
+# own behavior is under test) must skip init and leave the machine-global
 # hooks dir untouched, and a stubbed-rwx run must land the token file
 # atomically — content replaced, no accesstoken.tmp leftover.
 # Exits non-zero on the first broken assertion.
@@ -170,18 +171,27 @@ echo "=== RUN 5: core.hooksPath guard skips init, never writes the global hooks 
 # env-config mechanism — the same mechanism the live verification used —
 # pointing at an empty dir that must still be empty afterward, while a
 # fresh repo must NOT gain .roborev.toml and the run must still exit 0.
+# roborev itself is stubbed (version/status exit 0) so the assertions
+# depend ONLY on the guard branch's own behavior: a real daemon start in
+# this never-init'd, agent-less container could red the test spuriously
+# (roborev review finding). The tripwire for a guard regression is the
+# skip-init WARN row — a regression that calls init anyway records a PASS
+# init row instead, and that assertion fails.
 dnf install -y git >/dev/null
 GLOBAL_HOOKS=/tmp/global-hooks
-rm -rf "${GLOBAL_HOOKS}" /tmp/guard-repo
-mkdir -p "${GLOBAL_HOOKS}"
+rm -rf "${GLOBAL_HOOKS}" /tmp/guard-repo /tmp/roborev-stub
+mkdir -p "${GLOBAL_HOOKS}" /tmp/roborev-stub
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub/roborev
+chmod 755 /tmp/roborev-stub/roborev
 su - sandbox-user -c "git init -q /tmp/guard-repo"
-RUN5_OUTPUT="$(su - sandbox-user -c "cd /tmp/guard-repo && GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=${GLOBAL_HOOKS} bash ${GENERIC_SCRIPT}")" ||
+RUN5_OUTPUT="$(su - sandbox-user -c "cd /tmp/guard-repo && PATH=/tmp/roborev-stub:\$PATH GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=${GLOBAL_HOOKS} bash ${GENERIC_SCRIPT}")" ||
   fail "generic run under core.hooksPath exited non-zero"
 printf '%s' "${RUN5_OUTPUT}"
 case "${RUN5_OUTPUT}" in
 *FAIL*) fail "core.hooksPath run recorded FAIL row(s)" ;;
 esac
 case "${RUN5_OUTPUT}" in *"skipping roborev init"*) ;; *) fail "core.hooksPath run missing the skip-init WARN row" ;; esac
+case "${RUN5_OUTPUT}" in *"roborev-daemon"*) ;; *) fail "core.hooksPath run missing the roborev-daemon row" ;; esac
 su - sandbox-user -c "
   set -e
   fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
