@@ -25,6 +25,11 @@
 # reuse branch) and an idempotent re-run, both from a non-git cwd with no
 # RWX_ACCESS_TOKEN — exactly the container's reality — asserting pinned
 # versions resolve and auth/init take their WARN rows rather than FAIL.
+# RUN 5/6 codify the two headline guards of the generic script: a
+# core.hooksPath-injected run (git's env-config mechanism, the same one
+# the live verification used) must skip init and leave the machine-global
+# hooks dir untouched, and a stubbed-rwx run must land the token file
+# atomically — content replaced, no accesstoken.tmp leftover.
 # Exits non-zero on the first broken assertion.
 set -euo pipefail
 
@@ -157,5 +162,59 @@ esac
 # instead of reuse would pass the FAIL/fallback checks above unnoticed
 # (roborev review finding).
 case "${RUN4_OUTPUT}" in *"reused"*) ;; *) fail "generic second run missing reuse rows — re-downloaded instead of reusing" ;; esac
+
+echo "=== RUN 5: core.hooksPath guard skips init, never writes the global hooks dir ==="
+# Codifies the hoisted guard. git is installed HERE (after RUN 1-4, whose
+# environment stays git-less by design) because the guard's branch is only
+# reachable from inside a work tree. core.hooksPath is injected via git's
+# env-config mechanism — the same mechanism the live verification used —
+# pointing at an empty dir that must still be empty afterward, while a
+# fresh repo must NOT gain .roborev.toml and the run must still exit 0.
+dnf install -y git >/dev/null
+GLOBAL_HOOKS=/tmp/global-hooks
+rm -rf "${GLOBAL_HOOKS}" /tmp/guard-repo
+mkdir -p "${GLOBAL_HOOKS}"
+su - sandbox-user -c "git init -q /tmp/guard-repo"
+RUN5_OUTPUT="$(su - sandbox-user -c "cd /tmp/guard-repo && GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=${GLOBAL_HOOKS} bash ${GENERIC_SCRIPT}")" ||
+  fail "generic run under core.hooksPath exited non-zero"
+printf '%s' "${RUN5_OUTPUT}"
+case "${RUN5_OUTPUT}" in
+*FAIL*) fail "core.hooksPath run recorded FAIL row(s)" ;;
+esac
+case "${RUN5_OUTPUT}" in *"skipping roborev init"*) ;; *) fail "core.hooksPath run missing the skip-init WARN row" ;; esac
+su - sandbox-user -c "
+  set -e
+  fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
+  [ ! -e /tmp/guard-repo/.roborev.toml ] ||
+    fail \"core.hooksPath run created .roborev.toml despite skipping init\"
+  [ ! -e ${GLOBAL_HOOKS}/post-commit ] ||
+    fail \"core.hooksPath run wrote a hook into the machine-global dir\"
+" || fail "core.hooksPath guard verification failed"
+
+echo "=== RUN 6: atomic token persist (stubbed rwx) ==="
+# Codifies the atomic replace: a stub rwx whose whoami succeeds lets the
+# persist path run with a fake token; the old token must be replaced and
+# no accesstoken.tmp may linger (a truncate-write regression or a failed
+# rename would trip one of the two assertions).
+rm -rf /tmp/stubbin
+mkdir -p /tmp/stubbin
+printf '#!/bin/sh\ncase "$1" in whoami) echo stub-ok; exit 0;; esac\nexit 0\n' > /tmp/stubbin/rwx
+chmod 755 /tmp/stubbin/rwx
+su - sandbox-user -c "mkdir -p ~/.config/rwx && printf '%s' OLD-STUB-TOKEN > ~/.config/rwx/accesstoken && chmod 600 ~/.config/rwx/accesstoken"
+RUN6_OUTPUT="$(su - sandbox-user -c "cd /tmp && PATH=/tmp/stubbin:\$PATH RWX_ACCESS_TOKEN=NEW-STUB-TOKEN bash ${GENERIC_SCRIPT}")" ||
+  fail "stubbed-rwx run exited non-zero"
+printf '%s' "${RUN6_OUTPUT}"
+case "${RUN6_OUTPUT}" in
+*FAIL*) fail "stubbed-rwx run recorded FAIL row(s)" ;;
+esac
+case "${RUN6_OUTPUT}" in *"and persisted to ~/.config/rwx/accesstoken"*) ;; *) fail "stubbed-rwx run missing the rwx-auth PASS row" ;; esac
+su - sandbox-user -c "
+  set -e
+  fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
+  [ \"\$(cat ~/.config/rwx/accesstoken)\" = NEW-STUB-TOKEN ] ||
+    fail \"atomic persist did not replace the old token\"
+  [ ! -e ~/.config/rwx/accesstoken.tmp ] ||
+    fail \"accesstoken.tmp leftover after a successful persist\"
+" || fail "atomic persist verification failed"
 
 echo "=== ALL CHECKS PASSED ==="

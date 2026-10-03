@@ -309,6 +309,23 @@ rwx_auth() {
 # cannot misfire.
 ROBOREV_AGENT_DEFAULT="claude-code"
 
+# ensure_daemon <stage>: status → PASS "daemon running"; start → PASS
+# "daemon revived"; neither → FAIL under <stage> (deferred setup failure).
+# Shared by the hooks_external and normal paths so a future daemon-handling
+# fix lands in one place, not in two copy-pasted blocks that already report
+# the same failure under different stage names (roborev review finding).
+ensure_daemon() {
+  local stage="$1"
+  if roborev status >/dev/null 2>&1; then
+    record PASS "${stage}" "daemon running"
+  elif roborev daemon start; then
+    record PASS "${stage}" "daemon revived"
+  else
+    record FAIL "${stage}" "daemon not running and 'roborev daemon start' failed"
+    return 1
+  fi
+}
+
 roborev_setup() {
   local agent="${ROBOREV_AGENT:-${ROBOREV_AGENT_DEFAULT}}"
   # `git roborev ...` (the push-gate spelling): native git-subcommand
@@ -341,14 +358,7 @@ roborev_setup() {
     else
       record PASS roborev-init ".roborev.toml already present; init not needed (core.hooksPath set)"
     fi
-    if roborev status >/dev/null 2>&1; then
-      record PASS roborev-daemon "daemon running"
-    elif roborev daemon start; then
-      record PASS roborev-daemon "daemon revived"
-    else
-      record FAIL roborev-daemon "daemon not running and 'roborev daemon start' failed"
-      return 1
-    fi
+    ensure_daemon roborev-daemon || return 1
     record WARN roborev-hook "core.hooksPath is set — hooks resolve to a machine-global dir this script will not touch; run 'roborev install-hook' manually if auto-review on commit is wanted"
   else
     if [[ ! -f "${repo_root}/.roborev.toml" ]]; then
@@ -359,14 +369,8 @@ roborev_setup() {
         return 1
       fi
     else
-      if roborev status >/dev/null 2>&1; then
-        record PASS roborev-init ".roborev.toml already present; daemon running"
-      elif roborev daemon start; then
-        record PASS roborev-init ".roborev.toml already present; daemon revived"
-      else
-        record FAIL roborev-init "daemon not running and 'roborev daemon start' failed"
-        return 1
-      fi
+      record PASS roborev-init ".roborev.toml already present"
+      ensure_daemon roborev-init || return 1
     fi
     # Hook ensure, independent of init: a committed .roborev.toml in a fresh
     # checkout must not leave the hook missing (.git/hooks is never cloned).
