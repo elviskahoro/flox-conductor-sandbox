@@ -19,7 +19,13 @@
 # /usr/local/bin, /usr/bin/python3 staying 3.9 (dnf's interpreter), and the
 # python3-shadow safety facts the install script's comment records (dnf's
 # absolute shebang, zero env-python3 system consumers, dnf still working
-# after the shadow). Exits non-zero on the first broken assertion.
+# after the shadow). RUN 3/4 do the same for the generic
+# conductor-roborev-rwx-setup.sh: a fresh run (the RUN 1/2 binaries are
+# removed first, so its own pinned download path is exercised, not the
+# reuse branch) and an idempotent re-run, both from a non-git cwd with no
+# RWX_ACCESS_TOKEN — exactly the container's reality — asserting pinned
+# versions resolve and auth/init take their WARN rows rather than FAIL.
+# Exits non-zero on the first broken assertion.
 set -euo pipefail
 
 INSTALL_SCRIPT="/src/scripts/conductor-cloud-install.sh"
@@ -101,6 +107,46 @@ printf '%s\n' "${RUN2_OUTPUT}"
 case "${RUN2_OUTPUT}" in
 *FAIL*) fail "second run recorded FAIL row(s) — not idempotent" ;;
 *"~/.local/bin"*) fail "second run used the ~/.local/bin fallback — unexpected on the target class" ;;
+esac
+
+echo "=== RUN 3: fresh run of the generic roborev+rwx setup script ==="
+# Remove the binaries RUN 1/2 installed so the generic script exercises its
+# OWN pinned download path (same pins as the sibling, per validate-pins.sh)
+# instead of the reuse branch. Run as sandbox-user from a non-git cwd: this
+# container has no RWX_ACCESS_TOKEN and no agent auth, so the auth and init
+# stages must take their WARN rows and the run must still exit 0 — proving
+# the non-fatal paths rather than pretending to test authenticated ones.
+rm -f /usr/local/bin/roborev /usr/local/bin/git-roborev /usr/local/bin/rwx
+GENERIC_SCRIPT="/src/scripts/conductor-roborev-rwx-setup.sh"
+RUN3_OUTPUT="$(su - sandbox-user -c "cd /tmp && bash ${GENERIC_SCRIPT}")" ||
+  fail "fresh conductor-roborev-rwx-setup.sh exited non-zero"
+printf '%s' "${RUN3_OUTPUT}"
+case "${RUN3_OUTPUT}" in
+*FAIL*) fail "generic fresh run recorded FAIL row(s)" ;;
+*reused*) fail "generic fresh run recorded a reused row — the rm above did not take effect" ;;
+esac
+su - sandbox-user -c "
+  set -e
+  fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
+  pin_roborev=\"\$(sed -n 's/^ROBOREV_PIN=\"\([^\"]*\)\".*/\1/p' ${GENERIC_SCRIPT})\"
+  pin_rwx=\"\$(sed -n 's/^RWX_PIN=\"\([^\"]*\)\".*/\1/p' ${GENERIC_SCRIPT})\"
+  [ \"\$(command -v roborev)\" = /usr/local/bin/roborev ] ||
+    fail \"roborev resolved to \$(command -v roborev), expected /usr/local/bin/roborev\"
+  roborev version 2>&1 | grep -q \"v\${pin_roborev}\" ||
+    fail \"roborev version does not report the pinned v\${pin_roborev}: \$(roborev version 2>&1)\"
+  [ \"\$(command -v rwx)\" = /usr/local/bin/rwx ] ||
+    fail \"rwx resolved to \$(command -v rwx), expected /usr/local/bin/rwx\"
+  rwx --version 2>&1 | grep -q \"\${pin_rwx}\" ||
+    fail \"rwx does not report the pinned \${pin_rwx}: \$(rwx --version 2>&1)\"
+" || fail "generic-script verification as sandbox-user failed"
+
+echo "=== RUN 4: generic script idempotent re-run ==="
+RUN4_OUTPUT="$(su - sandbox-user -c "cd /tmp && bash ${GENERIC_SCRIPT}")" ||
+  fail "second conductor-roborev-rwx-setup.sh exited non-zero"
+printf '%s' "${RUN4_OUTPUT}"
+case "${RUN4_OUTPUT}" in
+*FAIL*) fail "generic second run recorded FAIL row(s) — not idempotent" ;;
+*"~/.local/bin"*) fail "generic second run used the ~/.local/bin fallback — unexpected on the target class" ;;
 esac
 
 echo "=== ALL CHECKS PASSED ==="

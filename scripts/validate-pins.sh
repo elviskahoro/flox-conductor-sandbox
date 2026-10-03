@@ -23,6 +23,11 @@
 #      reported SKIP for lacking (the sibling constant also lives in the
 #      private gtm-sdk repo's conductor-workspace-setup.sh — comment-synced
 #      there, machine-checked here).
+#   6. paste-safety of the generic script: no triple-double-quote sequences
+#      and no backslash line-continuations anywhere in it — Conductor
+#      serializes the GUI setup field into a TOML multiline string, and
+#      either would corrupt the paste. Comment-enforced constraints rot
+#      silently; this makes CI fail instead.
 #
 # No process substitution anywhere (gtm-sdk#279 — same rule as every other
 # provisioning script in this repo).
@@ -144,6 +149,20 @@ elif diff -q "${WORK}/pairs_rwx_install" "${WORK}/pairs_rwx_generic" >/dev/null;
   pass "rwx platform/sha256 pairs" "$(wc -l <"${WORK}/pairs_rwx_install" | tr -d ' ') pinned pairs identical in both scripts"
 else
   fail "rwx platform/sha256 pairs" "conductor-cloud-install.sh's rwx_stage() != conductor-roborev-rwx-setup.sh's rwx_install(); diff: $(diff "${WORK}/pairs_rwx_install" "${WORK}/pairs_rwx_generic" | tr '\n' ' ')"
+fi
+
+# 6. Paste-safety of the generic script. Its whole purpose is to be pasted
+#    into Conductor's GUI setup field, which Conductor serializes into a
+#    TOML multiline string — a triple-double-quote would terminate the
+#    string early and a backslash line-continuation would join lines with
+#    leading whitespace stripped. Both are documented constraints in the
+#    script's header; this turns them into a CI-enforced invariant.
+if grep -n '"""' "${GENERIC}" >/dev/null; then
+  fail "generic paste-safety" "triple-double-quote sequence present — TOML multiline hazard for the GUI paste"
+elif grep -nE '\\$' "${GENERIC}" >/dev/null; then
+  fail "generic paste-safety" "backslash line-continuation present — TOML multiline hazard for the GUI paste"
+else
+  pass "generic paste-safety" "no triple-double-quotes, no backslash line-continuations"
 fi
 
 if [[ ${FAILED} -ne 0 ]]; then

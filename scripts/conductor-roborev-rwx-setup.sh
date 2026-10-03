@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2312  # $(...) in assignments and rows: stage failures surface through the stages' own || returns and the summary, not by killing the script mid-row
 # Generic, repo-agnostic Conductor workspace setup: roborev + rwx.
 #
 # This is the canonical, version-controlled copy of the paste-ready setup
@@ -20,9 +21,14 @@
 #
 # What "work" means here, beyond the binaries landing on PATH:
 #   roborev  installed (pinned, checksum-verified) + `git roborev` alias +
-#            repo init (daemon started, post-commit hook) + agent smoke check
-#   rwx      installed (pinned, checksum-verified) + token validated and
-#            persisted so every later shell is authenticated, not just setup
+#            repo init when unconfigured (daemon started) + post-commit hook
+#            ensured independently of init + agent smoke check. Hooks are
+#            never installed when core.hooksPath is set: that points at a
+#            machine-global hooks dir (often another tool's, e.g. git-lfs)
+#            this script must not touch.
+#   rwx      installed (pinned, checksum-verified) + token validated BEFORE
+#            it is persisted (a bad token never overwrites a good one), so
+#            every later shell is authenticated, not just setup
 #
 # Pins: ROBOREV_PIN/RWX_PIN and every sha256 below are deliberately
 # duplicated from scripts/conductor-cloud-install.sh (the repo-specific
@@ -53,6 +59,11 @@
 #                     sandboxes ship pre-authenticated.
 set -euo pipefail
 
+# Save the original stdout/stderr as fd 3/4 BEFORE the log redirect: the
+# summary and any final error are surfaced there as well, so a failing
+# setup is visible wherever its output is presented, not only in the log
+# file. Pure fd duplication — no process substitution (the /dev/fd rule).
+exec 3>&1 4>&2
 SETUP_LOG="$HOME/.conductor-setup.log"
 : > "$SETUP_LOG"
 exec >> "$SETUP_LOG" 2>&1
@@ -68,7 +79,14 @@ FAILED=0
 
 WORK="$(mktemp -d)"
 cleanup() { rm -rf "${WORK}"; }
-trap cleanup EXIT HUP INT TERM
+# EXIT alone does the cleanup. The signal traps exist because a trap that
+# only cleans up lets bash RESUME the script with WORK already deleted —
+# later stages then fail confusingly — so they exit with the conventional
+# codes instead, which re-triggers the EXIT trap (roborev review finding).
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 log() { echo "[workspace-setup] $*"; }
 
@@ -229,30 +247,59 @@ rwx_install() {
 }
 
 # --- rwx authentication ----------------------------------------------------
-# rwx reads RWX_ACCESS_TOKEN from the environment automatically, but env
-# vars can be setup-scoped; persisting to ~/.config/rwx/accesstoken is
-# byte-for-byte what `rwx login` writes, so every later shell works too.
+# Validate FIRST via the env var (rwx reads RWX_ACCESS_TOKEN on its own),
+# persist ONLY on success — a bad token must never overwrite a valid token
+# left by a previous `rwx login`. The persisted file is byte-identical to
+# what `rwx login` writes, so later shells work without the env var; it is
+# created 600 from the start (umask inside a subshell) rather than chmod'd
+# after the fact. A pre-existing token file is validated and reported
+# instead of ignored; and the stage skips cleanly when rwx failed to
+# install, rather than recording a misleading "token rejected" row.
 rwx_auth() {
-  if [[ -z "${RWX_ACCESS_TOKEN:-}" ]]; then
-    record WARN rwx-auth "RWX_ACCESS_TOKEN not set — rwx installed but unauthenticated; set it in Conductor environment variables and re-run setup, or run rwx login in a workspace terminal"
+  if ! command -v rwx >/dev/null 2>&1; then
+    record SKIP rwx-auth "rwx not installed — skipping auth (see the rwx install row above)"
     return 0
   fi
-  mkdir -p "${HOME}/.config/rwx"
-  printf '%s' "${RWX_ACCESS_TOKEN}" > "${HOME}/.config/rwx/accesstoken"
-  chmod 600 "${HOME}/.config/rwx/accesstoken"
-  if rwx whoami; then
-    record PASS rwx-auth "token validated (rwx whoami) and persisted to ~/.config/rwx/accesstoken"
+  if [[ -n "${RWX_ACCESS_TOKEN:-}" ]]; then
+    if rwx whoami; then
+      mkdir -p "${HOME}/.config/rwx"
+      if (umask 077; printf '%s' "${RWX_ACCESS_TOKEN}" > "${HOME}/.config/rwx/accesstoken"); then
+        # chmod after the fact only matters when overwriting a pre-existing
+        # file with wrong perms (a redirect truncates, it does not recreate);
+        # creation itself is already 600-from-birth via the umask subshell.
+        chmod 600 "${HOME}/.config/rwx/accesstoken"
+        record PASS rwx-auth "token validated (rwx whoami) and persisted to ~/.config/rwx/accesstoken"
+      else
+        record FAIL rwx-auth "token validated but persisting to ~/.config/rwx/accesstoken failed"
+        return 1
+      fi
+    else
+      record FAIL rwx-auth "RWX_ACCESS_TOKEN rejected — rwx whoami failed (expired or wrong token?); any previously persisted token was left untouched"
+      return 1
+    fi
+  elif [[ -s "${HOME}/.config/rwx/accesstoken" ]]; then
+    if rwx whoami; then
+      record PASS rwx-auth "no RWX_ACCESS_TOKEN, but the existing ~/.config/rwx/accesstoken validated (rwx whoami)"
+    else
+      record WARN rwx-auth "existing ~/.config/rwx/accesstoken rejected — run rwx login, or set RWX_ACCESS_TOKEN in Conductor environment variables"
+    fi
   else
-    record FAIL rwx-auth "RWX_ACCESS_TOKEN rejected — rwx whoami failed (expired or wrong token?)"
-    return 1
+    record WARN rwx-auth "RWX_ACCESS_TOKEN not set — rwx installed but unauthenticated; set it in Conductor environment variables and re-run setup, or run rwx login in a workspace terminal"
   fi
+  return 0
 }
 
 # --- roborev initialization -------------------------------------------------
 # `roborev init` creates ~/.roborev, .roborev.toml in the repo, installs the
-# post-commit hook (auto-enqueues a review after each commit; remove with
-# `roborev uninstall-hook`), and starts the daemon. On re-runs, only ensure
-# the daemon is alive so an existing .roborev.toml is never clobbered.
+# post-commit hook, and starts the daemon. Init only when the repo has no
+# .roborev.toml — a committed one is the repo's own configuration and is
+# never clobbered. The hook is ensured INDEPENDENTLY of init (a committed
+# .roborev.toml in a fresh checkout must not leave the hook missing:
+# .git/hooks is never cloned), but never when core.hooksPath is set — that
+# points at a machine-global hooks dir this script has no business mutating
+# (it is often another tool's, e.g. git-lfs's) — and never over an existing
+# non-roborev hook. Everything is anchored to `git rev-parse
+# --show-toplevel` so running setup from a subdirectory cannot misfire.
 ROBOREV_AGENT_DEFAULT="claude-code"
 
 roborev_setup() {
@@ -260,13 +307,20 @@ roborev_setup() {
   # `git roborev ...` (the push-gate spelling): native git-subcommand
   # resolution via the git-roborev symlink, plus a global alias as backup.
   git config --global alias.roborev '!roborev' || true
+  if ! command -v roborev >/dev/null 2>&1; then
+    record SKIP roborev-init "roborev not installed — skipping init (see the roborev install row above)"
+    return 0
+  fi
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     record WARN roborev-init "cwd is not a git worktree — skipping roborev init; run it manually in the repo"
     return 0
   fi
-  if [[ ! -f .roborev.toml ]]; then
+  local repo_root
+  repo_root="$(git rev-parse --show-toplevel)"
+  cd "${repo_root}"
+  if [[ ! -f "${repo_root}/.roborev.toml" ]]; then
     if roborev init --agent "${agent}"; then
-      record PASS roborev-init "initialized (agent: ${agent}); daemon started; post-commit hook installed"
+      record PASS roborev-init "initialized (agent: ${agent}); daemon started"
     else
       record FAIL roborev-init "roborev init failed (see output above)"
       return 1
@@ -277,9 +331,24 @@ roborev_setup() {
     elif roborev daemon start; then
       record PASS roborev-init ".roborev.toml already present; daemon revived"
     else
-      record FAIL roborev-init "daemon not running and `roborev daemon start` failed"
+      record FAIL roborev-init "daemon not running and 'roborev daemon start' failed"
       return 1
     fi
+  fi
+  # Hook ensure, independent of init. `git rev-parse --git-path hooks/...`
+  # resolves correctly in worktrees and with core.hooksPath alike.
+  local hook
+  hook="$(git rev-parse --git-path hooks/post-commit)"
+  if [[ -n "$(git config core.hooksPath)" ]]; then
+    record WARN roborev-hook "core.hooksPath is set — hooks resolve to a machine-global dir this script will not touch; run 'roborev install-hook' manually if auto-review on commit is wanted"
+  elif [[ -f "${hook}" ]] && grep -q roborev "${hook}"; then
+    record PASS roborev-hook "post-commit hook present (${hook})"
+  elif [[ -f "${hook}" ]]; then
+    record WARN roborev-hook "a non-roborev post-commit hook exists at ${hook} — left untouched; run 'roborev install-hook --force' manually to replace it"
+  elif roborev install-hook; then
+    record PASS roborev-hook "post-commit hook installed (${hook})"
+  else
+    record WARN roborev-hook "roborev install-hook failed — auto-review on commit is off; manual 'git roborev review' still works"
   fi
   # Smoke-check that the review agent actually responds — this is what makes
   # reviews work end to end. Non-fatal: a wrong agent choice or a transient
@@ -305,12 +374,23 @@ printf '%s' "${RESULTS}"
 echo
 log "-------------------------------------"
 log "full log: $SETUP_LOG"
+# Surface the summary + log path on the original stdout too (fd 3, saved
+# before the redirect): it is the one block a human must see even when the
+# log file is not open (roborev review finding). The bare echo terminates
+# the summary's last row — printf format strings stay backslash-free
+# because a literal backslash sequence in this file is itself a
+# paste-safety hazard (see the header).
+printf '%s' "${RESULTS}" >&3 || true
+echo >&3 || true
+echo "full log: $SETUP_LOG" >&3 || true
 echo "=== setup finished $(date -u +%FT%TZ) ==="
 
 # Deferred failure (so the summary above always completes): a provisioning
 # or auth failure in the two CLIs this workspace exists for must fail setup
-# loudly, not pass silently.
+# loudly, not pass silently. The error goes to the original stderr (fd 4)
+# as well as the log.
 if [[ "${FAILED}" != 0 ]]; then
   log "error: setup finished with FAIL rows — see the summary and $SETUP_LOG"
+  echo "error: setup finished with FAIL rows — see the summary and $SETUP_LOG" >&4 || true
   exit 1
 fi

@@ -100,9 +100,12 @@ TEST_FLOXHUB_PROVISION=1 FLOXHUB_TOKEN=<token> bash scripts/sandbox-test.sh  # o
 `scripts/conductor-roborev-rwx-setup.sh` is the repo-agnostic distillation
 of the provisioning recipe: the same pinned, checksum-verified roborev and
 rwx binaries as `conductor-cloud-install.sh`, plus the pieces that make
-them work rather than merely exist — `RWX_ACCESS_TOKEN` validation and
-persistence to `~/.config/rwx/accesstoken`, `roborev init` (daemon +
-post-commit hook), and an agent smoke check. Conductor has no API for
+them work rather than merely exist — `RWX_ACCESS_TOKEN` validated before it
+is persisted to `~/.config/rwx/accesstoken` (a bad token never overwrites a
+good one), `roborev init` for unconfigured repos plus an
+independently-ensured post-commit hook (never installed when
+`core.hooksPath` points at a machine-global hooks dir, and never over a
+foreign hook), and an agent smoke check. Conductor has no API for
 setting a workspace's setup script, so for repos without a committed
 `.conductor/settings.toml` setup, paste the file's contents into the
 setup-script field in the Conductor GUI (stored as `scripts.setup`). Set
