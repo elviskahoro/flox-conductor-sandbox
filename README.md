@@ -61,9 +61,12 @@ envs/floxhub-provision/ Phase D MVP: [install] the 5 catalog tools + elvis/bd + 
 scripts/sandbox-test.sh   the harness — runs all stages, never hard-fails
 scripts/floxhub-provision.sh  Phase D MVP setup-script recipe (token → login → activate envs/floxhub-provision)
 scripts/conductor-cloud-install.sh  cloud-sandbox provisioning: python3.11 + priority CLIs (roborev, trunk, rwx), wired into setup before the harness
-scripts/conductor-roborev-rwx-setup.sh  generic repo-agnostic workspace setup (pinned roborev + rwx + auth/init) — paste its contents into the Conductor GUI setup field for repos with no committed setup
+scripts/conductor-startup-script.sh  generic repo-agnostic workspace setup (pinned roborev + rwx + auth/init) — paste its contents into the Conductor GUI setup field for repos with no committed setup
 scripts/validate-pins.sh  pin-drift check: roborev/trunk/rwx pins vs the Flox manifests and the generic setup script (CI)
 scripts/conductor-cloud-install-test.sh  codified amazonlinux:2023 container verification of conductor-cloud-install.sh (CI)
+prompts/conductor/   canonical cross-repo Conductor prompts (create-pr.md today)
+                    — see prompts/README.md; installed into .conductor/settings.toml
+                    by scripts/install-conductor-prompts.py, drift-checked in CI
 findings/          harness output: report-*.md (summary + evidence) and full-log-*.txt
                    — see findings/README.md for a run-by-run index
 ```
@@ -97,7 +100,7 @@ TEST_FLOXHUB_PROVISION=1 FLOXHUB_TOKEN=<token> bash scripts/sandbox-test.sh  # o
 
 ### Generic roborev + rwx setup for other repos' workspaces
 
-`scripts/conductor-roborev-rwx-setup.sh` is the repo-agnostic distillation
+`scripts/conductor-startup-script.sh` is the repo-agnostic distillation
 of the provisioning recipe: the same pinned, checksum-verified roborev and
 rwx binaries as `conductor-cloud-install.sh`, plus the pieces that make
 them work rather than merely exist — `RWX_ACCESS_TOKEN` validated before it
@@ -115,6 +118,33 @@ setup-script field in the Conductor GUI (stored as `scripts.setup`). Set
 inline in the script. `scripts/validate-pins.sh` cross-checks its pins
 against `conductor-cloud-install.sh` in CI. It is deliberately not wired
 into this repo's own `scripts.setup`, which is repo-specific.
+
+### Standardized Conductor prompts for other repos' workspaces
+
+`prompts/conductor/` is the canonical home for Conductor prompts shared
+across repos (ported from gtm-sdk's `prompts/conductor/create-pr.md`). The
+same drift class `scripts/validate-pins.sh` guards against applies here:
+Conductor only reads prompts from each repo's `.conductor` settings TOML,
+and gtm-sdk's hand-maintained inline copy drifted from its `.md` source (the
+TOML still said `git roborev` after gtm-sdk#921 fixed the `.md`). So the
+`.md` files are the single source of truth and
+`scripts/install-conductor-prompts.py` is the only way they get into a
+repo's settings — preserving comments and unrelated keys, idempotent, with
+a `--self-test` behavior matrix and `--check` drift guard both wired into
+the `conductor-cloud-install checks` workflow for this repo, and available
+to any consuming repo:
+
+```bash
+# from inside the target repo — script path must be absolute (uv run
+# resolves it against cwd, not --project); --no-project --with tomlkit
+# skips the full dependency sync
+uv run --no-project --with "tomlkit>=0.15.1" \
+    /path/to/flox-conductor-sandbox/scripts/install-conductor-prompts.py --check
+```
+
+See [`prompts/README.md`](prompts/README.md) for the slot mapping, the
+`--local`/`--print` variants, and exactly what was standardized from
+gtm-sdk's version.
 
 ### Pulling Beads tickets from DoltHub
 

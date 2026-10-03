@@ -1,5 +1,9 @@
 # flox build output symlinks (created next to the env that ran the build)
 result-*
 
+# Scratch space for tool runs (roborev verification copies, etc.) — the
+# convention is tmp/ is always gitignored, never committed.
+tmp/
+
 # Local-only Linear intake database; never commit Beads state from this pilot.
 .beads/

@@ -22,6 +22,24 @@ jobs:
       - name: Pin sync + paste-safety (roborev/trunk/rwx pins vs the Flox manifests and the generic setup script)
         run: bash scripts/validate-pins.sh
 
+      # Same drift class validate-pins.sh guards against, for prompts: the
+      # canonical prompt text is prompts/conductor/*.md, the installed copy
+      # lives in .conductor/settings.toml [prompts] — gtm-sdk hand-maintained
+      # that copy and it drifted from its .md source (the TOML still said
+      # `git roborev` after gtm-sdk#921 fixed the .md), so the mismatch is
+      # checked mechanically here instead of trusted.
+      # --no-project --with tomlkit: the installer's only third-party import
+      # is tomlkit, so skip the full project sync (dagger-io et al.) that
+      # plain `uv run` would pull in on every push/PR (roborev finding).
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Conductor prompts installer self-test (fresh install, idempotency, drift detection, error paths)
+        run: uv run --no-project --with "tomlkit>=0.15.1" scripts/install-conductor-prompts.py --self-test
+
+      - name: Conductor prompts drift check (prompts/conductor/*.md vs .conductor/settings.toml)
+        run: uv run --no-project --with "tomlkit>=0.15.1" scripts/install-conductor-prompts.py --check
+
       - name: Shellcheck the provisioning scripts
         run: |
           sudo apt-get update -q
@@ -29,7 +47,7 @@ jobs:
           shellcheck \
             scripts/conductor-cloud-install.sh \
             scripts/conductor-trunk-preflight.sh \
-            scripts/conductor-roborev-rwx-setup.sh \
+            scripts/conductor-startup-script.sh \
             scripts/validate-pins.sh \
             scripts/conductor-cloud-install-test.sh
 
