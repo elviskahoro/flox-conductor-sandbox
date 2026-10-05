@@ -1,0 +1,32 @@
+name: merge-queue-experiment
+
+# Experiment: observe how GitHub's merge queue drives CI.
+# `pull_request` runs on the PR; `merge_group` runs on the temporary
+# gh-readonly-queue/* branch the queue builds (PR + base + entries ahead).
+on:
+  pull_request:
+    paths:
+      - experiments/merge-queue/**
+  merge_group:
+
+jobs:
+  mq-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Show event context
+        run: |
+          echo "event: ${{ github.event_name }}"
+          echo "ref:   ${{ github.ref }}"
+          echo "sha:   ${{ github.sha }}"
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            echo "base:  ${{ github.event.merge_group.base_ref }}"
+            echo "head:  ${{ github.event.merge_group.head_ref }}"
+          else
+            echo "(merge_group fields not present for ${{ github.event_name }})"
+          fi
+          git log --oneline -5
+      - name: Simulate work
+        run: sleep 20
