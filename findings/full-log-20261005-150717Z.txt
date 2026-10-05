@@ -1,0 +1,93 @@
+Darwin 25.5.0 arm64
+no /etc/os-release
+
+build-users-group = nixbld
+
+include flox.conf
+sh: getent: command not found
+no nixbld group
+dr-xr-xr-x  1 root  wheel  0 Oct  2 14:16 /dev/fd
+absent (good)
+srw-rw-rw-  1 root  nixbld  0 Oct  2 19:37 /nix/var/nix/daemon-socket/socket
+/usr/local/bin/flox
+/usr/local/bin/nix
+==> [0 fingerprint] PASS — recorded (see report body)
+==> [1 flox bootstrap] SKIP — non-Linux host; install flox manually
+$ flox activate --dir /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/bilbao-v1/envs/prebuilt --mode run -- true
+==> [2 H1 prebuilt activate] PASS — all 5 tools resolve under .flox/run and execute (2s)
+$ flox build --dir /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/bilbao-v1/envs/repackage conductor-workspace-floxhub-01
+Rendering conductor-workspace-floxhub-01 build script to /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T//38ed6f0e/conductor-workspace-floxhub-01/build.bash
+Building conductor-workspace-floxhub-01-0.0.1 in local mode
+[36m00:00:00.008790 [0m[1m[33m+ mkdir -p /tmp/store_fcf93e01c4e1fc53af2c99f2347a28c8-conductor-workspace-floxhub-01-0.0.1/bin[0m
+[36m00:00:00.017878 [0m[1m[33m+ echo '#!/usr/bin/env bash'[0m
+[36m00:00:00.017962 [0m[1m[33m+ echo 'echo "hello from a flox-built package (gtm-sdk#445 preflight)"'[0m
+[36m00:00:00.018008 [0m[1m[33m+ chmod +x /tmp/store_fcf93e01c4e1fc53af2c99f2347a28c8-conductor-workspace-floxhub-01-0.0.1/bin/conductor-workspace-floxhub-01[0m
+2 blocks
+this derivation will be built:
+  /nix/store/jn4y7vhxh4g8448ja8x70qrilvhhp9dh-conductor-workspace-floxhub-01-0.0.1.drv
+building '/nix/store/jn4y7vhxh4g8448ja8x70qrilvhhp9dh-conductor-workspace-floxhub-01-0.0.1.drv'...
+conductor-workspace-floxhub> 2 blocks
+conductor-workspace-floxhub> patching script interpreter paths in /nix/store/q4bn7vmla1hyrssgdrgzx62iqxl40i49-conductor-workspace-floxhub-01-0.0.1/bin/conductor-workspace-floxhub-01
+conductor-workspace-floxhub> /nix/store/q4bn7vmla1hyrssgdrgzx62iqxl40i49-conductor-workspace-floxhub-01-0.0.1/bin/conductor-workspace-floxhub-01: interpreter directive changed from "#!/usr/bin/env bash" to "/nix/store/s0psayl7zvkvwdcqc8fy1sbv8rlf1yq8-bash-5.3p9/bin/bash"
+conductor-workspace-floxhub> signing /nix/store/q4bn7vmla1hyrssgdrgzx62iqxl40i49-conductor-workspace-floxhub-01-0.0.1
+Completed build of conductor-workspace-floxhub-01-0.0.1 in local mode
+
+⚡︎ Built output: /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/bilbao-v1/envs/repackage/result-conductor-workspace-floxhub-01
+==> [3a hello build] PASS — trivial no-network build + run OK (7s)
+==> [3b bd repackage build] SKIP — omitted during Conductor startup
+==> [3c bd flag surface] SKIP — omitted during Conductor startup
+$ flox build --dir /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/bilbao-v1/envs/repackage hookdeck
+Rendering hookdeck build script to /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T//38ed6f0e/hookdeck/build.bash
+Building hookdeck-2.3.1 in local mode
+[36m00:00:00.007715 [0m[1m[33m+ set -euo pipefail[0m
+[36m00:00:00.007723 [0m[1m[33m+ version=2.3.1[0m
+[36m00:00:00.007758 [0m[1m[33m+ case "$(uname -s)-$(uname -m)" in[0m
+[36m00:00:00.008375 [0m[1m[33m++ uname -s[0m
+[36m00:00:00.012522 [0m[1m[33m++ uname -m[0m
+[36m00:00:00.016028 [0m[1m[33m+ asset=hookdeck_2.3.1_darwin_arm64.tar.gz[0m
+[36m00:00:00.016055 [0m[1m[33m+ sha256=fe11673ad1379f75947f5e095f429ecee570ecf8c03c5d58c3d0e6e3396e981a[0m
+[36m00:00:00.016084 [0m[1m[33m+ '[' -z /nix/store/j5bh1bwmvddn749z7hkxkrlladyrn7rg-nss-cacert-3.121/etc/ssl/certs/ca-bundle.crt ']'[0m
+[36m00:00:00.016556 [0m[1m[33m++ mktemp -d[0m
+[36m00:00:00.020337 [0m[1m[33m+ tmp=/var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.iIpY34GLml[0m
+[36m00:00:00.020361 [0m[1m[33m+ trap 'rm -rf "${tmp}"' EXIT[0m
+[36m00:00:00.020401 [0m[1m[33m+ curl -fsSL -o /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.iIpY34GLml/hookdeck_2.3.1_darwin_arm64.tar.gz https://github.com/hookdeck/hookdeck-cli/releases/download/v2.3.1/hookdeck_2.3.1_darwin_arm64.tar.gz[0m
+[36m00:00:00.491245 [0m[1m[33m+ echo 'fe11673ad1379f75947f5e095f429ecee570ecf8c03c5d58c3d0e6e3396e981a  /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.iIpY34GLml/hookdeck_2.3.1_darwin_arm64.tar.gz'[0m
+[36m00:00:00.491403 [0m[1m[33m+ sha256sum --check -[0m
+[36m00:00:00.509509 [0m/var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.iIpY34GLml/hookdeck_2.3.1_darwin_arm64.tar.gz: OK[0m
+[36m00:00:00.509869 [0m[1m[33m+ tar -xzf /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.iIpY34GLml/hookdeck_2.3.1_darwin_arm64.tar.gz -C /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.iIpY34GLml[0m
+[36m00:00:00.597955 [0m[1m[33m+ mkdir -p /tmp/store_2ecfc009882f3563e391bbd691faf579-hookdeck-2.3.1/bin[0m
+[36m00:00:00.602124 [0m[1m[33m+ install -m755 /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.iIpY34GLml/hookdeck /tmp/store_2ecfc009882f3563e391bbd691faf579-hookdeck-2.3.1/bin/hookdeck[0m
+[36m00:00:00.610431 [0m[1m[33m+ rm -rf /var/folders/w1/_bwxnx_s233cdl0drswzpdn80000gn/T/tmp.iIpY34GLml[0m
+28219 blocks
+this derivation will be built:
+  /nix/store/89z95wxnblspnaadr0ljbcs0xf6lsv6p-hookdeck-2.3.1.drv
+building '/nix/store/89z95wxnblspnaadr0ljbcs0xf6lsv6p-hookdeck-2.3.1.drv'...
+hookdeck> 28219 blocks
+hookdeck> patching script interpreter paths in /nix/store/3brzjkhhljazbr1dca3m6rh3wld5f5cx-hookdeck-2.3.1/bin/hookdeck
+hookdeck> signing /nix/store/3brzjkhhljazbr1dca3m6rh3wld5f5cx-hookdeck-2.3.1
+Completed build of hookdeck-2.3.1 in local mode
+
+⚡︎ Built output: /Users/elvis/Documents/ai/conductor/workspaces/flox-conductor-sandbox/bilbao-v1/envs/repackage/result-hookdeck
+==> [3d hookdeck repackage build] PASS — built + `hookdeck version` → hookdeck version 2.3.1 (5s)
+You are logged in as elvis on https://hub.flox.dev/
+Credential stored in your system keyring.
+==> [4 FloxHub fetch] SKIP — sandbox is already authenticated to FloxHub (see auth status above) — Stage 4 only means something on a genuinely unauthenticated sandbox; show/install/search are not attempted so this run can't masquerade as an H4 data point (issue #16 trap 4)
+==> [5 H2 flake repro] SKIP — omitted during Conductor startup
+==> [6 auth plumbing] SKIP — opt-in: re-run with TEST_AUTH_PLUMBING=1 FLOXHUB_TOKEN=<token> (permanently authenticates this sandbox — never run on the one testing Stage 4)
+==> [7 floxhub provision MVP] SKIP — omitted during Conductor startup
+
+Report: findings/report-20261005-150717Z.md
+Full log: findings/full-log-20261005-150717Z.txt
+
+| Stage | Result | Detail |
+| 0 fingerprint | **PASS** | recorded (see report body) |
+| 1 flox bootstrap | **SKIP** | non-Linux host; install flox manually |
+| 2 H1 prebuilt activate | **PASS** | all 5 tools resolve under .flox/run and execute (2s) |
+| 3a hello build | **PASS** | trivial no-network build + run OK (7s) |
+| 3b bd repackage build | **SKIP** | omitted during Conductor startup |
+| 3c bd flag surface | **SKIP** | omitted during Conductor startup |
+| 3d hookdeck repackage build | **PASS** | built + `hookdeck version` → hookdeck version 2.3.1 (5s) |
+| 4 FloxHub fetch | **SKIP** | sandbox is already authenticated to FloxHub (see auth status above) — Stage 4 only means something on a genuinely unauthenticated sandbox; show/install/search are not attempted so this run can't masquerade as an H4 data point (issue #16 trap 4) |
+| 5 H2 flake repro | **SKIP** | omitted during Conductor startup |
+| 6 auth plumbing | **SKIP** | opt-in: re-run with TEST_AUTH_PLUMBING=1 FLOXHUB_TOKEN=<token> (permanently authenticates this sandbox — never run on the one testing Stage 4) |
+| 7 floxhub provision MVP | **SKIP** | omitted during Conductor startup |
