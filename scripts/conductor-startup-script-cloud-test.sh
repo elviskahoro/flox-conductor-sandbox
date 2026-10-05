@@ -388,7 +388,11 @@ esac
 case "${RUN3E_OUTPUT}" in *"collateral"*) ;; *) fail "mixed-hook run missing the collateral-damage WARN row" ;; esac
 # The WARN must NAME the vanished foreign hook, not just say "collateral"
 # — a regression that drops the path from the row would otherwise pass.
-case "${RUN3E_OUTPUT}" in *"/tmp/mixed-repo/.git/hooks/post-commit"*) ;; *) fail "collateral WARN does not name the vanished foreign hook path" ;; esac
+# The vanished path in the row is repo-root-relative ("collateral:
+# .git/hooks/post-commit") — `git rev-parse --git-path` yields a relative
+# path when GIT_DIR is relative — so anchor the assert on the
+# collateral-marker + relative path, not an absolute tmp path.
+case "${RUN3E_OUTPUT}" in *"collateral: .git/hooks/post-commit"*) ;; *) fail "collateral WARN does not name the vanished foreign hook path" ;; esac
 case "${RUN3E_OUTPUT}" in
 *"removed a leftover roborev auto-review hook"*) fail "mixed-hook run recorded the plain removal PASS despite a deleted foreign hook" ;;
 esac
@@ -459,7 +463,8 @@ case "${RUN3F3_OUTPUT}" in
 *" | FAIL |"*) fail "worst-case-uninstaller run recorded FAIL row(s)" ;;
 esac
 case "${RUN3F3_OUTPUT}" in *"failed AND removed a non-roborev hook as collateral"*) ;; *) fail "worst-case-uninstaller run missing the failed+collateral WARN row" ;; esac
-case "${RUN3F3_OUTPUT}" in *"/tmp/worst-repo/.git/hooks/post-commit"*) ;; *) fail "failed+collateral WARN does not name the vanished foreign hook path" ;; esac
+# Same relative-path shape as RUN 3E's assert above.
+case "${RUN3F3_OUTPUT}" in *"collateral: .git/hooks/post-commit"*) ;; *) fail "failed+collateral WARN does not name the vanished foreign hook path" ;; esac
 
 echo "=== RUN 4: atomic token persist (stubbed rwx) ==="
 # Codifies the atomic replace: a stub rwx whose whoami succeeds lets the
