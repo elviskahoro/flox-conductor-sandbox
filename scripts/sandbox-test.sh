@@ -2,7 +2,8 @@
 # Hypothesis harness for gtm-sdk#445: can bd/roborev move from in-sandbox
 # flake source builds to build-once/publish-to-FloxHub prebuilt packages?
 #
-# Design rules, inherited from gtm-sdk/scripts/conductor-workspace-setup.sh:
+# Design rules, inherited from gtm-sdk's conductor-workspace-setup.sh
+# (since retired there, gtm-sdk#944 — this repo keeps the rules):
 #   - NO process substitution (`<(...)`) anywhere: Conductor cloud sandboxes
 #     lack /dev/fd until we create it, and with an unopenable fd bash dies
 #     silently (gtm-sdk#279).

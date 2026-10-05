@@ -99,9 +99,9 @@
 # sha256s (hand-hash the release tarballs), then bump both Flox manifests
 # and re-lock their envs together. pytest/reflex: no Flox counterpart —
 # the pins live only here, and validate-pins.sh asserts they stay exact
-# x.y.z pins. The rwx block's sibling copy in gtm-sdk's
-# conductor-workspace-setup.sh (its PR #699) is comment-synced only — that
-# repo is private, so no machine check can reach it; bump both together.
+# x.y.z pins. (The rwx block's former sibling copy in gtm-sdk's
+# conductor-workspace-setup.sh went away when that repo retired the script,
+# gtm-sdk#944 — this file is now the pin's only executable home.)
 #
 # Paste-safety constraints (load-bearing for consumer 2, because Conductor
 # serializes the GUI setup field into a TOML multiline string): NO

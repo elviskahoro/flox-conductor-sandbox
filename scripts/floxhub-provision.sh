@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# Opt-in Phase D MVP setup-script recipe (issue #16 §9): obtain a FloxHub
-# token and activate the combined envs/floxhub-provision manifest
-# (uv/dolt/infisical/gh/git + bd + roborev). This IS the recipe eventually
-# meant for gtm-sdk/scripts/conductor-workspace-setup.sh — proven here
-# first, per issue #16 §8; ported there separately, later.
+# Opt-in Phase D MVP setup-script recipe (issue #16 §9 / issue #40): obtain
+# a FloxHub token and activate a combined manifest
+# (uv/dolt/infisical/gh/git + bd + roborev by default; any repo's committed
+# .flox env via FLOXHUB_ACTIVATE_DIR). This IS the executable reference for
+# the startup script's deferred flox stages — proven here first, per issue
+# #16 §8. (It was originally meant to be ported into gtm-sdk's own setup
+# script; that repo instead retired the script entirely, gtm-sdk#944, and
+# the recipe stays here.)
 #
 # Uses Flox's own documented CI pattern (flox.dev/docs/tutorials/ci-cd):
 # export FLOX_FLOXHUB_TOKEN and let the Flox CLI read it directly on every
@@ -26,6 +29,13 @@
 #   # or, with Infisical configured for this project and a FLOXHUB_TOKEN
 #   # secret available:
 #   bash scripts/floxhub-provision.sh
+#   # the activated manifest defaults to this repo's envs/floxhub-provision;
+#   # point FLOXHUB_ACTIVATE_DIR at any repo's committed .flox env to prove
+#   # the same token->activation recipe against that repo instead (the
+#   # host-repo activation shape the startup script's deferred flox stage
+#   # is built from -- e.g. a gtm-sdk checkout, whose manifest resolves
+#   # elvis/roborev from the same private catalog):
+#   FLOXHUB_ACTIVATE_DIR=/path/to/gtm-sdk bash scripts/floxhub-provision.sh
 #
 # Token acquisition order (this workspace's secrets-management convention:
 # Infisical first, never fall back further than the documented env var):
@@ -77,4 +87,4 @@ if ! flox auth status >/dev/null 2>&1; then
   exit 1
 fi
 
-flox activate --dir "${REPO_ROOT}/envs/floxhub-provision" --mode run -- true
+flox activate --dir "${FLOXHUB_ACTIVATE_DIR:-${REPO_ROOT}/envs/floxhub-provision}" --mode run -- true
