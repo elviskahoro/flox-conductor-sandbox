@@ -30,6 +30,15 @@ and stages mean, and how to produce a new run.
   A/B, and the private-GHCR authenticated pull. Also records two RWX
   environment traps (anonymous git-https 401; empty task workspace on
   cli-dispatched runs).
+- [Trunk CLI env-var setup mechanics](20261005-141227Z-trunk-cli-env-var-setup-mechanics.md) —
+  research for configuring `trunk check` in Conductor cloud workspaces with
+  env vars only (no init/login): launcher-source and binary-strings ground
+  truth (`TRUNK_CLI_VERSION`, `TRUNK_CACHE`, `TRUNK_TELEMETRY=off`,
+  `TRUNK_LAUNCHER_QUIET`, `TRUNK_TOKEN` vs the analytics CLI's
+  `TRUNK_API_TOKEN`, proxy/`SSL_CERT_FILE` support), plus live proof that a
+  fresh-cache env-pinned bootstrap runs fully unauthenticated and that
+  `.trunk/trunk.yaml` in the target repo is the one thing no env var can
+  replace (`trunk init --yes-to-all` is the non-interactive bootstrap).
 
 ## Runs so far, oldest to newest
 
