@@ -27,7 +27,15 @@
 #      when a workspace is created"). Conductor exposes no API for that
 #      field, so the GUI paste is the only mechanism; this file exists so
 #      the pasted text is reviewable and pin-checked instead of
-#      hand-carried. It also runs standalone, unchanged:
+#      hand-carried. Where provisioning fixes land: in THIS file only. The
+#      paste is a hand-refreshed snapshot that does not track this repo,
+#      and a consuming repo never gains setup logic of its own (gtm-sdk
+#      has carried none since gtm-sdk#944 and must never regain it), so a
+#      fresh workspace missing tools means a stale or missing paste, or an
+#      env var a stage needs left unset in the consuming repo's Conductor
+#      settings — fixed by changing this file and re-pasting, never by
+#      editing the consuming repo (issue #50 is the cautionary tale). It
+#      also runs standalone, unchanged:
 #
 #        bash scripts/conductor-startup-script-cloud.sh
 #
@@ -151,7 +159,10 @@
 #                     provision uv/pytest/reflex; see the tool list and
 #                     the pytools stage body. Unset or any other value
 #                     records a SKIP row and changes nothing else — the
-#                     paste-ready consumer's surface stays as it was.
+#                     paste-ready consumer's surface stays as it was. A
+#                     consuming repo that wants these tools must set this
+#                     env var in ITS OWN Conductor env-var settings; a
+#                     pasted script alone never turns the stage on.
 set -euo pipefail
 
 # Save the original stdout/stderr as fd 3/4 BEFORE the log redirect: the

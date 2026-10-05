@@ -139,6 +139,23 @@ pin's former sibling copy in gtm-sdk's conductor-workspace-setup.sh went
 away when that repo retired the script — this repo's startup script is now
 the pin's only executable home.)
 
+**Where provisioning fixes land: here, never in the consuming repo.**
+Cloud provisioning for every repo — gtm-sdk included — is this repo's
+startup script and nothing else. This repo's own workspaces run it
+through the committed `.conductor/settings.toml`; every other repo's
+cloud workspaces get the identical provisioning only by the operator
+pasting this file into that repo's Conductor setup field. gtm-sdk
+deliberately carries no provisioning of its own (gtm-sdk#944 retired its
+script) and must never regain any. A workspace that comes up missing
+tools is always a problem on THIS side of the paste: the setup field
+holds a hand-pasted snapshot that does not track this repo's main, and
+the opt-in stages need env vars set in the consuming repo's Conductor
+settings. The remedy is a change here plus a fresh paste (or setting the
+missing env var) — never a setup script in gtm-sdk. Issue #50 — a fresh
+gtm-sdk cloud workspace where the agent found neither uv nor trunk — is
+exactly this failure mode; this paragraph exists so the next agent reads
+it as a paste/env-var problem instead of a gtm-sdk gap.
+
 ### Deferred startup-script stages (issue #40): recipes and helpers
 
 Issue #40 consolidated the remaining gtm-sdk provisioning work
@@ -147,9 +164,10 @@ executable references live in this repo, but they are deliberately **not
 wired into `conductor-startup-script-cloud.sh` yet** — wiring them in is
 the tracked follow-up (issue #40), deferred by operator decision. gtm-sdk
 carries none of this: it deleted its own `conductor-workspace-setup.sh`
-entirely (gtm-sdk#944) and consumes no copy of this repo's script — its
-workspaces provision via the paste-ready startup script above, and its
-Infisical project stores the two secrets these stages read.
+entirely (gtm-sdk#944), consumes no copy of this repo's script, and must
+stay that way — its workspaces provision via the paste-ready startup
+script above under the where-fixes-land rule, and its Infisical project
+stores the two secrets these stages read.
 
 | Deferred stage | What it does | Proven recipe / executable reference |
 |---|---|---|
@@ -172,6 +190,20 @@ opt-in stage, enabled by `STARTUP_PY_DEV_TOOLS=1`, which this repo's
 `.conductor/settings.toml` exports. Pasted standalone (or in a repo that
 sets only its own flags) the stage records a SKIP row and the surface is
 unchanged.
+
+That gate has an operational consequence for pasted workspaces: the
+consuming repo gets uv/pytest/reflex only if its own Conductor
+environment variables ALSO set `STARTUP_PY_DEV_TOOLS=1` — this repo's
+settings export it for this repo's workspaces, but each consuming repo's
+settings must set it separately; pasting the script alone never turns the
+stage on. The committed `.env.cloud` template carries this flag (plus the
+`RWX_ACCESS_TOKEN` placeholder) — fill it in and copy the values into the
+consuming repo's Conductor env-var settings. The resulting diagnostic for
+a sick pasted workspace: `trunk` and `roborev` resolve but `uv` does not
+means the flag is unset, and nothing at all resolving means the paste
+itself is stale or missing. Both are fixed on this side — set the env
+var, re-paste the current script — never by adding provisioning to the
+consuming repo.
 
 What it provisions:
 
