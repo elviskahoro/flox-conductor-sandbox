@@ -42,11 +42,20 @@
 #
 # What "work" means here, beyond the binaries landing on PATH:
 #   roborev  installed (pinned, checksum-verified) + `git roborev` alias +
-#            repo init when unconfigured (daemon started) + post-commit hook
-#            ensured independently of init + agent smoke check. When
-#            core.hooksPath points at a machine-global hooks dir (often
-#            another tool's, e.g. git-lfs's), init is skipped too — roborev
-#            init installs the hook itself — and no hook is ever written.
+#            repo config (.roborev.toml written directly) + daemon ensured +
+#            agent smoke check. Reviews are ON DEMAND and BLOCKING — the
+#            push gate the repo's agent instructions and create-pr prompt
+#            define is `roborev review --wait` — so NO post-commit
+#            auto-review hook is ever installed: `roborev init` is never run
+#            (it installs the post-commit/post-rewrite hooks and has no flag
+#            to suppress that), and a leftover roborev hook from an older
+#            setup is actively removed — `roborev post-commit`, the hook
+#            entry point, can only enqueue a background daemon job (no
+#            --wait), which is exactly the posture this script must not
+#            leave behind. When core.hooksPath points at a machine-global
+#            hooks dir (often another tool's, e.g. git-lfs's), nothing is
+#            ever written there — a WARN tells the user to remove any
+#            roborev hook found in it by hand.
 #   trunk    the official launcher, content-pinned by sha256: trunk
 #            publishes no versioned launcher URL (trunk.io/releases/trunk
 #            is latest-only), but the artifact is a portable bash script
@@ -113,7 +122,8 @@
 # silently. This repo's own settings.toml instead opts into the
 # best-effort posture its former cloud-install carried (gtm-sdk#702's
 # fallback-installer idiom) by exporting STARTUP_BEST_EFFORT=1: then the
-# tool stages (roborev/trunk/rwx install, rwx auth, roborev init) record
+# tool stages (roborev/trunk/rwx install, rwx auth, roborev
+# config/daemon) record
 # their FAIL rows but do not fail the run, and only a Python 3.11 failure
 # on the AL2023 target class (the stated >=3.11 requirement) or a
 # pytools-stage failure when STARTUP_PY_DEV_TOOLS=1 requested them
@@ -126,10 +136,14 @@
 #   RWX_ACCESS_TOKEN  RWX personal access token (cloud.rwx.com -> Settings ->
 #                     Personal access tokens). Without it, rwx installs but
 #                     stays unauthenticated (warning, not failure).
-#   ROBOREV_AGENT     optional review-agent override; one of codex,
-#                     claude-code, gemini, copilot, opencode, cursor, kiro,
-#                     kilo. Defaults to claude-code, which Conductor cloud
-#                     sandboxes ship pre-authenticated.
+#   ROBOREV_AGENT     optional review-agent override; any lowercase agent
+#                     slug (codex, claude-code, gemini, copilot, opencode,
+#                     cursor, kiro, kilo, pi, ...) — deliberately not a
+#                     hard allowlist: the accepted set differs across
+#                     roborev versions, and the check-agents smoke step
+#                     is the semantic check. Defaults to claude-code,
+#                     which Conductor cloud sandboxes ship
+#                     pre-authenticated.
 #   STARTUP_BEST_EFFORT  set to 1 (this repo's settings.toml does) to make
 #                     the tool stages recorded-but-non-fatal; see the
 #                     failure-semantics section above.
@@ -801,25 +815,31 @@ rwx_auth() {
   return 0
 }
 
-# --- roborev initialization -------------------------------------------------
-# `roborev init` creates ~/.roborev, .roborev.toml in the repo, installs the
-# post-commit hook, and starts the daemon. Init only when the repo has no
-# .roborev.toml — a committed one is the repo's own configuration and is
-# never clobbered. The hook is ensured INDEPENDENTLY of init (a committed
-# .roborev.toml in a fresh checkout must not leave the hook missing:
-# .git/hooks is never cloned), never over an existing non-roborev hook, and
-# never — including via init itself, which installs the hook and has no
-# flag to suppress it — when core.hooksPath points at a machine-global
-# hooks dir (often another tool's, e.g. git-lfs's). Everything is anchored
-# to `git rev-parse --show-toplevel` so running setup from a subdirectory
-# cannot misfire.
+# --- roborev setup -----------------------------------------------------------
+# Reviews in a provisioned workspace run ON DEMAND and BLOCKING: the push
+# gate the repo's agent instructions and create-pr prompt define is
+# `roborev review --wait`, which enqueues if needed and blocks until a
+# verdict exists. A post-commit auto-review hook is the opposite posture —
+# `roborev post-commit` (the hook entry point) only enqueues a background
+# daemon job, with no blocking form — so this setup NEVER installs one:
+# `roborev init` is not run at all (it installs the post-commit and
+# post-rewrite hooks and has no flag to suppress that — only
+# --agent/--no-daemon), .roborev.toml is therefore written directly (a
+# committed one is the repo's own configuration and is never clobbered),
+# the daemon is ensured for the blocking reviews, and a roborev hook left
+# behind by an older setup of this script (or a bare `roborev init`) is
+# actively removed. A machine-global hooks dir (core.hooksPath) is never
+# touched — if a roborev hook is found there, a WARN tells the user to
+# remove it by hand. Everything is anchored to `git rev-parse
+# --show-toplevel` so running setup from a subdirectory cannot misfire.
 ROBOREV_AGENT_DEFAULT="claude-code"
 
 # ensure_daemon <stage>: status → PASS "daemon running"; start → PASS
 # "daemon revived"; neither → FAIL under <stage> (deferred setup failure).
-# Shared by the hooks_external and normal paths so a future daemon-handling
-# fix lands in one place, not in two copy-pasted blocks that already report
-# the same failure under different stage names (roborev review finding).
+# One call site today (roborev-daemon, after the hook posture and the
+# repo config) — kept as a helper so a future second caller cannot
+# copy-paste the failure handling into divergent variants (roborev
+# review finding).
 ensure_daemon() {
   local stage="$1"
   if roborev status >/dev/null 2>&1; then
@@ -834,66 +854,137 @@ ensure_daemon() {
 
 roborev_setup() {
   local agent="${ROBOREV_AGENT:-${ROBOREV_AGENT_DEFAULT}}"
+  # ROBOREV_AGENT gets written into .roborev.toml, so gate it syntactically
+  # (a lowercase slug: letters, digits, hyphens) — quotes, newlines, or
+  # spaces would corrupt the TOML. Deliberately NOT a hard-coded agent
+  # allowlist: the accepted set differs across roborev versions (the pinned
+  # 0.63.0 and a reused older binary disagree), so an allowlist here would
+  # reject valid agents on the reuse path; the check-agents smoke check
+  # below remains the semantic check.
+  if [[ -n "${ROBOREV_AGENT:-}" && ! "${agent}" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+    # The raw value is deliberately NOT replayed in the row: a value with
+    # newlines or control characters — exactly what this gate stops — would
+    # split or spoof the multi-line setup summary.
+    record WARN roborev-config "ROBOREV_AGENT is malformed (expected a lowercase agent slug like claude-code) — using ${ROBOREV_AGENT_DEFAULT}; check the environment variable"
+    agent="${ROBOREV_AGENT_DEFAULT}"
+  fi
   # `git roborev ...` (the push-gate spelling): native git-subcommand
   # resolution via the git-roborev symlink, plus a global alias as backup.
   git config --global alias.roborev '!roborev' || true
   if ! command -v roborev >/dev/null 2>&1; then
-    record SKIP roborev-init "roborev not installed — skipping init (see the roborev install row above)"
+    record SKIP roborev-config "roborev not installed — skipping setup (see the roborev install row above)"
     return 0
   fi
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    record WARN roborev-init "cwd is not a git worktree — skipping roborev init; run it manually in the repo"
+    record WARN roborev-config "cwd is not a git worktree — skipping roborev setup; run it manually in the repo"
     return 0
   fi
   local repo_root
   repo_root="$(git rev-parse --show-toplevel)"
   cd "${repo_root}"
-  # Hoisted ABOVE init: roborev init installs the post-commit hook itself
-  # and has no flag to suppress that (only --agent/--no-daemon), so when
-  # core.hooksPath points at a machine-global dir, init must not run either
-  # — the guard has to cover every code path that can install a hook, not
-  # just the explicit install-hook step (roborev review finding).
-  local hook hooks_external=0
+  # Hook posture FIRST: no roborev auto-review hook may survive — a
+  # leftover from an older setup of this script (or a bare `roborev init`)
+  # would keep enqueueing background reviews on every commit. Removal
+  # needs neither the repo config nor the daemon, so it runs BEFORE those
+  # steps: a degraded run (toml write or daemon start failing) must never
+  # leave this repo still auto-reviewing in the background. `git rev-parse
+  # --git-path` resolves worktrees correctly; a machine-global hooks dir
+  # (core.hooksPath) is never touched. Detection matches what roborev's
+  # own installer writes — the "roborev post-commit" / "roborev
+  # post-rewrite" hook content — NOT the bare word "roborev": detection
+  # here escalates to `roborev uninstall-hook`, and a user's own hook that
+  # merely mentions roborev (e.g. one that manually runs
+  # `roborev review --wait` after each commit) is foreign and must be
+  # left untouched, not removed.
+  local hook hook_rw rr_hooks=""
   hook="$(git rev-parse --git-path hooks/post-commit)"
+  hook_rw="$(git rev-parse --git-path hooks/post-rewrite)"
+  if [[ -f "${hook}" ]] && grep -q 'roborev post-commit' "${hook}"; then rr_hooks=" ${hook}"; fi
+  if [[ -f "${hook_rw}" ]] && grep -q 'roborev post-rewrite' "${hook_rw}"; then rr_hooks="${rr_hooks} ${hook_rw}"; fi
   if [[ -n "$(git config core.hooksPath)" ]]; then
-    hooks_external=1
-  fi
-  if [[ ${hooks_external} == 1 ]]; then
-    if [[ ! -f "${repo_root}/.roborev.toml" ]]; then
-      record WARN roborev-init "core.hooksPath is set — skipping roborev init, which would install a post-commit hook into the machine-global hooks dir; run 'roborev init --agent ${agent}' manually if wanted"
+    if [[ -n "${rr_hooks}" ]]; then
+      record WARN roborev-hook "core.hooksPath resolves to a machine-global hooks dir holding a roborev hook (${rr_hooks}) — this script will not touch it; remove it by hand (roborev uninstall-hook from a repo that resolves there) so reviews stop firing in the background"
     else
-      record PASS roborev-init ".roborev.toml already present; init not needed (core.hooksPath set)"
+      record PASS roborev-hook "machine-global hooks dir (core.hooksPath) left untouched; no roborev auto-review hook — reviews run on demand with --wait"
     fi
-    ensure_daemon roborev-daemon || return 1
-    record WARN roborev-hook "core.hooksPath is set — hooks resolve to a machine-global dir this script will not touch; run 'roborev install-hook' manually if auto-review on commit is wanted"
-  else
-    if [[ ! -f "${repo_root}/.roborev.toml" ]]; then
-      if roborev init --agent "${agent}"; then
-        record PASS roborev-init "initialized (agent: ${agent}); daemon started"
+  elif [[ -n "${rr_hooks}" ]]; then
+    # Snapshot which of the two hooks are FOREIGN (present, but not
+    # roborev's) before uninstalling: `roborev uninstall-hook` removes
+    # roborev's hook pair, and if it also takes a foreign sibling with it,
+    # the post-check below must report that as a WARN naming the path —
+    # never a PASS recorded over a deleted user hook. The vanished check
+    # runs on BOTH uninstall outcomes: a worst-case uninstaller may
+    # delete a foreign sibling AND exit non-zero, and the user must be
+    # told what was lost either way.
+    local foreign_pc="" foreign_rw=""
+    if [[ -f "${hook}" ]] && ! grep -q 'roborev post-commit' "${hook}"; then foreign_pc="${hook}"; fi
+    if [[ -f "${hook_rw}" ]] && ! grep -q 'roborev post-rewrite' "${hook_rw}"; then foreign_rw="${hook_rw}"; fi
+    local uninstall_rc=0
+    roborev uninstall-hook || uninstall_rc=$?
+    local vanished=""
+    if [[ -n "${foreign_pc}" && ! -f "${foreign_pc}" ]]; then vanished=" ${foreign_pc}"; fi
+    if [[ -n "${foreign_rw}" && ! -f "${foreign_rw}" ]]; then vanished="${vanished} ${foreign_rw}"; fi
+    if [[ ${uninstall_rc} -ne 0 ]]; then
+      if [[ -n "${vanished}" ]]; then
+        record WARN roborev-hook "'roborev uninstall-hook' failed AND removed a non-roborev hook as collateral:${vanished} — restore it, remove the roborev hook(s) at${rr_hooks} by hand, and re-run setup"
       else
-        record FAIL roborev-init "roborev init failed (see output above)"
-        return 1
+        record WARN roborev-hook "'roborev uninstall-hook' failed — remove the roborev hook(s) at${rr_hooks} by hand so reviews stop firing in the background"
       fi
+    elif [[ -n "${vanished}" ]]; then
+      record WARN roborev-hook "'roborev uninstall-hook' removed a non-roborev hook as collateral:${vanished} — restore it and re-run setup; roborev's own hook removal is otherwise complete"
     else
-      record PASS roborev-init ".roborev.toml already present"
-      ensure_daemon roborev-init || return 1
+      local leftover=""
+      if [[ -f "${hook}" ]] && grep -q 'roborev post-commit' "${hook}"; then leftover=" ${hook}"; fi
+      if [[ -f "${hook_rw}" ]] && grep -q 'roborev post-rewrite' "${hook_rw}"; then leftover="${leftover} ${hook_rw}"; fi
+      if [[ -z "${leftover}" ]]; then
+        record PASS roborev-hook "removed a leftover roborev auto-review hook — reviews are on demand only, always with --wait"
+      else
+        record WARN roborev-hook "'roborev uninstall-hook' left roborev hook content at${leftover} — remove it by hand so reviews stop firing in the background"
+      fi
     fi
-    # Hook ensure, independent of init: a committed .roborev.toml in a fresh
-    # checkout must not leave the hook missing (.git/hooks is never cloned).
-    # `git rev-parse --git-path` resolves worktrees correctly.
-    if [[ -f "${hook}" ]] && grep -q roborev "${hook}"; then
-      record PASS roborev-hook "post-commit hook present (${hook})"
-    elif [[ -f "${hook}" ]]; then
-      record WARN roborev-hook "a non-roborev post-commit hook exists at ${hook} — left untouched; run 'roborev install-hook --force' manually to replace it"
-    elif roborev install-hook; then
-      record PASS roborev-hook "post-commit hook installed (${hook})"
+  elif [[ -f "${hook}" || -f "${hook_rw}" ]]; then
+    record PASS roborev-hook "a non-roborev post-commit/post-rewrite hook exists — left untouched; no roborev auto-review installed"
+  else
+    record PASS roborev-hook "no post-commit hook — reviews run on demand with --wait, never in the background"
+  fi
+  # Repo config, written directly — `roborev init` is deliberately never
+  # run: it installs the post-commit/post-rewrite auto-review hooks and has
+  # no flag to suppress that, and a background-only review posture is
+  # exactly what this setup must not leave behind. A committed
+  # .roborev.toml is the repo's own configuration and is never clobbered.
+  # Sweep a stale temp from an interrupted earlier run first (idempotent by
+  # contract); the glob is safe unquoted — pathname-expansion results are
+  # never re-split, spaces in repo_root included.
+  rm -f "${repo_root}"/.roborev.toml.tmp.* 2>/dev/null || true
+  if [[ -f "${repo_root}/.roborev.toml" ]]; then
+    record PASS roborev-config ".roborev.toml already present"
+  else
+    local toml_tmp
+    # mktemp IN the repo root so the final mv is a same-filesystem rename —
+    # a $TMPDIR temp would make mv a cross-device copy+unlink, not atomic
+    # (the same reasoning as the rwx token stage's same-dir temp).
+    toml_tmp="$(mktemp "${repo_root}/.roborev.toml.tmp.XXXXXX")"
+    if printf '# Written by conductor-startup-script-cloud.sh — reviews here are\n# on demand and blocking (roborev review --wait); no post-commit\n# auto-review hook is installed (see that script for the reasoning).\nagent = "%s"\n' "${agent}" >"${toml_tmp}" &&
+      mv -f "${toml_tmp}" "${repo_root}/.roborev.toml"; then
+      record PASS roborev-config ".roborev.toml written (agent: ${agent}) — reviews on demand, always with --wait"
     else
-      record WARN roborev-hook "roborev install-hook failed — auto-review on commit is off; manual 'git roborev review' still works"
+      rm -f "${toml_tmp}"
+      record FAIL roborev-config "could not write ${repo_root}/.roborev.toml"
+      return 1
     fi
   fi
+  # The daemon serves the blocking reviews (`review --wait` enqueues into
+  # it and blocks until the verdict), so it must be up even with no
+  # auto-review hook. `roborev init` used to create ~/.roborev as a side
+  # effect; with init gone, ensure the dir exists ourselves — daemon start
+  # bootstraps it (verified live against the real binary), but the mkdir is
+  # cheap insurance across roborev versions on the reuse path.
+  mkdir -p "${HOME}/.roborev" 2>/dev/null || true
+  ensure_daemon roborev-daemon || return 1
   # Smoke-check that the review agent actually responds — this is what makes
   # reviews work end to end. Non-fatal: a wrong agent choice or a transient
-  # failure shouldn't fail setup when roborev itself installed and initialized.
+  # failure shouldn't fail setup when roborev itself installed and the repo
+  # config was written.
   if roborev check-agents --agent "${agent}" --timeout 30 >/dev/null 2>&1; then
     record PASS roborev-agent "${agent} answered a smoke prompt — reviews are live"
   else

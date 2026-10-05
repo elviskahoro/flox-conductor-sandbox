@@ -60,7 +60,7 @@ envs/floxhub-consume/ Phase D' prototype: [install] pkg-path = "elvis/conductor-
 envs/floxhub-provision/ Phase D MVP: [install] the 5 catalog tools + elvis/bd + elvis/roborev (opt-in stage 7, needs auth)
 scripts/sandbox-test.sh   the harness — runs all stages, never hard-fails
 scripts/floxhub-provision.sh  Phase D MVP setup-script recipe (token → login → activate envs/floxhub-provision)
-scripts/conductor-startup-script-cloud.sh  the single workspace startup script: pinned roborev/trunk/rwx + python3.11 for the AL2023 class + opt-in uv/pytest/reflex (issue #44) + rwx auth + roborev init/hooks — wired into this repo's setup, and paste-ready for other repos' workspaces
+scripts/conductor-startup-script-cloud.sh  the single workspace startup script: pinned roborev/trunk/rwx + python3.11 for the AL2023 class + opt-in uv/pytest/reflex (issue #44) + rwx auth + roborev config/daemon (reviews on demand with --wait, never a background auto-review hook) — wired into this repo's setup, and paste-ready for other repos' workspaces
 scripts/validate-pins.sh  pin-drift check: roborev/trunk pins vs the Flox manifests and the trunk preflight (CI)
 scripts/conductor-startup-script-cloud-test.sh  codified amazonlinux:2023 container verification of conductor-startup-script-cloud.sh (CI)
 prompts/conductor/   canonical cross-repo Conductor prompts (create-pr.md today)
@@ -109,11 +109,21 @@ requires >=3.11; reuse-if-present and SKIP elsewhere, so pasting it into a
 repo that needs neither costs nothing), plus the pieces that make the
 tools work rather than merely exist — `RWX_ACCESS_TOKEN` validated before
 it is atomically persisted to `~/.config/rwx/accesstoken` (a bad token
-never overwrites a good one), `roborev init` for unconfigured repos plus
-an independently-ensured post-commit hook (when `core.hooksPath` points
-at a machine-global hooks dir, init itself is skipped — roborev init
-installs the hook — and nothing is ever written there; a foreign hook is
-never replaced), and an agent smoke check. This repo's
+never overwrites a good one), roborev repo config written directly plus
+an ensured daemon and an agent smoke check. Reviews in a provisioned
+workspace are **on demand and blocking** — the push gate the repo's agent
+instructions and the create-pr prompt define is `roborev review --wait` —
+so the script **never installs a post-commit auto-review hook**: `roborev
+init` is never run (it installs the post-commit/post-rewrite hooks and
+has no flag to suppress that), `.roborev.toml` is written directly, a
+leftover roborev hook from an older setup (or a bare `roborev init`) is
+actively removed, and when `core.hooksPath` points at a machine-global
+hooks dir nothing is ever written there (a WARN tells the user to remove
+any roborev hook found in it by hand; a foreign hook is never replaced).
+The reasoning: roborev's post-commit entry point can only enqueue a
+background daemon job — it has no blocking form — so an auto-review hook
+means reviews drift out of the caller's hands and findings surface after
+the fact, while the gate treats "enqueued" as *not passed*. This repo's
 `.conductor/settings.toml` runs it directly as its setup's provisioning
 step. For repos without a committed `.conductor/settings.toml` setup,
 paste the file's contents into the setup-script field in the Conductor

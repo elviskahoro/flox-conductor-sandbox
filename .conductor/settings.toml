@@ -26,8 +26,10 @@ fi
 
 # The single workspace startup script — pinned roborev/trunk/rwx, Python
 # 3.11 for this sandbox class (AL2023/Vercel sandboxes ship python3=3.9
-# while pyproject.toml requires >=3.11), rwx auth, roborev init/hooks,
-# and the issue #44 Python dev tools: STARTUP_PY_DEV_TOOLS=1 provisions
+# while pyproject.toml requires >=3.11), rwx auth, roborev config/daemon
+# (reviews on demand with --wait — no background post-commit auto-review
+# hook is installed), and the issue #44 Python dev tools:
+# STARTUP_PY_DEV_TOOLS=1 provisions
 # uv (pinned, checksum-verified release binary) plus pytest and reflex
 # (exact-pinned packages in the uv-managed ~/.conductor-pytools
 # venv), all exposed as commands for later agent shells — the Flox
@@ -36,7 +38,8 @@ fi
 # pytest"). Runs before sandbox-test.sh so the tools exist before the
 # harness. STARTUP_BEST_EFFORT=1 keeps this repo's former cloud-install
 # contract (the gtm-sdk#702 fallback-installer idiom): a failed TOOL
-# stage (roborev/trunk/rwx install, rwx auth, roborev init) is recorded
+# stage (roborev/trunk/rwx install, rwx auth, roborev config/daemon) is
+# recorded
 # and summarized but does not fail the workspace. Only a Python 3.11
 # failure on this sandbox class (the stated >=3.11 requirement) or a
 # pytools-stage failure (a requested tool must not leave the workspace
@@ -271,6 +274,7 @@ roborev review --wait
 ```
 
 - `--wait` is **required**, not optional — it blocks until the review completes so findings are available before the draft is shown. Do not run `roborev review` without `--wait`.
+- A bare `roborev review` — or a leftover post-commit auto-review hook — only **enqueues a background daemon job and returns before a verdict exists**. An enqueue is not a pass: if HEAD already has a queued or running background review, block on it (`roborev review --wait`, or `roborev wait` for the already-enqueued job) so an actual verdict is in hand before drafting. Never report "review enqueued" or a missing verdict as clean.
 - Capture the outcome (clean, N findings, unavailable) — Step 8 surfaces it inside the draft preview so the user can see the gate was walked.
 - If roborev surfaces issues, **stop and show them to the user**. Do not draft, push, or create the PR until the user decides to fix, defer, or proceed. Fixes go into a follow-up commit and then back through Step 4 (re-squash) and Step 5 (re-run roborev) — never amend or force-push past findings silently.
 - If roborev is unavailable (command not installed, no network), say so explicitly to the user and ask whether to proceed without review. Do not silently skip.

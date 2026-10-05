@@ -128,6 +128,7 @@ roborev review --wait
 ```
 
 - `--wait` is **required**, not optional — it blocks until the review completes so findings are available before the draft is shown. Do not run `roborev review` without `--wait`.
+- A bare `roborev review` — or a leftover post-commit auto-review hook — only **enqueues a background daemon job and returns before a verdict exists**. An enqueue is not a pass: if HEAD already has a queued or running background review, block on it (`roborev review --wait`, or `roborev wait` for the already-enqueued job) so an actual verdict is in hand before drafting. Never report "review enqueued" or a missing verdict as clean.
 - Capture the outcome (clean, N findings, unavailable) — Step 8 surfaces it inside the draft preview so the user can see the gate was walked.
 - If roborev surfaces issues, **stop and show them to the user**. Do not draft, push, or create the PR until the user decides to fix, defer, or proceed. Fixes go into a follow-up commit and then back through Step 4 (re-squash) and Step 5 (re-run roborev) — never amend or force-push past findings silently.
 - If roborev is unavailable (command not installed, no network), say so explicitly to the user and ask whether to proceed without review. Do not silently skip.
