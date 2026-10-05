@@ -83,7 +83,7 @@ its own CI, since a pasted copy can otherwise drift just as silently as a
 hand-edited one.
 
 This repo installs its own prompts into `.conductor/settings.toml`
-(self-hosting), and CI (`conductor-cloud-install checks` workflow) runs
+(self-hosting), and CI (`conductor-startup-script-cloud checks` workflow) runs
 `uv run scripts/install-conductor-prompts.py --check` on every push/PR so the
 installed copy can never silently drift. Consuming repos can add the same
 one-line check.
