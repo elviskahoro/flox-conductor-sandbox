@@ -36,7 +36,16 @@ fi
 # manifests' uv is process-scoped and a fresh workspace otherwise has
 # none of the three (python3 -m pytest fails with "No module named
 # pytest"). Runs before sandbox-test.sh so the tools exist before the
-# harness. STARTUP_BEST_EFFORT=1 keeps this repo's former cloud-install
+# harness. The script's issue #40 opt-in flags — STARTUP_FLOX_ENV=1
+# (flox bootstrap + FloxHub token + host-repo env activation) and
+# STARTUP_TRUNK_MERGE_AUTH=1 (headless trunk merge login) — are
+# deliberately NOT set here: even process-scoped FloxHub auth during
+# this repo's own default provisioning would compromise the fresh,
+# never-authenticated Stage 4 (H4) tester posture (issue #16 trap 5),
+# and sandbox-test.sh carries its own unauthenticated bootstrap. Those
+# flags are for the paste consumer (gtm-sdk's workspaces); see the
+# README's "Flox and trunk-merge startup stages" section.
+# STARTUP_BEST_EFFORT=1 keeps this repo's former cloud-install
 # contract (the gtm-sdk#702 fallback-installer idiom): a failed TOOL
 # stage (roborev/trunk/rwx install, rwx auth, roborev config/daemon) is
 # recorded

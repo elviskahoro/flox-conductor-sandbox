@@ -2,11 +2,13 @@
 # Opt-in Phase D MVP setup-script recipe (issue #16 §9 / issue #40): obtain
 # a FloxHub token and activate a combined manifest
 # (uv/dolt/infisical/gh/git + bd + roborev by default; any repo's committed
-# .flox env via FLOXHUB_ACTIVATE_DIR). This IS the executable reference for
-# the startup script's deferred flox stages — proven here first, per issue
-# #16 §8. (It was originally meant to be ported into gtm-sdk's own setup
-# script; that repo instead retired the script entirely, gtm-sdk#944, and
-# the recipe stays here.)
+# .flox env via FLOXHUB_ACTIVATE_DIR). This is the harness + by-hand form
+# of the token+activation recipe -- proven here first, per issue #16 §8,
+# then wired into the startup script's STARTUP_FLOX_ENV=1 stages (issue
+# #40; sandbox-test.sh Stage 7 and the dagger provision check call this
+# script, and by-hand runs against any repo's env stay easier through it
+# than through a full startup re-run). The startup script's inline copy is
+# the paste-ready form for workspaces with no checkout of this repo.
 #
 # Uses Flox's own documented CI pattern (flox.dev/docs/tutorials/ci-cd):
 # export FLOX_FLOXHUB_TOKEN and let the Flox CLI read it directly on every
@@ -32,9 +34,10 @@
 #   # the activated manifest defaults to this repo's envs/floxhub-provision;
 #   # point FLOXHUB_ACTIVATE_DIR at any repo's committed .flox env to prove
 #   # the same token->activation recipe against that repo instead (the
-#   # host-repo activation shape the startup script's deferred flox stage
-#   # is built from -- e.g. a gtm-sdk checkout, whose manifest resolves
-#   # elvis/roborev from the same private catalog):
+#   # host-repo activation shape the startup script's STARTUP_FLOX_ENV
+#   # flox-activate stage carries, wired per issue #40 -- e.g. a gtm-sdk
+#   # checkout, whose manifest resolves elvis/roborev from the same private
+#   # catalog):
 #   FLOXHUB_ACTIVATE_DIR=/path/to/gtm-sdk bash scripts/floxhub-provision.sh
 #
 # Token acquisition order (this workspace's secrets-management convention:

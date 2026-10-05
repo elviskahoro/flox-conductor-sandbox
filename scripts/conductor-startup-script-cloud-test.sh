@@ -95,6 +95,31 @@
 #     with a bin/python-less directory (an interrupted uv venv) and
 #     asserts the heal branch recreates it (a created, NOT reused,
 #     pytools-venv row) and reinstalls both packages.
+#   - RUN 13/14 (issue #40 Workstream A): STARTUP_FLOX_ENV=1 on the real
+#     target class — RUN 13 does the REAL stable-channel rpm install as
+#     the non-root sudo user (plus /dev/fd, the hand-started nix-daemon,
+#     and the ~/.bashrc self-heal guard, all asserted post-run) and proves
+#     the no-token misconfiguration FAILs loudly with the activation SKIP
+#     row; RUN 14 re-runs under STARTUP_BEST_EFFORT=1 from a git repo
+#     WITH a committed .flox env and asserts the bootstrap reuse row, the
+#     same token FAIL, the token-gated activation SKIP (never an
+#     unauthenticated activation attempt), and that best-effort does NOT
+#     shield a requested stage (the RUN 10 mirror).
+#   - RUN 15 (issue #40): the token and activation PASS paths with flox
+#     STUBBED (the RUN 3/4 discipline: the script's own wiring under
+#     test, not the tool) — FLOXHUB_TOKEN arrives via the host repo's
+#     .env.local (the row must name the file), the stub's auth acceptance
+#     yields the token PASS, the stub's activate materializes the run bin
+#     dir the stage must find and report, and the stub token value must
+#     never appear in the output (never-echoed, asserted mechanically).
+#   - RUN 16/17 (issue #40 Workstream B): STARTUP_TRUNK_MERGE_AUTH=1 —
+#     RUN 16 proves a malformed TRUNK_USER_YAML (no trunk_user key) FAILs
+#     loudly with nothing installed; RUN 17 provisions through the
+#     .env.local channel and asserts the file contract (0600 in a 0700
+#     dir, byte-exact content) and the no-clobber re-run row.
+#   - RUN 18 (issue #40): the dual-home drift guard — the wired stage and
+#     scripts/trunk-merge-auth.sh (the by-hand form of the same recipe)
+#     must install byte-identical files for the same input.
 # Exits non-zero on the first broken assertion.
 set -euo pipefail
 
@@ -142,6 +167,11 @@ case "${RUN1_OUTPUT}" in *"RWX_ACCESS_TOKEN not set"*) ;; *) fail "fresh run mis
 # the SKIP row — a regression that provisioned anyway, or one that
 # dropped the row entirely, both fail here.
 case "${RUN1_OUTPUT}" in *"pytools | SKIP"*) ;; *) fail "fresh run missing the pytools gate SKIP row" ;; esac
+# The issue #40 gates, same discipline: flag-off runs must record both
+# gate SKIP rows — the paste surface stays exactly what it was before
+# those stages existed.
+case "${RUN1_OUTPUT}" in *"flox-bootstrap | SKIP"*) ;; *) fail "fresh run missing the flox-bootstrap gate SKIP row" ;; esac
+case "${RUN1_OUTPUT}" in *"trunk-merge-auth | SKIP"*) ;; *) fail "fresh run missing the trunk-merge-auth gate SKIP row" ;; esac
 
 echo "=== VERIFY: every deliverable resolves as sandbox-user ==="
 su - sandbox-user -c "
@@ -695,5 +725,176 @@ su - sandbox-user -c "
   ~/.conductor-pytools/bin/python -c 'import reflex' ||
     fail \"healed venv cannot import reflex\"
 " || fail "broken-venv heal verification failed"
+
+echo "=== RUN 13: flox bootstrap (STARTUP_FLOX_ENV=1, real rpm install, no token) ==="
+# issue #40 Workstream A on the real target class: a flag-on run with NO
+# FLOXHUB_TOKEN and no Infisical identity must (a) really install flox via
+# the stable-channel rpm with sudo as the non-root sandbox user, create
+# /dev/fd, hand-start the nix-daemon, and write the ~/.bashrc self-heal
+# guard — and (b) FAIL loudly (exit non-zero, the requested-surface
+# contract) at the token stage, with the activation stage taking its SKIP
+# row (non-git cwd here), never attempting an unauthenticated activation.
+if RUN13_OUTPUT="$(su - sandbox-user -c "cd /tmp && STARTUP_FLOX_ENV=1 bash ${STARTUP_SCRIPT}")"; then
+  fail "no-token flox run exited 0 in default mode — a requested stage that cannot be provisioned must fail loudly"
+fi
+printf '%s\n' "${RUN13_OUTPUT}"
+case "${RUN13_OUTPUT}" in *"flox-bootstrap | PASS"*) ;; *) fail "flox run missing the flox-bootstrap PASS row" ;; esac
+case "${RUN13_OUTPUT}" in *"stable-channel rpm (dnf)"*) ;; *) fail "flox-bootstrap PASS row does not record the rpm install" ;; esac
+case "${RUN13_OUTPUT}" in *"floxhub-token | FAIL"*) ;; *) fail "flox run missing the floxhub-token FAIL row" ;; esac
+case "${RUN13_OUTPUT}" in *"FLOXHUB_TOKEN not set"*) ;; *) fail "floxhub-token FAIL row does not carry the setup instructions" ;; esac
+case "${RUN13_OUTPUT}" in *"flox-activate | SKIP"*) ;; *) fail "flox run missing the flox-activate SKIP row" ;; esac
+case "${RUN13_OUTPUT}" in *"not a git worktree"*) ;; *) fail "flox-activate SKIP row does not name the non-git reason" ;; esac
+su - sandbox-user -c "
+  set -e
+  fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
+  command -v flox >/dev/null 2>&1 ||
+    fail \"flox is not on PATH after the bootstrap\"
+  flox --version >/dev/null 2>&1 ||
+    fail \"flox --version failed after the bootstrap: \$(flox --version 2>&1)\"
+  [ -e /dev/fd ] ||
+    fail \"/dev/fd was not created\"
+  [ -S /nix/var/nix/daemon-socket/socket ] ||
+    fail \"nix-daemon socket is not up after the hand-start\"
+  grep -q 'nix-daemon --daemon' ~/.bashrc ||
+    fail \"the nix-daemon self-heal guard is not in ~/.bashrc\"
+" || fail "flox bootstrap verification failed"
+
+echo "=== RUN 14: flox reuse + token-gated SKIP under STARTUP_BEST_EFFORT=1 ==="
+# Idempotence plus the misconfiguration contracts: the bootstrap must
+# REUSE the RUN 13 install (a re-download would pass the FAIL checks
+# unnoticed — the RUN 2 reuse discipline), the token stage must still
+# FAIL, the activation stage must SKIP on the missing token even though
+# the host repo HAS a committed .flox env (the gate that must never
+# attempt an unauthenticated activation), and STARTUP_BEST_EFFORT=1 must
+# NOT shield any of it — a requested stage stays fatal (the RUN 10
+# mirror, for the flox workstream).
+rm -rf /tmp/flox-repo
+su - sandbox-user -c "git init -q /tmp/flox-repo && mkdir -p /tmp/flox-repo/.flox/env"
+su - sandbox-user -c "printf '[env]\nname = \"flox-repo\"\n' > /tmp/flox-repo/.flox/env/manifest.toml"
+if RUN14_OUTPUT="$(su - sandbox-user -c "cd /tmp/flox-repo && STARTUP_BEST_EFFORT=1 STARTUP_FLOX_ENV=1 bash ${STARTUP_SCRIPT}")"; then
+  fail "best-effort no-token flox run exited 0 — requested-stage failures must stay fatal"
+fi
+printf '%s\n' "${RUN14_OUTPUT}"
+case "${RUN14_OUTPUT}" in *"flox-bootstrap | PASS"*) ;; *) fail "flox re-run missing the flox-bootstrap PASS row" ;; esac
+case "${RUN14_OUTPUT}" in *"reused"*) ;; *) fail "flox-bootstrap re-run did not reuse the RUN 13 install — not idempotent" ;; esac
+case "${RUN14_OUTPUT}" in *"floxhub-token | FAIL"*) ;; *) fail "best-effort flox run missing the floxhub-token FAIL row" ;; esac
+case "${RUN14_OUTPUT}" in *"no validated FloxHub token"*) ;; *) fail "flox-activate did not take the token-gated SKIP row despite a committed host env" ;; esac
+
+echo "=== RUN 15: flox token via .env.local + host-repo activation (stubbed flox) ==="
+# The PASS paths of the token and activation stages, plus the .env.local
+# credential channel. flox is stubbed (--version / auth / activate) so the
+# assertions depend ONLY on the script's own wiring: the .env.local at the
+# host repo root must provide FLOXHUB_TOKEN (the row names the file), the
+# stub's auth acceptance yields the token PASS row, and the stub's
+# activate materializes the run bin dir the stage must find, report, and
+# put on PATH. The stub token value must never appear anywhere in the
+# output — the never-echoed discipline asserted mechanically.
+rm -rf /tmp/flox-stub /tmp/flox-repo2
+mkdir -p /tmp/flox-stub
+# shellcheck disable=SC2016
+printf '#!/bin/sh\ncase "$1" in\n--version) echo "flox 1.2.3-stub"; exit 0;;\nauth) exit 0;;\nactivate)\nshift\ndir=""\nwhile [ $# -gt 0 ]; do\n[ "$1" = "--dir" ] && dir="$2"\nshift\ndone\nmkdir -p "$dir/.flox/run/x86_64-linux.flox-stub-run/bin"\nexit 0;;\nesac\nexit 0\n' > /tmp/flox-stub/flox
+chmod 755 /tmp/flox-stub/flox
+su - sandbox-user -c "git init -q /tmp/flox-repo2 && mkdir -p /tmp/flox-repo2/.flox/env"
+su - sandbox-user -c "printf '[env]\nname = \"flox-repo2\"\n' > /tmp/flox-repo2/.flox/env/manifest.toml"
+su - sandbox-user -c "printf 'FLOXHUB_TOKEN=STUB-ENV-LOCAL-TOKEN\n' > /tmp/flox-repo2/.env.local"
+RUN15_OUTPUT="$(su - sandbox-user -c "cd /tmp/flox-repo2 && PATH=/tmp/flox-stub:\$PATH STARTUP_BEST_EFFORT=1 STARTUP_FLOX_ENV=1 bash ${STARTUP_SCRIPT}")" ||
+  fail "stubbed flox run exited non-zero"
+printf '%s\n' "${RUN15_OUTPUT}"
+case "${RUN15_OUTPUT}" in
+*" | FAIL |"*) fail "stubbed flox run recorded FAIL row(s)" ;;
+esac
+case "${RUN15_OUTPUT}" in *"floxhub-token | PASS"*) ;; *) fail "stubbed flox run missing the token PASS row" ;; esac
+case "${RUN15_OUTPUT}" in *"flox-repo2/.env.local"*) ;; *) fail "token PASS row does not name the .env.local source" ;; esac
+case "${RUN15_OUTPUT}" in *"flox-activate | PASS"*) ;; *) fail "stubbed flox run missing the activation PASS row" ;; esac
+case "${RUN15_OUTPUT}" in *"flox-stub-run/bin"*) ;; *) fail "activation PASS row does not report the materialized run bin dir" ;; esac
+case "${RUN15_OUTPUT}" in
+*STUB-ENV-LOCAL-TOKEN*) fail "the .env.local token value leaked into the output" ;;
+esac
+su - sandbox-user -c "
+  set -e
+  fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
+  [ -d /tmp/flox-repo2/.flox/run/x86_64-linux.flox-stub-run/bin ] ||
+    fail \"the run bin dir was not materialized under the host repo\"
+" || fail "activation verification failed"
+
+echo "=== RUN 16: malformed TRUNK_USER_YAML fails loudly, nothing installed ==="
+# The shape-check branch: a TRUNK_USER_YAML without a trunk_user key must
+# FAIL the run (requested-surface contract, default posture here) and
+# leave NO login file behind — a wrong-stored secret surfaces at setup,
+# not as a mysteriously logged-out trunk merge later.
+su - sandbox-user -c "rm -rf ~/.cache/trunk"
+if RUN16_OUTPUT="$(su - sandbox-user -c "cd /tmp && STARTUP_TRUNK_MERGE_AUTH=1 TRUNK_USER_YAML=not-a-trunk-login bash ${STARTUP_SCRIPT}")"; then
+  fail "malformed-yaml run exited 0 — must fail loudly"
+fi
+printf '%s' "${RUN16_OUTPUT}"
+case "${RUN16_OUTPUT}" in *"trunk-merge-auth | FAIL"*) ;; *) fail "malformed-yaml run missing the trunk-merge-auth FAIL row" ;; esac
+case "${RUN16_OUTPUT}" in *"no trunk_user key"*) ;; *) fail "trunk-merge-auth FAIL row does not name the shape problem" ;; esac
+su - sandbox-user -c "[ ! -e ~/.cache/trunk/user.yaml ]" ||
+  fail "a login file was installed despite the failed shape check"
+
+echo "=== RUN 17: trunk merge login via .env.local, then no-clobber re-run ==="
+# The provisioning PASS path through the .env.local channel, the file
+# contract (0600 file inside a 0700 dir, content preserved byte-for-byte
+# plus the trailing newline), and the no-clobber property: a re-run must
+# record "already present" and leave the installed login untouched. The
+# fake yaml is single-line on purpose — nothing parses it (trunk never
+# runs here); the stage's own grep shape-check is the consumer, and a
+# one-line value keeps the fixture free of quoting hazards.
+rm -rf /tmp/trunk-repo
+su - sandbox-user -c "git init -q /tmp/trunk-repo"
+su - sandbox-user -c "printf '%s\n' \"TRUNK_USER_YAML='version: 1 trunk_user {access_token stub-access-token-value}'\" > /tmp/trunk-repo/.env.local"
+RUN17_OUTPUT="$(su - sandbox-user -c "cd /tmp/trunk-repo && STARTUP_BEST_EFFORT=1 STARTUP_TRUNK_MERGE_AUTH=1 bash ${STARTUP_SCRIPT}")" ||
+  fail "trunk-auth run exited non-zero"
+printf '%s\n' "${RUN17_OUTPUT}"
+case "${RUN17_OUTPUT}" in
+*" | FAIL |"*) fail "trunk-auth run recorded FAIL row(s)" ;;
+esac
+case "${RUN17_OUTPUT}" in *"trunk-merge-auth | PASS"*) ;; *) fail "trunk-auth run missing the trunk-merge-auth PASS row" ;; esac
+case "${RUN17_OUTPUT}" in *"trunk-repo/.env.local"*) ;; *) fail "trunk-merge-auth PASS row does not name the .env.local source" ;; esac
+# The never-echoed discipline, same as RUN 15's token assert.
+case "${RUN17_OUTPUT}" in
+*stub-access-token-value*) fail "the login yaml's access token value leaked into the output" ;;
+esac
+su - sandbox-user -c "
+  set -e
+  fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
+  [ \"\$(stat -c %a ~/.cache/trunk/user.yaml)\" = 600 ] ||
+    fail \"login file is not 0600: \$(stat -c %a ~/.cache/trunk/user.yaml)\"
+  [ \"\$(stat -c %a ~/.cache/trunk)\" = 700 ] ||
+    fail \"login dir is not 0700: \$(stat -c %a ~/.cache/trunk)\"
+  printf '%s\n' 'version: 1 trunk_user {access_token stub-access-token-value}' | cmp -s - ~/.cache/trunk/user.yaml ||
+    fail \"login file content does not match the sourced value byte-for-byte\"
+" || fail "trunk-auth file verification failed"
+RUN17B_OUTPUT="$(su - sandbox-user -c "cd /tmp/trunk-repo && STARTUP_BEST_EFFORT=1 STARTUP_TRUNK_MERGE_AUTH=1 bash ${STARTUP_SCRIPT}")" ||
+  fail "trunk-auth re-run exited non-zero"
+printf '%s\n' "${RUN17B_OUTPUT}"
+case "${RUN17B_OUTPUT}" in
+*" | FAIL |"*) fail "trunk-auth re-run recorded FAIL row(s)" ;;
+esac
+case "${RUN17B_OUTPUT}" in *"already present"*) ;; *) fail "trunk-auth re-run missing the already-present no-clobber row" ;; esac
+su - sandbox-user -c "
+  set -e
+  fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
+  printf '%s\n' 'version: 1 trunk_user {access_token stub-access-token-value}' | cmp -s - ~/.cache/trunk/user.yaml ||
+    fail \"the installed login was modified by the re-run — no-clobber violated\"
+" || fail "trunk-auth no-clobber verification failed"
+
+echo "=== RUN 18: the wired stage and scripts/trunk-merge-auth.sh agree byte-for-byte ==="
+# The dual-home drift guard (the same relationship the trunk preflight and
+# the startup script's trunk stage have via validate-pins.sh, but for
+# logic): the standalone helper is the by-hand form of the recipe the
+# STARTUP_TRUNK_MERGE_AUTH stage carries. Same input through both forms
+# must install byte-identical files — divergence fails here instead of
+# drifting silently.
+su - sandbox-user -c "cp ~/.cache/trunk/user.yaml /tmp/user.yaml.stage && rm -f ~/.cache/trunk/user.yaml"
+su - sandbox-user -c "cd /tmp && TRUNK_USER_YAML='version: 1 trunk_user {access_token stub-access-token-value}' bash /src/scripts/trunk-merge-auth.sh" ||
+  fail "scripts/trunk-merge-auth.sh exited non-zero"
+su - sandbox-user -c "
+  set -e
+  fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
+  cmp -s /tmp/user.yaml.stage ~/.cache/trunk/user.yaml ||
+    fail \"the helper and the startup stage installed different bytes for the same TRUNK_USER_YAML — dual-home drift\"
+" || fail "helper/stage drift verification failed"
+rm -f /tmp/user.yaml.stage
 
 echo "=== ALL CHECKS PASSED ==="

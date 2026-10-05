@@ -68,16 +68,18 @@ project from the operator machine's login file and validates.
 
 ## Ported where
 
-Nowhere outside this repo — by design. gtm-sdk **retired** its
+Into this repo's startup script — by design. gtm-sdk **retired** its
 `conductor-workspace-setup.sh` entirely (PR #944): conductor workspace
 logic is owned by this repo, whose `scripts/conductor-startup-script-cloud.sh`
 is the single source of truth for workspace provisioning (paste-ready into
 the Conductor GUI setup field per this repo's README). This findings doc is
-the canonical reference for the trunk-merge-auth recipe, and
-`scripts/trunk-merge-auth.sh` is its executable helper — the shape the
-startup script's deferred trunk-merge-auth stage will absorb when issue
-#40's port is revisited (operator decision: helpers and documentation now,
-wiring later). The two Infisical secrets it depends on (`TRUNK_USER_YAML`,
+the canonical reference for the trunk-merge-auth recipe. Its wired form is
+the startup script's `STARTUP_TRUNK_MERGE_AUTH=1` stage (landed with issue
+#40's wiring), inlined so the paste-ready script stays self-contained;
+`scripts/trunk-merge-auth.sh` remains the by-hand form, and the container
+test's RUN 18 asserts the two forms install byte-identical files for the
+same `TRUNK_USER_YAML` (dual-home drift guard). The two Infisical secrets
+it depends on (`TRUNK_USER_YAML`,
 and
 `FLOXHUB_TOKEN` for the sibling FloxHub-token pattern) are stored in
 gtm-sdk's Infisical project (dev environment). gtm-sdk's PR keeps only its

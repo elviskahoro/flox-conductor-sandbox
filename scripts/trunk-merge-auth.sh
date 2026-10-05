@@ -12,15 +12,19 @@
 # authenticates fully (proven live, including the Infisical round-trip:
 # findings/20261005-152730Z-trunk-merge-headless-auth.md).
 #
-# This is the standalone, executable reference for that recipe -- the shape
-# the startup script's deferred trunk-merge-auth stage will absorb when
-# issue #40's port is revisited. Until then, run it by hand wherever a
-# headless sandbox (or any machine) needs merge-queue access:
+# This is the by-hand form of that recipe -- the startup script's
+# STARTUP_TRUNK_MERGE_AUTH=1 stage carries the wired form (issue #40),
+# inlined so the paste-ready script stays self-contained for repos with
+# no checkout of this one. Run this helper by hand wherever a headless
+# sandbox (or any machine) needs merge-queue access without re-running
+# the whole startup script:
 #
 #   bash scripts/trunk-merge-auth.sh
 #
-# (TRUNK_USER_YAML may also be pre-set in the environment; see the lookup
-# order below.)
+# The two forms are dual homes of one recipe, and
+# scripts/conductor-startup-script-cloud-test.sh's RUN 18 asserts they
+# install byte-identical files for the same TRUNK_USER_YAML -- the same
+# drift guard validate-pins.sh plays for the duplicated pins.
 #
 # Login-file lifecycle: an operator runs `trunk login` once on an
 # authenticated machine and stores the file's contents in Infisical as

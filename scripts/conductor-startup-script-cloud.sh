@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2312  # $(...) in assignments and rows: stage failures surface through the stages' own || returns and the summary, not by killing the script mid-row
 # The single Conductor workspace startup script: roborev + trunk + rwx +
-# Python 3.11 + the opt-in Python dev tools (uv/pytest/reflex), then the
-# auth/init that makes them work rather than merely exist.
+# Python 3.11 + the opt-in Python dev tools (uv/pytest/reflex) + the opt-in
+# issue #40 workstreams (flox bootstrap, FloxHub token, host-repo env
+# activation; headless trunk merge login), then the auth/init that makes
+# them work rather than merely exist.
 #
 # Two consumers, one file (it replaced the former conductor-cloud-install.sh
 # + conductor-startup-script.sh pair, whose duplicated pins were exactly the
@@ -87,6 +89,34 @@
 #            for these tools, and a requested tool that failed to
 #            provision must fail setup loudly, never leave a workspace
 #            that appears ready but lacks them.
+#   flox     opt-in (STARTUP_FLOX_ENV=1, issue #40 Workstream A — the
+#            gtm-sdk#506 completion): three stages. flox-bootstrap makes
+#            flox work on a fresh Linux sandbox (stable-channel rpm via
+#            dnf, deb via apt-get elsewhere, /dev/fd created when the
+#            sandbox ships without it, the nix-daemon hand-started because
+#            systemd is offline here, plus a ~/.bashrc guard so later
+#            shells re-start the daemon after a death); floxhub-token
+#            resolves FLOXHUB_TOKEN (environment, the host repo's
+#            .env.local, then Infisical — with a best-effort standalone
+#            infisical CLI install first, because auth must precede the
+#            activation that would otherwise provide infisical) and
+#            exports it as FLOX_FLOXHUB_TOKEN, Flox's documented CI
+#            pattern — no flox auth login, no keyring write, so the
+#            sandbox is never persistently authenticated; flox-activate
+#            materializes the host repo's committed .flox env in run mode
+#            (private-catalog manifests such as gtm-sdk's elvis/roborev
+#            pin resolve through the token) and proves the run bin dir
+#            landed under .flox/run. Fatal under BOTH postures when the
+#            requested surface fails — the pytools contract.
+#   trunk-   opt-in (STARTUP_TRUNK_MERGE_AUTH=1, issue #40 Workstream B —
+#   merge-   the gtm-sdk#702 completion): provisions the headless
+#   auth     ~/.cache/trunk/user.yaml login from TRUNK_USER_YAML (the same
+#            lookup order as the token stage). trunk check is fully
+#            unauthenticated by design; only trunk merge consumes the
+#            login, and no env-var auth exists for it (trunk login is
+#            browser-only — findings/20261005-152730Z). Never clobbers an
+#            existing login, 0600, shape-checked, never echoed. Same
+#            fatal-under-both contract.
 #
 # Pins: ROBOREV_PIN/RWX_PIN/UV_PIN/PYTEST_PIN/REFLEX_PIN and every sha256
 # below are the single in-repo home of those constants. The roborev pin is
@@ -125,10 +155,12 @@
 # tool stages (roborev/trunk/rwx install, rwx auth, roborev
 # config/daemon) record
 # their FAIL rows but do not fail the run, and only a Python 3.11 failure
-# on the AL2023 target class (the stated >=3.11 requirement) or a
+# on the AL2023 target class (the stated >=3.11 requirement), a
 # pytools-stage failure when STARTUP_PY_DEV_TOOLS=1 requested them
 # (issue #44: a requested tool that cannot be provisioned must never
-# leave a workspace that appears ready but lacks it) exits non-zero.
+# leave a workspace that appears ready but lacks it), or a failure in the
+# issue #40 opt-in stages when their flags requested them — the same
+# requested-surface contract — exits non-zero.
 #
 # Environment variables (set them in Conductor's environment variables
 # settings — never inline them in this script: settings values are plain
@@ -152,6 +184,40 @@
 #                     the pytools stage body. Unset or any other value
 #                     records a SKIP row and changes nothing else — the
 #                     paste-ready consumer's surface stays as it was.
+#   STARTUP_FLOX_ENV  set to 1 (issue #40 Workstream A) to provision the
+#                     flox workstream: bootstrap, FloxHub token, host-repo
+#                     env activation — see the flox section's stage bodies
+#                     for what each stage does and its SKIP shapes. Unset
+#                     or any other value records SKIP rows and changes
+#                     nothing else. A failure in a requested stage exits
+#                     non-zero under BOTH postures.
+#   STARTUP_TRUNK_MERGE_AUTH  set to 1 (issue #40 Workstream B) to
+#                     provision the headless trunk merge login from
+#                     TRUNK_USER_YAML. Unset or any other value records a
+#                     SKIP row and changes nothing else; trunk check never
+#                     needs it. Same fatal contract as STARTUP_FLOX_ENV.
+#   The flag-on stages also read (same never-inline rule):
+#   FLOXHUB_TOKEN     a FloxHub token from flox auth token on an
+#                     authenticated machine (a dedicated service account
+#                     per Flox's CI docs); validated with flox auth status
+#                     before use. Also readable from the host repo's
+#                     .env.local or, under the name
+#                     FLOXHUB_TOKEN_SECRET_NAME (default FLOXHUB_TOKEN),
+#                     from Infisical via the INFISICAL_TOKEN machine
+#                     identity (INFISICAL_PROJECT_ID strongly recommended:
+#                     a fresh workspace has no .infisical.json context).
+#   FLOXHUB_ACTIVATE_DIR  optional override pointing the activation stage
+#                     at any directory holding a committed .flox env (the
+#                     default is the host repo root, the gtm-sdk shape);
+#                     a set-but-wrong override FAILs loudly.
+#   TRUNK_USER_YAML   the contents of ~/.cache/trunk/user.yaml from a
+#                     trunk login on an authenticated machine; same
+#                     .env.local / Infisical (TRUNK_USER_YAML_SECRET_NAME,
+#                     default TRUNK_USER_YAML) lookup order as the token.
+#                     It carries a session access token with no refresh —
+#                     budget for periodic rotation (re-login, re-store).
+#   INFISICAL_ENV     optional Infisical environment for both lookups
+#                     (default dev).
 set -euo pipefail
 
 # Save the original stdout/stderr as fd 3/4 BEFORE the log redirect: the
@@ -766,6 +832,443 @@ pytools_stage() {
   fi
 }
 
+# --- flox workstream (opt-in, issue #40): bootstrap + token + env activation --
+# Workstream A of issue #40 (the gtm-sdk#506 completion, wired here after
+# gtm-sdk#944 retired that repo's own setup script and made this file the
+# single provisioning home). All three stages run only when
+# STARTUP_FLOX_ENV=1 asked for them; flag-off runs record one SKIP row per
+# stage and the paste surface is exactly what it was (the pytools gate
+# shape, issue #44). Provenance: scripts/sandbox-test.sh Stage 1 is the
+# bootstrap reference (the harness form of the recipe gtm-sdk's retired
+# script carried), and scripts/floxhub-provision.sh is the token +
+# activation reference (Stage 7 + the dagger provision check) — this
+# inline copy is the paste-ready form, self-contained because pasted
+# workspaces have no checkout of this repo.
+#
+# Failure contract: fatal under BOTH postures (see the header's
+# failure-semantics section) — a workspace that asked for its flox env
+# must never be left looking ready without it. The deliberate SKIP shapes
+# (non-Linux host without flox, flox missing after a failed bootstrap,
+# no token, no host-repo env) record SKIP rows and return 0; every SKIP
+# names the row that explains it, so a SKIP never hides a provisioning
+# failure.
+#
+# Security posture, load-bearing: the token is exported as
+# FLOX_FLOXHUB_TOKEN for this process only — never echoed, logged, or
+# written to a file, no flox auth login, no keyring write — so the
+# sandbox stays unauthenticated on disk and remains usable as a fresh
+# Stage 4 (H4) tester (the same property scripts/floxhub-provision.sh
+# documents). That is also why this repo's own settings.toml deliberately
+# does NOT set the flag: sandbox-test.sh needs unauthenticated sandboxes.
+
+# privileged <cmd...>: run a command as root when the script already runs
+# as root, else through passwordless sudo (the Conductor sandbox class
+# ships it; the caller checks it exists first). Returns the command's own
+# status.
+privileged() {
+  if [[ "$(id -u)" == 0 ]]; then
+    "$@"
+  else
+    sudo -n "$@"
+  fi
+}
+
+# lookup_infisical_secret <name>: print one Infisical secret's value, or
+# nothing. Requires the machine identity (INFISICAL_TOKEN) and the CLI on
+# PATH; passes --projectId when INFISICAL_PROJECT_ID is set because a
+# fresh workspace has no .infisical.json context and the CLI does not
+# auto-detect a project. Failures are silent: callers treat empty as "not
+# available" and fall through to the next lookup step or their FAIL row
+# (gtm-sdk's reviewed shape). The value only ever travels this function's
+# stdout — never argv, never a log line.
+lookup_infisical_secret() {
+  local secret_name="$1"
+  [[ -n "${INFISICAL_TOKEN:-}" ]] || return 0
+  command -v infisical >/dev/null 2>&1 || return 0
+  local args=(--env="${INFISICAL_ENV:-dev}" --plain --silent)
+  if [[ -n "${INFISICAL_PROJECT_ID:-}" ]]; then
+    args+=(--projectId "${INFISICAL_PROJECT_ID}")
+  fi
+  infisical secrets get "${secret_name}" "${args[@]}" 2>/dev/null || true
+}
+
+# ensure_infisical_cli: best-effort standalone install of the infisical CLI
+# for the flag-on secret lookups. Only runs when the machine identity is
+# present but the CLI is absent, and only on dnf hosts with root or
+# passwordless sudo (the Conductor sandbox class — the one place the
+# chicken-and-egg exists: FloxHub auth must precede the activation that
+# would otherwise provide infisical inside the env). Best-effort by
+# design: on failure the environment/.env.local path stays authoritative
+# and the calling stage FAILs with instructions instead of silently
+# skipping. The installer is Infisical's own setup.rpm.sh channel — the
+# same one gtm-sdk's retired setup script used (gtm-sdk#944); unpinned
+# like the flox stable-channel rpm (a rolling channel; a broken channel
+# surfaces as the lookup failing closed, never as a wrong secret used).
+ensure_infisical_cli() {
+  command -v infisical >/dev/null 2>&1 && return 0
+  [[ -n "${INFISICAL_TOKEN:-}" ]] || return 0
+  command -v dnf >/dev/null 2>&1 || return 0
+  local can_install=0
+  if [[ "$(id -u)" == 0 ]]; then
+    can_install=1
+  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    can_install=1
+  fi
+  [[ ${can_install} == 1 ]] || return 0
+  local install_ok=0
+  if [[ "$(id -u)" == 0 ]]; then
+    if curl -1sLf 'https://artifacts-cli.infisical.com/setup.rpm.sh' | bash >/dev/null 2>&1 &&
+      dnf install -y infisical >/dev/null 2>&1; then
+      install_ok=1
+    fi
+  else
+    if curl -1sLf 'https://artifacts-cli.infisical.com/setup.rpm.sh' | sudo -E bash >/dev/null 2>&1 &&
+      sudo dnf install -y infisical >/dev/null 2>&1; then
+      install_ok=1
+    fi
+  fi
+  if [[ ${install_ok} == 1 ]]; then
+    log "installed the infisical CLI for the flag-on secret lookups"
+  else
+    log "warning: standalone infisical CLI install failed; secret lookups stay limited to the environment and .env.local"
+  fi
+}
+
+flox_bootstrap_stage() {
+  if [[ "${STARTUP_FLOX_ENV:-0}" != "1" ]]; then
+    record SKIP flox-bootstrap "not requested — set STARTUP_FLOX_ENV=1 for the flox workstream (bootstrap, FloxHub token, host-repo env activation)"
+    return 0
+  fi
+  # Off-Linux hosts: there is no unattended flox install (Homebrew or an
+  # interactive .pkg), so reuse when present and SKIP with instructions
+  # otherwise (the python311 stage's not-the-target-class shape — not a
+  # FAIL, this script simply cannot install flox here).
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    if command -v flox >/dev/null 2>&1; then
+      record PASS flox-bootstrap "reused $(command -v flox) on $(uname -s) ($(flox --version 2>&1 | head -1 || true)) — no bootstrap needed off Linux"
+      return 0
+    fi
+    record SKIP flox-bootstrap "not Linux and no flox on PATH — the bootstrap installs via rpm/deb on Linux only; install flox by hand and re-run"
+    return 0
+  fi
+  local can_priv=0
+  if [[ "$(id -u)" == 0 ]]; then
+    can_priv=1
+  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    can_priv=1
+  fi
+  # /dev/fd: Vercel-class sandboxes ship without it and flox's activate
+  # helpers need it (the gtm-sdk#279 trap). Best-effort creation; a host
+  # that cannot create it fails loudly at the activation stage instead.
+  if [[ ! -e /dev/fd ]]; then
+    if [[ ${can_priv} == 1 ]]; then
+      privileged ln -sfn /proc/self/fd /dev/fd 2>/dev/null || true
+      [[ -e /dev/fd ]] && log "created /dev/fd -> /proc/self/fd (was missing)"
+    fi
+    if [[ ! -e /dev/fd ]]; then
+      record WARN flox-bootstrap "/dev/fd is missing and could not be created (no root/passwordless sudo) — activation may fail, see gtm-sdk#279"
+      return 0
+    fi
+  fi
+  # Install flox when absent: the stable-channel rpm via dnf (the
+  # Conductor/Vercel AL2023 class — gtm-sdk's exact path), deb via
+  # apt-get as the generic Linux fallback (sandbox-test.sh Stage 1's
+  # shape). xz is an undeclared runtime dep of the rpm's scriptlets on
+  # minimal AL2023 images.
+  local installed=0
+  local install_note=""
+  if command -v flox >/dev/null 2>&1; then
+    installed=1
+    install_note="reused $(command -v flox)"
+  elif [[ ${can_priv} != 1 ]]; then
+    record FAIL flox-bootstrap "Linux host without flox and without root/passwordless sudo — cannot install; provision flox by hand and re-run"
+    return 1
+  elif command -v dnf >/dev/null 2>&1; then
+    local pkg="${WORK}/flox.rpm"
+    privileged dnf install -y xz >/dev/null 2>&1 || true
+    if curl -fsSLo "${pkg}" "https://downloads.flox.dev/by-env/stable/rpm/flox.$(uname -m)-linux.rpm" &&
+      privileged rpm --import https://downloads.flox.dev/by-env/stable/rpm/flox-archive-keyring.asc &&
+      privileged rpm -ivh "${pkg}"; then
+      installed=1
+      install_note="installed via the flox stable-channel rpm (dnf)"
+    fi
+    rm -f "${pkg}"
+  elif command -v apt-get >/dev/null 2>&1; then
+    local pkg="${WORK}/flox.deb"
+    if curl -fsSLo "${pkg}" "https://downloads.flox.dev/by-env/stable/deb/flox.$(uname -m)-linux.deb" &&
+      privileged apt-get install -y "${pkg}"; then
+      installed=1
+      install_note="installed via the flox stable-channel deb (apt-get)"
+    fi
+    rm -f "${pkg}"
+  else
+    record FAIL flox-bootstrap "Linux host without flox and with neither dnf nor apt-get — cannot install"
+    return 1
+  fi
+  if [[ ${installed} != 1 ]]; then
+    record FAIL flox-bootstrap "flox install failed (download or install) — see messages above"
+    return 1
+  fi
+  hash -r 2>/dev/null || true
+  local version_out
+  version_out="$(flox --version 2>&1 | head -1 || true)"
+  if [[ -z "${version_out}" ]] || ! flox --version >/dev/null 2>&1; then
+    record FAIL flox-bootstrap "flox on PATH but flox --version failed (resolved: $(command -v flox || true))"
+    return 1
+  fi
+  # nix-daemon: flox uses multi-user Nix, and these sandboxes have systemd
+  # installed but offline (PID 1 is sandbox-init), so nix-daemon.socket
+  # never activates. Start the daemon by hand when its socket is absent
+  # (known locations first, then PATH), and leave a ~/.bashrc guard so
+  # later shells self-heal after a daemon death (the gtm-sdk#944 recipe).
+  # A missing socket is a WARN-grade note on the PASS row, not a FAIL:
+  # single-user operation may still work and the activation stage below
+  # is the decider — its FAIL would carry flox's own error.
+  local daemon_bin=""
+  local cand
+  for cand in /usr/sbin/nix-daemon /usr/bin/nix-daemon; do
+    [[ -x "${cand}" ]] && daemon_bin="${cand}" && break
+  done
+  [[ -z "${daemon_bin}" ]] && daemon_bin="$(command -v nix-daemon || true)"
+  local daemon_note="nix-daemon socket already up"
+  if [[ ! -S /nix/var/nix/daemon-socket/socket ]]; then
+    if [[ -n "${daemon_bin}" && ${can_priv} == 1 ]]; then
+      # The redirect is applied by this (unprivileged) shell on purpose:
+      # the log stays user-owned, only the daemon runs as root (gtm-sdk's
+      # reviewed shape). nohup for the root path so the daemon survives
+      # this script's exit; sudo -b backgrounds it on the sudo path.
+      if [[ "$(id -u)" == 0 ]]; then
+        nohup "${daemon_bin}" --daemon >/tmp/nix-daemon.log 2>&1 &
+      else
+        # shellcheck disable=SC2024  # the log is meant to be user-owned; only the daemon needs root
+        sudo -bn "${daemon_bin}" --daemon >/tmp/nix-daemon.log 2>&1
+      fi
+      local _i
+      for _i in 1 2 3 4 5 6 7 8 9 10; do
+        [[ -S /nix/var/nix/daemon-socket/socket ]] && break
+        sleep 1
+      done
+    fi
+    if [[ -S /nix/var/nix/daemon-socket/socket ]]; then
+      daemon_note="nix-daemon hand-started (${daemon_bin}); socket up"
+    elif [[ -n "${daemon_bin}" ]]; then
+      daemon_note="no nix-daemon socket (start failed or no privileges) — flox may only work single-user; later shells self-heal via the ~/.bashrc guard where sudo exists"
+    else
+      daemon_note="no nix-daemon socket and no nix-daemon binary found — flox may only work single-user"
+    fi
+  fi
+  # The self-heal guard, idempotent by grep -F: later shells re-start the
+  # daemon when its socket is gone. sudo -bn so the guard never prompts;
+  # only written when a daemon binary exists and privileges allow the
+  # hand-start (a guard that cannot work is noise).
+  if [[ -n "${daemon_bin}" && ${can_priv} == 1 ]]; then
+    local guard="[ -S /nix/var/nix/daemon-socket/socket ] || sudo -bn ${daemon_bin} --daemon >/dev/null 2>&1 || true"
+    if ! grep -qF "${guard}" "${HOME}/.bashrc" 2>/dev/null; then
+      printf '\n# conductor-startup-script-cloud.sh: keep the nix-daemon alive for flox (no systemd in these sandboxes)\n%s\n' "${guard}" >>"${HOME}/.bashrc"
+      log "wrote the nix-daemon self-heal guard to ${HOME}/.bashrc"
+    fi
+  fi
+  record PASS flox-bootstrap "flox ${version_out} at $(command -v flox) — ${install_note}; ${daemon_note}"
+  return 0
+}
+
+floxhub_token_stage() {
+  if [[ "${STARTUP_FLOX_ENV:-0}" != "1" ]]; then
+    record SKIP floxhub-token "not requested — the STARTUP_FLOX_ENV=1 gate covers this stage too"
+    return 0
+  fi
+  if ! command -v flox >/dev/null 2>&1; then
+    record SKIP floxhub-token "flox not installed — see the flox-bootstrap row above"
+    return 0
+  fi
+  # Lookup order (this workspace's secrets convention, no interactive
+  # fallback): FLOXHUB_TOKEN already in the environment (Conductor env
+  # vars or the host repo's .env.local, sourced flag-gated in the run
+  # section — ENV_LOCAL_PROVIDED distinguishes the two), then the
+  # Infisical secret, after a best-effort standalone CLI install.
+  local source_label="the environment"
+  case " ${ENV_LOCAL_PROVIDED:-} " in
+  *" FLOXHUB_TOKEN "*) source_label="${ENV_LOCAL_ROOT:-the host repo}/.env.local" ;;
+  esac
+  if [[ -z "${FLOXHUB_TOKEN:-}" ]]; then
+    source_label=""
+    ensure_infisical_cli
+    local secret_name="${FLOXHUB_TOKEN_SECRET_NAME:-FLOXHUB_TOKEN}"
+    local token_from_infisical
+    token_from_infisical="$(lookup_infisical_secret "${secret_name}")"
+    if [[ -n "${token_from_infisical}" ]]; then
+      FLOXHUB_TOKEN="${token_from_infisical}"
+      source_label="Infisical (${secret_name})"
+    fi
+    unset -v token_from_infisical
+  fi
+  if [[ -z "${FLOXHUB_TOKEN:-}" ]]; then
+    record FAIL floxhub-token "FLOXHUB_TOKEN not set and no Infisical lookup was possible — set it (from flox auth token on an authenticated machine) in the environment or the host repo's .env.local, or store it as the ${FLOXHUB_TOKEN_SECRET_NAME:-FLOXHUB_TOKEN} secret with INFISICAL_TOKEN (+ INFISICAL_PROJECT_ID), and re-run"
+    return 1
+  fi
+  # Flox's documented CI pattern: every flox invocation that needs FloxHub
+  # auth reads FLOX_FLOXHUB_TOKEN from the process environment. Process-
+  # scoped only — the token is never persisted (see the section header).
+  export FLOX_FLOXHUB_TOKEN="${FLOXHUB_TOKEN}"
+  # Validate up front so a bad/expired token surfaces as an unambiguous
+  # auth error here, not as a generic activation failure downstream.
+  if ! flox auth status >/dev/null 2>&1; then
+    record FAIL floxhub-token "FLOX_FLOXHUB_TOKEN was not accepted by FloxHub (invalid or expired) — rotate the token (flox auth token on an authenticated machine) and re-store it"
+    return 1
+  fi
+  record PASS floxhub-token "FLOXHUB_TOKEN resolved from ${source_label:-the environment} and accepted (flox auth status); exported as FLOX_FLOXHUB_TOKEN for this run only — never persisted (no flox auth login, no keyring write)"
+  return 0
+}
+
+flox_activate_stage() {
+  if [[ "${STARTUP_FLOX_ENV:-0}" != "1" ]]; then
+    record SKIP flox-activate "not requested — the STARTUP_FLOX_ENV=1 gate covers this stage too"
+    return 0
+  fi
+  if ! command -v flox >/dev/null 2>&1; then
+    record SKIP flox-activate "flox not installed — see the flox-bootstrap row above"
+    return 0
+  fi
+  # Gated on a VALIDATED token, never activated unauthenticated:
+  # private-catalog manifests (gtm-sdk's elvis/roborev pin) cannot resolve
+  # without it, and a tokenless activation would only fail later with an
+  # auth error this SKIP row explains up front.
+  if [[ -z "${FLOX_FLOXHUB_TOKEN:-}" ]]; then
+    record SKIP flox-activate "no validated FloxHub token — see the floxhub-token row above; this stage never activates unauthenticated"
+    return 0
+  fi
+  # The env dir: FLOXHUB_ACTIVATE_DIR when set (any committed .flox env,
+  # e.g. this repo's envs/floxhub-provision), else the host repo root when
+  # it carries a committed env (the gtm-sdk shape). A set-but-wrong
+  # override is an explicit misconfiguration and FAILs; a host repo simply
+  # lacking an env is a SKIP — plenty of repos have none.
+  local env_dir=""
+  if [[ -n "${FLOXHUB_ACTIVATE_DIR:-}" ]]; then
+    env_dir="${FLOXHUB_ACTIVATE_DIR}"
+    if [[ ! -f "${env_dir}/.flox/env/manifest.toml" ]]; then
+      record FAIL flox-activate "FLOXHUB_ACTIVATE_DIR=${env_dir} has no committed .flox env (no .flox/env/manifest.toml) — fix the override or unset it to use the host repo's root env"
+      return 1
+    fi
+  else
+    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      record SKIP flox-activate "cwd is not a git worktree and FLOXHUB_ACTIVATE_DIR is unset — no host-repo .flox env to activate"
+      return 0
+    fi
+    env_dir="$(git rev-parse --show-toplevel)"
+    if [[ ! -f "${env_dir}/.flox/env/manifest.toml" ]]; then
+      record SKIP flox-activate "host repo has no committed .flox env (${env_dir}/.flox/env/manifest.toml absent) — nothing to activate"
+      return 0
+    fi
+  fi
+  # --mode run everywhere: flox refuses a dev-mode activation while
+  # another shell (an agent's) holds a run-mode activation of the same env.
+  if ! flox activate --dir "${env_dir}" --mode run -- true; then
+    record FAIL flox-activate "flox activate failed for ${env_dir} — see messages above (manifest/lock resolution, catalog auth, or the nix store/daemon)"
+    return 1
+  fi
+  # Materialization proof, not exit-code trust: the run bin dir must have
+  # landed (the glob covers flox's .flox/run/<system>.<env>-run/bin naming;
+  # the -run-suffixed form first, the generic form as a naming fallback).
+  local run_bin=""
+  local d
+  for d in "${env_dir}/.flox/run/"*"-run/bin"; do
+    [[ -d "${d}" ]] && run_bin="${d}" && break
+  done
+  if [[ -z "${run_bin}" ]]; then
+    for d in "${env_dir}/.flox/run/"*"/bin"; do
+      [[ -d "${d}" ]] && run_bin="${d}" && break
+    done
+  fi
+  if [[ -z "${run_bin}" ]]; then
+    record FAIL flox-activate "activation exited 0 but no run bin dir materialized under ${env_dir}/.flox/run — see messages above"
+    return 1
+  fi
+  # On PATH for the rest of this run (activation is process-scoped; later
+  # shells re-run setup or activate by hand — the row records where the
+  # tools live). Guarded so re-runs never stack duplicate PATH entries.
+  case ":${PATH}:" in
+  *":${run_bin}:"*) ;;
+  *) export PATH="${run_bin}:${PATH}" ;;
+  esac
+  record PASS flox-activate "activated ${env_dir}'s committed flox env (run mode) — tools on PATH for this run under ${run_bin}"
+  return 0
+}
+
+# --- trunk merge auth (opt-in, issue #40 Workstream B) -----------------------
+# The headless trunk merge login (the gtm-sdk#702 completion). trunk check
+# is fully unauthenticated and needs nothing; trunk merge has NO env-var
+# auth (no TRUNK_TOKEN/TRUNK_API_TOKEN equivalent — verified empirically
+# against the 1.25.0 binary — and trunk login is browser-only), so the one
+# non-interactive path is the login file itself: ~/.cache/trunk/user.yaml,
+# a portable credential an operator produces with trunk login on an
+# authenticated machine and stores as the TRUNK_USER_YAML secret
+# (findings/20261005-152730Z-trunk-merge-headless-auth.md is the research
+# record; scripts/trunk-merge-auth.sh is the by-hand form of this recipe —
+# the container test asserts the two forms install byte-identical files
+# for the same input, the same drift guard validate-pins.sh plays for the
+# duplicated pins). Safety properties, all load-bearing: never clobbers an
+# existing login (an interactive login is strictly better than a
+# provisioned copy), the yaml is a bearer credential written only to a
+# 0600 file — never echoed, logged, or passed through argv — and it is
+# shape-checked before install (a trunk_user key must be present) so a
+# wrong-stored secret fails loudly here instead of as a mysteriously
+# logged-out trunk merge later. The yaml carries a session access token
+# with no refresh token: when it expires, re-login on the authenticated
+# machine and re-store the secret (the rotation posture of FLOXHUB_TOKEN).
+trunk_merge_auth_stage() {
+  if [[ "${STARTUP_TRUNK_MERGE_AUTH:-0}" != "1" ]]; then
+    record SKIP trunk-merge-auth "not requested — set STARTUP_TRUNK_MERGE_AUTH=1 to provision the headless trunk merge login (trunk check needs no auth by design)"
+    return 0
+  fi
+  local login_path="${HOME}/.cache/trunk/user.yaml"
+  if [[ -f "${login_path}" ]]; then
+    record PASS trunk-merge-auth "trunk login already present at ${login_path} — left untouched (an interactive login is strictly better than a provisioned copy)"
+    return 0
+  fi
+  # Same lookup order as the FloxHub token stage: TRUNK_USER_YAML in the
+  # environment (or the host repo's .env.local, flagged by
+  # ENV_LOCAL_PROVIDED), then the Infisical secret after a best-effort
+  # standalone CLI install. No interactive fallback either way.
+  local source_label="the environment"
+  case " ${ENV_LOCAL_PROVIDED:-} " in
+  *" TRUNK_USER_YAML "*) source_label="${ENV_LOCAL_ROOT:-the host repo}/.env.local" ;;
+  esac
+  local yaml="${TRUNK_USER_YAML:-}"
+  if [[ -z "${yaml}" ]]; then
+    source_label=""
+    ensure_infisical_cli
+    local secret_name="${TRUNK_USER_YAML_SECRET_NAME:-TRUNK_USER_YAML}"
+    local yaml_from_infisical
+    yaml_from_infisical="$(lookup_infisical_secret "${secret_name}")"
+    if [[ -n "${yaml_from_infisical}" ]]; then
+      yaml="${yaml_from_infisical}"
+      source_label="Infisical (${secret_name})"
+    fi
+    unset -v yaml_from_infisical
+  fi
+  if [[ -z "${yaml}" ]]; then
+    record FAIL trunk-merge-auth "TRUNK_USER_YAML not set and no Infisical lookup was possible — on an authenticated machine run trunk login, then store the contents of ~/.cache/trunk/user.yaml as the ${TRUNK_USER_YAML_SECRET_NAME:-TRUNK_USER_YAML} secret (or set the env var / .env.local entry) and re-run"
+    return 1
+  fi
+  # Write through a 0600 temp file, shape-check the FILE (not the variable
+  # — the value never travels through argv), then atomically install.
+  local tmp
+  tmp="$(mktemp)"
+  chmod 600 "${tmp}"
+  printf '%s\n' "${yaml}" >"${tmp}"
+  if ! grep -q "trunk_user" "${tmp}"; then
+    rm -f "${tmp}"
+    record FAIL trunk-merge-auth "the resolved TRUNK_USER_YAML did not look like a trunk login file (no trunk_user key) — check the stored secret's value"
+    return 1
+  fi
+  mkdir -p "${HOME}/.cache/trunk"
+  chmod 700 "${HOME}/.cache/trunk" 2>/dev/null || true
+  mv -f "${tmp}" "${login_path}"
+  unset -v yaml
+  record PASS trunk-merge-auth "provisioned headless trunk login at ${login_path} (0600) from ${source_label:-the environment} — trunk merge works without a browser; trunk check stays unauthenticated by design"
+  return 0
+}
+
 # --- rwx authentication -----------------------------------------------------
 # Validate FIRST via the env var (rwx reads RWX_ACCESS_TOKEN on its own),
 # persist ONLY on success — a bad token must never overwrite a valid token
@@ -997,10 +1500,12 @@ roborev_setup() {
 # former cloud-install contract: tool-stage failures are recorded but do
 # not fail the run (gtm-sdk#702's fallback-installer idiom). Default
 # (pasted standalone): any FAIL row fails the run. Python 3.11 on the
-# target class and the pytools stage (when STARTUP_PY_DEV_TOOLS=1
-# requested it) are hard requirements under EITHER posture — their SKIP
-# paths return 0 and never reach the FAILED assignment; pytools' gate
-# SKIP likewise returns 0.
+# target class, the pytools stage (when STARTUP_PY_DEV_TOOLS=1 requested
+# it), and the issue #40 opt-in stages (when STARTUP_FLOX_ENV=1 or
+# STARTUP_TRUNK_MERGE_AUTH=1 requested them — the same requested-surface
+# contract) are hard requirements under EITHER posture — their SKIP
+# paths return 0 and never reach the FAILED assignment; the gates' SKIP
+# rows likewise return 0.
 BEST_EFFORT="${STARTUP_BEST_EFFORT:-0}"
 
 maybe_fail() { # tool-stage failure: fatal unless best-effort mode is on
@@ -1016,6 +1521,52 @@ if trunk_stage; then :; else record FAIL trunk "provisioning failed — see mess
 if rwx_install; then :; else record FAIL rwx "provisioning failed — see messages above"; maybe_fail; fi
 if python311_stage; then :; else FAILED=1; record FAIL python3.11 "provisioning failed — see messages above"; fi
 if pytools_stage; then :; else FAILED=1; record FAIL pytools "provisioning failed — see the rows above"; fi
+
+# The flag-on secret stages (flox workstream, trunk merge auth) also read
+# the host repo's .env.local — the credential channel gtm-sdk's AGENTS.md
+# documents for Conductor workspaces (INFISICAL_TOKEN/INFISICAL_PROJECT_ID
+# plus operator-pre-placed secrets). Sourced once, best-effort, only when
+# a flag asked for those stages; set -a exports what it defines, and the
+# exports naturally persist for the rest of this run (an .env.local
+# RWX_ACCESS_TOKEN reaches the rwx-auth stage below, for instance).
+# ENV_LOCAL_PROVIDED records which of the stage secrets the file provided
+# (names only — never values) so the stages can name their source in the
+# summary rows.
+if [[ "${STARTUP_FLOX_ENV:-0}" == "1" || "${STARTUP_TRUNK_MERGE_AUTH:-0}" == "1" ]]; then
+  ENV_LOCAL_ROOT=""
+  if git rev-parse --show-toplevel >/dev/null 2>&1; then
+    ENV_LOCAL_ROOT="$(git rev-parse --show-toplevel)"
+  fi
+  if [[ -n "${ENV_LOCAL_ROOT}" && -f "${ENV_LOCAL_ROOT}/.env.local" ]]; then
+    ENV_LOCAL_FLOXHUB_EMPTY=0
+    ENV_LOCAL_TRUNK_EMPTY=0
+    [[ -z "${FLOXHUB_TOKEN:-}" ]] && ENV_LOCAL_FLOXHUB_EMPTY=1
+    [[ -z "${TRUNK_USER_YAML:-}" ]] && ENV_LOCAL_TRUNK_EMPTY=1
+    set -a
+    # shellcheck disable=SC1090,SC1091  # runtime-resolved workspace credential file, absent by design in this repo
+    . "${ENV_LOCAL_ROOT}/.env.local" 2>/dev/null || true
+    set +a
+    ENV_LOCAL_PROVIDED=""
+    if [[ ${ENV_LOCAL_FLOXHUB_EMPTY} == 1 && -n "${FLOXHUB_TOKEN:-}" ]]; then
+      ENV_LOCAL_PROVIDED=" FLOXHUB_TOKEN"
+    fi
+    if [[ ${ENV_LOCAL_TRUNK_EMPTY} == 1 && -n "${TRUNK_USER_YAML:-}" ]]; then
+      ENV_LOCAL_PROVIDED="${ENV_LOCAL_PROVIDED} TRUNK_USER_YAML"
+    fi
+    unset -v ENV_LOCAL_FLOXHUB_EMPTY ENV_LOCAL_TRUNK_EMPTY
+    log "sourced ${ENV_LOCAL_ROOT}/.env.local (the host repo's credential channel; provided:${ENV_LOCAL_PROVIDED:- nothing})"
+  fi
+fi
+
+# The issue #40 opt-in stages: fatal under BOTH postures when their flag
+# requested them (the pytools contract — no aggregate outer row; each
+# stage records its own complete specific rows internally, the rwx-auth
+# shape). Their SKIP paths return 0 and never reach FAILED.
+if flox_bootstrap_stage; then :; else FAILED=1; fi
+if floxhub_token_stage; then :; else FAILED=1; fi
+if flox_activate_stage; then :; else FAILED=1; fi
+if trunk_merge_auth_stage; then :; else FAILED=1; fi
+
 if rwx_auth; then :; else maybe_fail; fi
 if roborev_setup; then :; else maybe_fail; fi
 
@@ -1048,11 +1599,13 @@ echo "=== setup finished $(date -u +%FT%TZ) ==="
 # provisioning or auth failure in the tools this workspace exists for must
 # fail setup loudly, not pass silently — every stage still ran and reported
 # above, so this is loud-and-late, never an early abort. Under
-# STARTUP_BEST_EFFORT=1 only a target-class Python 3.11 failure or a
-# pytools-stage failure (the requested-tools requirement, issue #44)
-# reaches this exit; tool FAIL rows were recorded and the run exits 0 (the
-# gtm-sdk#702 idiom this repo's settings.toml contracts for). The error
-# goes to the original stderr (fd 4) as well as the log.
+# STARTUP_BEST_EFFORT=1 only a target-class Python 3.11 failure, a
+# pytools-stage failure (the requested-tools requirement, issue #44), or
+# a failure in the issue #40 opt-in stages when their flags requested
+# them (the same contract) reaches this exit; tool FAIL rows were recorded
+# and the run exits 0 (the gtm-sdk#702 idiom this repo's settings.toml
+# contracts for). The error goes to the original stderr (fd 4) as well as
+# the log.
 if [[ "${FAILED}" != 0 ]]; then
   log "error: setup finished with FAIL rows — see the summary and $SETUP_LOG"
   echo "error: setup finished with FAIL rows — see the summary and $SETUP_LOG" >&4 || true

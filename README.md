@@ -48,7 +48,7 @@ definitive count, not this sentence; for the narrative writeup, see
 | 4 | **H4 (the fork in the road):** an unauthenticated sandbox can fetch a package from a project-controlled FloxHub catalog (`flox install <owner>/<pkg>`) | Phase A preflight — decides whether token plumbing (§6) is needed | **SKIP** — resolved (#11): expected. Bare `flox publish` is private-by-default; §6 token plumbing is needed |
 | 5 | **H2 (control, opt-in):** the `bd.flake = "github:gastownhall/beads/v1.1.0"` source build reproduces the `/homeless-shelter` purity failure on this sandbox, confirming root-cause attribution | "Problem" section repro | **PASS** — target class confirmed to share the defect |
 | 6 | **Phase D' prototype (opt-in):** an authenticated sandbox (`scripts/floxhub-login.sh`) can `flox activate` a manifest whose `[install]` references the published `pkg-path` (`envs/floxhub-consume`) — the real gtm-sdk consumption pattern, not Stage 4's ad hoc `flox install` | #445 §6 — proves the auth-token recipe before porting it to gtm-sdk | opt-in, not yet run by default |
-| 7 | **Phase D MVP (opt-in):** `scripts/floxhub-provision.sh` (Infisical-or-env `FLOXHUB_TOKEN` → `FLOX_FLOXHUB_TOKEN` env → `flox activate`, flox's documented CI pattern — no `flox auth login`, no keyring state) against `envs/floxhub-provision`, a *combined* manifest — the same 5 catalog tools plus real `elvis/bd`/`elvis/roborev` packages published from `envs/repackage`, not Stage 6's trivial smoke package | #445 §9 / issue #40 — the executable reference for the startup script's deferred flox stages, proven here first | opt-in, PASS on `aarch64-darwin` and on `x86_64-linux` (GHA staging check, 2026-08-05); `aarch64-linux` out of scope (see [Known scope reductions](#known-scope-reductions)) |
+| 7 | **Phase D MVP (opt-in):** `scripts/floxhub-provision.sh` (Infisical-or-env `FLOXHUB_TOKEN` → `FLOX_FLOXHUB_TOKEN` env → `flox activate`, flox's documented CI pattern — no `flox auth login`, no keyring state) against `envs/floxhub-provision`, a *combined* manifest — the same 5 catalog tools plus real `elvis/bd`/`elvis/roborev` packages published from `envs/repackage`, not Stage 6's trivial smoke package | #445 §9 / issue #40 — proven here first; the recipe the startup script's STARTUP_FLOX_ENV stages now carry, with this script as the harness/by-hand form | opt-in, PASS on `aarch64-darwin` and on `x86_64-linux` (GHA staging check, 2026-08-05); `aarch64-linux` out of scope (see [Known scope reductions](#known-scope-reductions)) |
 
 ## Layout
 
@@ -59,9 +59,9 @@ envs/flake-repro/     H2: the failing bd flake pin, nothing else (opt-in stage)
 envs/floxhub-consume/ Phase D' prototype: [install] pkg-path = "elvis/conductor-workspace-floxhub-01" (opt-in stage 6, needs auth)
 envs/floxhub-provision/ Phase D MVP: [install] the 5 catalog tools + elvis/bd + elvis/roborev (opt-in stage 7, needs auth)
 scripts/sandbox-test.sh   the harness — runs all stages, never hard-fails
-scripts/floxhub-provision.sh  Phase D MVP setup-script recipe (token → FLOX_FLOXHUB_TOKEN env → `flox activate`; the activated manifest defaults to envs/floxhub-provision and is redirectable via FLOXHUB_ACTIVATE_DIR to any repo's committed .flox env)
-scripts/trunk-merge-auth.sh  headless `trunk merge` auth: provisions ~/.cache/trunk/user.yaml from Infisical TRUNK_USER_YAML (never clobbers an existing login; the executable reference for the deferred trunk-merge-auth stage, issue #40)
-scripts/conductor-startup-script-cloud.sh  the single workspace startup script: pinned roborev/trunk/rwx + python3.11 for the AL2023 class + opt-in uv/pytest/reflex (issue #44) + rwx auth + roborev config/daemon (reviews on demand with --wait, never a background auto-review hook) — wired into this repo's setup, and paste-ready for other repos' workspaces
+scripts/floxhub-provision.sh  Phase D MVP setup-script recipe (token → FLOX_FLOXHUB_TOKEN env → `flox activate`; the activated manifest defaults to envs/floxhub-provision and is redirectable via FLOXHUB_ACTIVATE_DIR to any repo's committed .flox env) — the harness/by-hand form of the token+activation recipe the startup script's STARTUP_FLOX_ENV stages carry (wired, issue #40)
+scripts/trunk-merge-auth.sh  headless `trunk merge` auth: provisions ~/.cache/trunk/user.yaml from Infisical TRUNK_USER_YAML (never clobbers an existing login) — the by-hand form of the recipe the startup script's STARTUP_TRUNK_MERGE_AUTH stage carries; the container test asserts the two forms agree byte-for-byte (wired, issue #40)
+scripts/conductor-startup-script-cloud.sh  the single workspace startup script: pinned roborev/trunk/rwx + python3.11 for the AL2023 class + opt-in uv/pytest/reflex (issue #44) + the opt-in issue #40 workstreams (STARTUP_FLOX_ENV=1: flox bootstrap + FloxHub token + host-repo env activation; STARTUP_TRUNK_MERGE_AUTH=1: headless trunk merge login) + rwx auth + roborev config/daemon (reviews on demand with --wait, never a background auto-review hook) — wired into this repo's setup, and paste-ready for other repos' workspaces
 scripts/validate-pins.sh  pin-drift check: roborev/trunk pins vs the Flox manifests and the trunk preflight (CI)
 scripts/conductor-startup-script-cloud-test.sh  codified amazonlinux:2023 container verification of conductor-startup-script-cloud.sh (CI)
 prompts/conductor/   canonical cross-repo Conductor prompts (create-pr.md today)
@@ -137,30 +137,62 @@ and optionally `ROBOREV_AGENT` (default `claude-code`) — in the same
 settings' environment variables, never inline in the script. (The rwx
 pin's former sibling copy in gtm-sdk's conductor-workspace-setup.sh went
 away when that repo retired the script — this repo's startup script is now
-the pin's only executable home.)
+the pin's only executable home.) The script also carries the two opt-in
+issue #40 flags — `STARTUP_FLOX_ENV=1` (flox bootstrap + FloxHub token +
+host-repo env activation) and `STARTUP_TRUNK_MERGE_AUTH=1` (headless
+trunk merge login) — documented in the next section; flag-off runs SKIP
+those stages, so the paste surface is unchanged for repos that want
+neither.
 
-### Deferred startup-script stages (issue #40): recipes and helpers
+### Flox and trunk-merge startup stages (issue #40): wired
 
 Issue #40 consolidated the remaining gtm-sdk provisioning work
-(gtm-sdk#506 + #702) here; the recipes below are proven and their
-executable references live in this repo, but they are deliberately **not
-wired into `conductor-startup-script-cloud.sh` yet** — wiring them in is
-the tracked follow-up (issue #40), deferred by operator decision. gtm-sdk
-carries none of this: it deleted its own `conductor-workspace-setup.sh`
-entirely (gtm-sdk#944) and consumes no copy of this repo's script — its
+(gtm-sdk#506 + #702) here; the four stages that used to be "deferred
+recipes with executable helpers" are now **wired into
+`conductor-startup-script-cloud.sh`** behind two opt-in flags, the same
+gate shape as the pytools stage (issue #44). gtm-sdk carries none of
+this: it deleted its own `conductor-workspace-setup.sh` entirely
+(gtm-sdk#944) and consumes no copy of this repo's script — its
 workspaces provision via the paste-ready startup script above, and its
 Infisical project stores the two secrets these stages read.
 
-| Deferred stage | What it does | Proven recipe / executable reference |
-|---|---|---|
-| Flox bootstrap (Linux) | Install the flox rpm via dnf, create `/dev/fd`, hand-start `nix-daemon` (no systemd in these sandboxes) + a `~/.bashrc` self-heal guard | `scripts/sandbox-test.sh` Stage 1 (the harness form); the container form is `scripts/dagger_provision_test.py`'s `FLOX_BOOTSTRAP_CMD` |
-| FloxHub token | Resolve `FLOXHUB_TOKEN` (environment first, then Infisical — with a best-effort standalone infisical CLI install on dnf hosts, because auth must precede the activation that would otherwise provide infisical) and export it as `FLOX_FLOXHUB_TOKEN` — Flox's documented CI pattern; no `flox auth login`, no keyring write, so a sandbox is never persistently authenticated | `scripts/floxhub-provision.sh` (Stage 7, PASS on both supported systems) |
-| Host-repo Flox env | `flox activate --mode run` against the host repo's committed `.flox/env/manifest.toml`, putting its `bin/` on PATH for the session — private-catalog manifests (e.g. gtm-sdk's `elvis/roborev` pin) resolve through the token above | `scripts/floxhub-provision.sh` with `FLOXHUB_ACTIVATE_DIR=<repo>` (validated against a gtm-sdk checkout's `^0.63.0` manifest) |
-| Trunk merge auth | Provision `~/.cache/trunk/user.yaml` from Infisical `TRUNK_USER_YAML` — the only non-interactive `trunk merge` auth (no env-var token exists; `trunk login` is browser-only); never clobbers an existing login, shape-checked, 0600 | `scripts/trunk-merge-auth.sh`; research record: `findings/20261005-152730Z-trunk-merge-headless-auth.md` |
+| Flag / stage | What it does |
+|---|---|
+| `STARTUP_FLOX_ENV=1` → `flox-bootstrap` | Makes flox work on a fresh Linux sandbox: the stable-channel rpm via dnf (deb via apt-get elsewhere), `/dev/fd` created when the sandbox ships without it (gtm-sdk#279), the nix-daemon hand-started (systemd is offline in these sandboxes), plus a `~/.bashrc` self-heal guard so later shells re-start the daemon after a death. Reuse-if-present; SKIP off Linux without flox (no unattended install exists there). |
+| → `floxhub-token` | Resolves `FLOXHUB_TOKEN` (environment, the host repo's `.env.local`, then Infisical — with a best-effort standalone infisical CLI install first, because auth must precede the activation that would otherwise provide infisical) and exports it as `FLOX_FLOXHUB_TOKEN` — Flox's documented CI pattern. No `flox auth login`, no keyring write: the token is process-scoped and the sandbox is never persistently authenticated. Validated with `flox auth status`; a missing or rejected token FAILs loudly with instructions. |
+| → `flox-activate` | `flox activate --mode run` against the host repo's committed `.flox/env/manifest.toml` (or any env dir via `FLOXHUB_ACTIVATE_DIR`), gated on the validated token — private-catalog manifests (gtm-sdk's `elvis/roborev` pin) resolve through it, and unauthenticated activation is never attempted. Proves the run bin dir materialized under `.flox/run` and puts it on PATH for the rest of setup. SKIPs cleanly when the host repo has no flox env. |
+| `STARTUP_TRUNK_MERGE_AUTH=1` → `trunk-merge-auth` | Provisions `~/.cache/trunk/user.yaml` from `TRUNK_USER_YAML` (same lookup order) — the only non-interactive `trunk merge` auth (no env-var token exists; `trunk login` is browser-only). Never clobbers an existing login, shape-checked, 0600, never echoed. `trunk check` stays unauthenticated by design. Research record: `findings/20261005-152730Z-trunk-merge-headless-auth.md`. |
 
-Until the wiring lands, a workspace that needs the full surface runs the
-helpers by hand after the startup script (or an operator pastes the
-startup script plus the helper invocations into the setup field).
+Failure contract: both flags' stages are **fatal under both postures**
+(default and `STARTUP_BEST_EFFORT=1`) when the flag requested them — the
+pytools "a requested tool must never leave a workspace that looks ready
+without it" contract. Flag-off runs record one SKIP row per stage and the
+paste surface is exactly what it was before these stages existed
+(container-test RUN 1 asserts the gate SKIP rows). The flag-on stages
+also source the host repo's `.env.local` (gtm-sdk's documented Conductor
+credential channel for `INFISICAL_TOKEN`/`INFISICAL_PROJECT_ID` and
+operator-pre-placed secrets) before the lookups.
+
+**This repo's own `.conductor/settings.toml` deliberately does NOT set
+either flag**: authenticating a sandbox — even process-scoped — during
+this repo's own default provisioning would compromise the fresh,
+never-authenticated Stage 4 (H4) tester posture (issue #16's trap 5), and
+`scripts/sandbox-test.sh` already carries its own unauthenticated
+bootstrap. The flags are for the paste consumer: a gtm-sdk (or any
+private-catalog) workspace sets both flags plus the Infisical identity in
+its Conductor environment variables and gets the full issue #40
+acceptance surface — flox activated through the Infisical-fetched token
+and headless `trunk merge` — in one unattended provisioning run.
+
+The helpers remain, in the same relationship the trunk preflight and the
+startup script's inline trunk stage have (shared recipe, separate homes):
+`scripts/floxhub-provision.sh` is the harness + by-hand form (Stage 7 and
+the dagger provision check call it; `FLOXHUB_ACTIVATE_DIR` redirects it at
+any repo's env), and `scripts/trunk-merge-auth.sh` is the by-hand form
+for machines that need merge-queue access without re-running the whole
+startup script. The container test's RUN 18 asserts the wired stage and
+the helper install byte-identical files for the same `TRUNK_USER_YAML`,
+so the dual home cannot drift silently.
 
 ### Python dev tools: uv, pytest, Reflex (opt-in, issue #44)
 
@@ -384,7 +416,8 @@ Stage 6 reuses `scripts/floxhub-login.sh` verbatim to authenticate, then
 `flox activate --dir envs/floxhub-consume --mode run -- true` and checks
 the binary resolves under `.flox/run/.../bin`, mirroring Stage 2's
 verification. A PASS here is the auth-token recipe the startup script's
-deferred flox stages absorb (issue #40): obtain a token (from Infisical via
+STARTUP_FLOX_ENV stages carry (wired, issue #40): obtain a token (from
+Infisical via
 `infisical secrets get`, not a hand-copied value — see this repo's parent
 secrets-management convention) → export `FLOX_FLOXHUB_TOKEN` (the modern
 form floxhub-provision.sh uses; Stage 6 originally proved it as
@@ -395,7 +428,7 @@ lists the FloxHub `pkg-path`.
 
 Stage 6 proves the auth-token *mechanism* with a single trivial package.
 Issue #16 §9's Phase D MVP goes one step further: prove the *actual*
-recipe the startup script's deferred flox stages need (issue #40) — the 5
+recipe the startup script's STARTUP_FLOX_ENV stages need (issue #40) — the 5
 catalog tools plus real `bd`/`roborev` packages, obtained via one script
 rather than assembled by hand in the harness. `scripts/floxhub-provision.sh`
 is that script (token → `flox activate` against `envs/floxhub-provision`),
@@ -498,15 +531,17 @@ a repo secret of the same name.
 - **Stage 6 PASS (opt-in)** = the Phase D' auth-token recipe works
   end-to-end (`flox auth login --token-file` then `flox activate` against a
   `pkg-path` manifest) — this is the concrete mechanism the startup
-  script's deferred flox stages absorb (issue #40). A FAIL here means the
-  recipe itself needs rework before porting, not just the visibility
+  script's STARTUP_FLOX_ENV stages carry (wired, issue #40). A FAIL here
+  means the
+  recipe itself needs rework, not just the visibility
   conclusion from Stage 4.
 - **Stage 7 PASS (opt-in)** = the Phase D MVP setup script
   (`scripts/floxhub-provision.sh`) works end-to-end against the *combined*
   manifest (5 catalog tools + real `elvis/bd`/`elvis/roborev`), not just
   Stage 6's single trivial package — this is the actual recipe issue #16 §9
   scoped for gtm-sdk's (since-retired) setup script; the executable
-  reference now lives here for the deferred startup-script stages. It is expected
+  reference lives here for the startup script's stages (harness/by-hand
+  form). It is expected
   to PASS on both supported systems, `aarch64-darwin` and `x86_64-linux`;
   `aarch64-linux` is intentionally outside the Conductor support policy.
 

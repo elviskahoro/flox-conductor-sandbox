@@ -1,0 +1,4 @@
+# Written by conductor-startup-script-cloud.sh — reviews here are
+# on demand and blocking (roborev review --wait); no post-commit
+# auto-review hook is installed (see that script for the reasoning).
+agent = "claude-code"
