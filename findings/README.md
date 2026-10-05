@@ -39,6 +39,15 @@ and stages mean, and how to produce a new run.
   fresh-cache env-pinned bootstrap runs fully unauthenticated and that
   `.trunk/trunk.yaml` in the target repo is the one thing no env var can
   replace (`trunk init --yes-to-all` is the non-interactive bootstrap).
+- [Trunk merge headless auth](20261005-152730Z-trunk-merge-headless-auth.md) —
+  closes issue #40 Workstream B (gtm-sdk#702): confirms `trunk merge` has no
+  env-var auth (a set `TRUNK_TOKEN` is ignored; login is browser-only) but
+  proves the login file is a portable credential — a `user.yaml` copied or
+  Infisical-fetched into a fresh `TRUNK_CACHE` authenticates `trunk merge
+  status` against the real queue. Records the port into gtm-sdk's
+  `conductor-workspace-setup.sh` (`TRUNK_USER_YAML` from Infisical, never
+  clobbering an existing login) and the e2e Dagger check that proves it, plus
+  the expiry/rotation and "User not authorized ≠ broken token" traps.
 
 ## Runs so far, oldest to newest
 
