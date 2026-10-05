@@ -22,6 +22,14 @@ and stages mean, and how to produce a new run.
 - [Beads + Linear integration report](linear-beads-integration-report.md) —
   native integration findings, Linear team discovery, worktree database
   redirect hazard, and target-repository setup guidance.
+- [gtm-sdk#903 RWX consume-published-image smoke](gtm-903-rwx-consume-published-image-20261003.md) —
+  ad-hoc RWX validation (`.rwx/gtm-903-consume-published-image.yml`, not the
+  sandbox-test.sh harness) proving the #903 fix direction live from inside an
+  RWX task container: first-parent git-log image resolution, zero-flox
+  consumption of the GHA-published toolchain image, the awk-vs-cut provenance
+  A/B, and the private-GHCR authenticated pull. Also records two RWX
+  environment traps (anonymous git-https 401; empty task workspace on
+  cli-dispatched runs).
 
 ## Runs so far, oldest to newest
 
