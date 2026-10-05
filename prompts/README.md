@@ -125,10 +125,10 @@ from a removed source.
   ships one" — the links were dead outside gtm-sdk.
 - The "Integration with other skills" table was dropped: every entry linked to
   gtm-sdk-local skills.
-- Claims of the form "this repo aliases… / this repo mirrors source layout… /
-  this repo lands PRs through the Trunk Merge Queue" became repo-conditional:
-  the Trunk merge queue is stated as the ecosystem default with "check the
-  repo's agent instructions", and the test-mirroring example is generic.
+- Claims of the form "this repo aliases… / this repo mirrors source layout…"
+  became repo-conditional, and the test-mirroring example is generic. The
+  merge-queue submission step was removed: the prompt ends at PR creation
+  and never submits or merges.
 - `AGENTS.md`/`CLAUDE.md` references became "the repo's agent instructions
   (AGENTS.md/CLAUDE.md)".
 - The skill-announcement line ("I'm using the pr-pull-request-creator skill…")
