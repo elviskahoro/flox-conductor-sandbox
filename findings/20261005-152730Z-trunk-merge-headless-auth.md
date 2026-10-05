@@ -68,17 +68,18 @@ project from the operator machine's login file and validates.
 
 ## Ported where
 
-`gtm-sdk` branch `agent/conductor-flox-trunk-completion` (issue #40):
-
-- `scripts/conductor-workspace-setup.sh` provisions the launcher
-  (checksum-pinned, same pin as `.rwx/trunk-check.yml`) and the login file
-  from Infisical `TRUNK_USER_YAML` (name overridable via
-  `TRUNK_USER_YAML_SECRET_NAME`), never clobbering an existing login;
-- `.github/workflows/ci/conductor_provision_dagger.py` +
-  `conductor-provision-check.yml` prove the whole surface in one cold
-  amazonlinux:2023 run (Infisical identity in, FloxHub token + trunk login
-  fetched inside, `trunk check --all --ci` unauthenticated, `trunk merge
-  status` headless).
+Nowhere outside this repo — by design. gtm-sdk **retired** its
+`conductor-workspace-setup.sh` entirely (PR #944): conductor workspace
+logic is owned by this repo, whose `scripts/conductor-startup-script-cloud.sh`
+is the single source of truth for workspace provisioning (paste-ready into
+the Conductor GUI setup field per this repo's README). This findings doc is
+the canonical reference for the trunk-merge-auth recipe; the two Infisical
+secrets it depends on (`TRUNK_USER_YAML`, and
+`FLOXHUB_TOKEN` for the sibling FloxHub-token pattern) are stored in
+gtm-sdk's Infisical project (dev environment). gtm-sdk's PR keeps only its
+own Flox manifest port (`elvis/roborev` `^0.63.0` on both supported
+systems) and the checksum-pinned trunk launcher installs in its
+`.rwx/trunk-check.yml` — CI surfaces, not workspace-setup logic.
 
 ## Traps checklist
 
