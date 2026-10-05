@@ -115,6 +115,11 @@ from a removed source.
 
 - Roborev is invoked as the plain executable (`roborev review --wait`), not
   the `git roborev` alias — aliases may not exist in cloud sandboxes.
+- Roborev reviews are always blocking, never fire-and-forget: a bare
+  `roborev review` (or a leftover post-commit auto-review hook) only
+  enqueues a background daemon job and returns before a verdict exists —
+  an enqueue is not a verdict, and a stray enqueue is blocked on
+  (`roborev wait`, or re-run with `--wait`) before the gate can pass.
 - Relative skill links (`../cli-roborev-guide/SKILL.md`,
   `../trunk-cli-guide/SKILL.md`) became "consult the repo's guide skill if it
   ships one" — the links were dead outside gtm-sdk.
