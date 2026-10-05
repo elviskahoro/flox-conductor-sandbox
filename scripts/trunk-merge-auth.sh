@@ -20,7 +20,13 @@
 #   bash scripts/trunk-merge-auth.sh
 #
 # (TRUNK_USER_YAML may also be pre-set in the environment; see the lookup
-# order below.)
+# order below. Two transport details: a sourced .env file cannot carry raw
+# newlines, so the single-quoted escaped form -- newlines written as
+# backslash-n, the .env.cloud convention -- is accepted and expanded here,
+# while a value that already holds real newlines (Conductor's multiline
+# env settings, an Infisical secret) passes through untouched; and the
+# install path is TRUNK_CACHE-aware, because the CLI reads its login from
+# whichever cache dir it is pointed at, not always ~/.cache/trunk.)
 #
 # Login-file lifecycle: an operator runs `trunk login` once on an
 # authenticated machine and stores the file's contents in Infisical as
@@ -54,7 +60,10 @@
 # real queue. `trunk check` needs none of this, by design.
 set -euo pipefail
 
-TRUNK_USER_YAML_PATH="${HOME}/.cache/trunk/user.yaml"
+# TRUNK_CACHE-aware: the CLI reads its login from whichever cache dir it
+# is pointed at, so the file must land there — writing to ~/.cache/trunk
+# while TRUNK_CACHE points elsewhere would authenticate nothing.
+TRUNK_USER_YAML_PATH="${TRUNK_CACHE:-${HOME}/.cache/trunk}/user.yaml"
 
 if [[ -f "${TRUNK_USER_YAML_PATH}" ]]; then
   echo "trunk login already present at ${TRUNK_USER_YAML_PATH} — leaving it untouched (re-run after removing it to force re-provisioning)."
@@ -78,8 +87,17 @@ fi
 
 if [[ -z "${TRUNK_USER_YAML:-}" ]]; then
   echo "error: TRUNK_USER_YAML is not set, and no login file was found via Infisical (secret name: ${TRUNK_USER_YAML_SECRET_NAME:-TRUNK_USER_YAML})." >&2
-  echo "On an authenticated machine, run 'trunk login', then store the contents of ~/.cache/trunk/user.yaml as the TRUNK_USER_YAML secret (Infisical) and re-run." >&2
+  echo "On an authenticated machine, run 'trunk login', then set TRUNK_USER_YAML to the contents of ~/.cache/trunk/user.yaml (single-quoted escaped form from a sourced .env file, raw multiline from Conductor env settings, or the Infisical secret) and re-run." >&2
   exit 1
+fi
+
+# Expand the escaped form: a sourced .env file cannot carry raw newlines,
+# so the .env.cloud convention writes them as backslash-n inside a
+# single-quoted value. The substitution fires only on that two-character
+# sequence — a value already holding real newlines passes through
+# untouched.
+if [[ "${TRUNK_USER_YAML}" == *'\n'* ]]; then
+  TRUNK_USER_YAML="${TRUNK_USER_YAML//\\n/$'\n'}"
 fi
 
 # Write through a 0600 temp file, shape-check it, then atomically install.
@@ -91,7 +109,8 @@ if ! grep -q "trunk_user" "${TRUNK_YAML_TMP}"; then
   echo "error: the resolved TRUNK_USER_YAML did not look like a trunk login file (no trunk_user key) — not installed. Check the secret's value." >&2
   exit 1
 fi
-mkdir -p "${HOME}/.cache/trunk"
-chmod 700 "${HOME}/.cache/trunk" 2>/dev/null || true
+TRUNK_USER_YAML_DIR="$(dirname "${TRUNK_USER_YAML_PATH}")"
+mkdir -p "${TRUNK_USER_YAML_DIR}"
+chmod 700 "${TRUNK_USER_YAML_DIR}" 2>/dev/null || true
 mv -f "${TRUNK_YAML_TMP}" "${TRUNK_USER_YAML_PATH}"
 echo "provisioned headless trunk login at ${TRUNK_USER_YAML_PATH} (0600) from ${TRUNK_LOGIN_SOURCE:-the environment}"
