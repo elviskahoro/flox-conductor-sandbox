@@ -447,7 +447,7 @@ rwx_install() {
 # --- python3.11 -------------------------------------------------------------
 python311_stage() {
   # Single probe, no version-string parsing: exit status says whether the
-  # current `python3` is already >= 3.11 (also covers python3 missing).
+  # current python3 is already >= 3.11 (also covers python3 missing).
   if python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
     record PASS python3.11 "already $(python3 --version 2>&1 | head -1 || true) ($(command -v python3))"
     return 0
@@ -540,8 +540,8 @@ python311_stage() {
 # --- python dev tools: uv + pytest + reflex (opt-in) -------------------------
 # Issue #44: a fresh Conductor cloud workspace has python3 but none of the
 # Python dev tools agents need — `uv` and `reflex` are not on PATH (the
-# Flox manifests' uv is process-scoped, activation-only) and `python3 -m
-# pytest` fails with "No module named pytest". This stage provisions all
+# Flox manifests' uv is process-scoped, activation-only) and python3 -m
+# pytest fails with "No module named pytest". This stage provisions all
 # three into the persistent workspace environment when (and only when)
 # STARTUP_PY_DEV_TOOLS=1 asked for them; it runs after python311_stage so
 # the AL2023 class's system 3.11 is already in place by then.
@@ -566,7 +566,7 @@ python311_stage() {
 #             are ~/.conductor-pytools/bin/python -m pytest and
 #             ~/.conductor-pytools/bin/python -c 'import reflex'. Per-tool
 #             isolated shims (uv tool install) were rejected: they would
-#             leave `python -m pytest` and `import reflex` with no single
+#             leave python -m pytest and import reflex with no single
 #             home. Installing into the system python3's site-packages was
 #             rejected too: same bare invocation but dnf-owned interpreter
 #             pollution and PEP 668 friction, and it cannot stay clean on
