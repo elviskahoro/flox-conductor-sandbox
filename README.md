@@ -60,10 +60,9 @@ envs/floxhub-consume/ Phase D' prototype: [install] pkg-path = "elvis/conductor-
 envs/floxhub-provision/ Phase D MVP: [install] the 5 catalog tools + elvis/bd + elvis/roborev (opt-in stage 7, needs auth)
 scripts/sandbox-test.sh   the harness — runs all stages, never hard-fails
 scripts/floxhub-provision.sh  Phase D MVP setup-script recipe (token → login → activate envs/floxhub-provision)
-scripts/conductor-cloud-install.sh  cloud-sandbox provisioning: python3.11 + priority CLIs (roborev, trunk, rwx), wired into setup before the harness
-scripts/conductor-startup-script.sh  generic repo-agnostic workspace setup (pinned roborev + rwx + auth/init) — paste its contents into the Conductor GUI setup field for repos with no committed setup
-scripts/validate-pins.sh  pin-drift check: roborev/trunk/rwx pins vs the Flox manifests and the generic setup script (CI)
-scripts/conductor-cloud-install-test.sh  codified amazonlinux:2023 container verification of conductor-cloud-install.sh (CI)
+scripts/conductor-startup-script-cloud.sh  the single workspace startup script: pinned roborev/trunk/rwx + python3.11 for the AL2023 class + rwx auth + roborev init/hooks — wired into this repo's setup, and paste-ready for other repos' workspaces
+scripts/validate-pins.sh  pin-drift check: roborev/trunk pins vs the Flox manifests and the trunk preflight (CI)
+scripts/conductor-startup-script-cloud-test.sh  codified amazonlinux:2023 container verification of conductor-startup-script-cloud.sh (CI)
 prompts/conductor/   canonical cross-repo Conductor prompts (create-pr.md today)
                     — see prompts/README.md; installed into .conductor/settings.toml
                     by scripts/install-conductor-prompts.py, drift-checked in CI
@@ -98,26 +97,35 @@ TEST_AUTH_PLUMBING=1 FLOXHUB_TOKEN=<token> bash scripts/sandbox-test.sh  # opt-i
 TEST_FLOXHUB_PROVISION=1 FLOXHUB_TOKEN=<token> bash scripts/sandbox-test.sh  # opt-in Phase D MVP (stage 7) — permanently authenticates this sandbox
 ```
 
-### Generic roborev + rwx setup for other repos' workspaces
+### The startup script — this repo's setup, paste-ready for other repos
 
-`scripts/conductor-startup-script.sh` is the repo-agnostic distillation
-of the provisioning recipe: the same pinned, checksum-verified roborev and
-rwx binaries as `conductor-cloud-install.sh`, plus the pieces that make
-them work rather than merely exist — `RWX_ACCESS_TOKEN` validated before it
-is atomically persisted to `~/.config/rwx/accesstoken` (a bad token never
-overwrites a good one), `roborev init` for unconfigured repos plus an
-independently-ensured post-commit hook (when `core.hooksPath` points at a
-machine-global hooks dir, init itself is skipped — roborev init installs
-the hook — and nothing is ever written there; a foreign hook is never
-replaced), and an agent smoke check. Conductor has no API for
-setting a workspace's setup script, so for repos without a committed
-`.conductor/settings.toml` setup, paste the file's contents into the
-setup-script field in the Conductor GUI (stored as `scripts.setup`). Set
-`RWX_ACCESS_TOKEN` — and optionally `ROBOREV_AGENT` (default
-`claude-code`) — in the same settings' environment variables, never
-inline in the script. `scripts/validate-pins.sh` cross-checks its pins
-against `conductor-cloud-install.sh` in CI. It is deliberately not wired
-into this repo's own `scripts.setup`, which is repo-specific.
+`scripts/conductor-startup-script-cloud.sh` is the single provisioning
+script (it replaced the former conductor-cloud-install.sh +
+conductor-startup-script.sh pair, whose duplicated pins were exactly the
+drift class `scripts/validate-pins.sh` was built to catch): the pinned,
+checksum-verified roborev, trunk, and rwx binaries, Python 3.11 on the
+AL2023 sandbox class (whose system python3 is 3.9 while pyproject.toml
+requires >=3.11; reuse-if-present and SKIP elsewhere, so pasting it into a
+repo that needs neither costs nothing), plus the pieces that make the
+tools work rather than merely exist — `RWX_ACCESS_TOKEN` validated before
+it is atomically persisted to `~/.config/rwx/accesstoken` (a bad token
+never overwrites a good one), `roborev init` for unconfigured repos plus
+an independently-ensured post-commit hook (when `core.hooksPath` points
+at a machine-global hooks dir, init itself is skipped — roborev init
+installs the hook — and nothing is ever written there; a foreign hook is
+never replaced), and an agent smoke check. This repo's
+`.conductor/settings.toml` runs it directly as its setup's provisioning
+step. For repos without a committed `.conductor/settings.toml` setup,
+paste the file's contents into the setup-script field in the Conductor
+GUI (stored as `scripts.setup`) — Conductor exposes no API for setting
+that field, so the GUI paste is the only mechanism; the file keeps the
+paste-safety constraints (no triple-double-quotes, no backslash
+line-continuations) that Conductor's TOML serialization requires, and
+`scripts/validate-pins.sh` enforces them in CI. Set `RWX_ACCESS_TOKEN` —
+and optionally `ROBOREV_AGENT` (default `claude-code`) — in the same
+settings' environment variables, never inline in the script. The rwx
+pin's sibling copy in gtm-sdk's conductor-workspace-setup.sh is
+comment-synced (that repo is private, so no machine check reaches it).
 
 ### Standardized Conductor prompts for other repos' workspaces
 
@@ -131,7 +139,7 @@ TOML still said `git roborev` after gtm-sdk#921 fixed the `.md`). So the
 `scripts/install-conductor-prompts.py` is the only way they get into a
 repo's settings — preserving comments and unrelated keys, idempotent, with
 a `--self-test` behavior matrix and `--check` drift guard both wired into
-the `conductor-cloud-install checks` workflow for this repo, and available
+the `conductor-startup-script-cloud checks` workflow for this repo, and available
 to any consuming repo:
 
 ```bash

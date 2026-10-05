@@ -24,19 +24,21 @@ if ! trunk check --ci --no-fix --all; then
   exit 1
 fi
 
-# Python 3.11 + the priority CLIs (roborev, trunk, rwx) for this workspace
-# class: AL2023/Vercel sandboxes ship python3=3.9 while pyproject.toml
-# requires >=3.11, and nothing here provisions rwx at all. Runs before
-# sandbox-test.sh so the tools exist before the harness. CLI failures are
-# non-fatal and summarized (the gtm-sdk#702 fallback-installer idiom).
-# A Python 3.11 failure exits non-zero (the stated requirement), but the
-# harness below still runs first — setup tolerates that exit here and
-# fails at the very end instead (roborev review finding: a provisioning
-# failure must not block the harness findings).
-CLOUD_INSTALL_RC=0
-bash scripts/conductor-cloud-install.sh || CLOUD_INSTALL_RC=$?
-if [ "$CLOUD_INSTALL_RC" -ne 0 ]; then
-  echo "error: conductor-cloud-install.sh failed (exit $CLOUD_INSTALL_RC); continuing setup so the harness still runs, but setup will fail at the end" >&2
+# The single workspace startup script — pinned roborev/trunk/rwx, Python
+# 3.11 for this sandbox class (AL2023/Vercel sandboxes ship python3=3.9
+# while pyproject.toml requires >=3.11), rwx auth, and roborev
+# init/hooks. Runs before sandbox-test.sh so the tools exist before the
+# harness. STARTUP_BEST_EFFORT=1 keeps this repo's former cloud-install
+# contract (the gtm-sdk#702 fallback-installer idiom): a failed tool stage
+# is recorded and summarized but does not fail the workspace. Only a
+# Python 3.11 failure on this sandbox class exits non-zero (the stated
+# >=3.11 requirement), and setup tolerates that exit here and fails at
+# the very end instead (roborev review finding: a provisioning failure
+# must not block the harness findings).
+STARTUP_RC=0
+STARTUP_BEST_EFFORT=1 bash scripts/conductor-startup-script-cloud.sh || STARTUP_RC=$?
+if [ "$STARTUP_RC" -ne 0 ]; then
+  echo "error: conductor-startup-script-cloud.sh failed (exit $STARTUP_RC); continuing setup so the harness still runs, but setup will fail at the end" >&2
 fi
 # The install script's no-sudo fallback can land tools in ~/.local/bin,
 # which is NOT on later steps' default PATH — export it for the rest of
@@ -115,12 +117,12 @@ fi
 echo "=== setup finished $(date -u +%FT%TZ) ==="
 
 # Deferred provisioning failure (roborev review finding): a
-# conductor-cloud-install.sh failure earlier in setup must not block the
-# harness above, but it must still fail setup — Python 3.11 is a hard
+# conductor-startup-script-cloud.sh failure earlier in setup must not block
+# the harness above, but it must still fail setup — Python 3.11 is a hard
 # requirement of this workspace (pyproject.toml requires >=3.11). Fail
 # here, after every step has had its chance to run and report.
-if [ "$CLOUD_INSTALL_RC" -ne 0 ]; then
-  echo "error: setup finished with provisioning failures (conductor-cloud-install.sh exit $CLOUD_INSTALL_RC); see $HOME/.conductor-setup.log" >&2
+if [ "$STARTUP_RC" -ne 0 ]; then
+  echo "error: setup finished with provisioning failures (conductor-startup-script-cloud.sh exit $STARTUP_RC); see $HOME/.conductor-setup.log" >&2
   exit 1
 fi
 """

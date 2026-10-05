@@ -1,23 +1,41 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2312  # $(...) in assignments and rows: stage failures surface through the stages' own || returns and the summary, not by killing the script mid-row
-# Generic, repo-agnostic Conductor workspace setup: roborev + rwx.
+# The single Conductor workspace startup script: roborev + trunk + rwx +
+# Python 3.11, then the auth/init that makes them work rather than merely
+# exist.
 #
-# This is the canonical, version-controlled copy of the paste-ready setup
-# script for Conductor workspaces in repos that have no committed
-# .conductor/settings.toml setup of their own: open the workspace/repo
-# settings in the Conductor GUI and paste this file's contents into the
-# setup-script field (stored there as scripts.setup — "Shell script run when
-# a workspace is created"). Conductor exposes no API for setting that field,
-# so the GUI paste is the only mechanism; this file exists so the pasted
-# text is reviewable and pin-checked instead of hand-carried. It also runs
-# standalone, unchanged:
+# Two consumers, one file (it replaced the former conductor-cloud-install.sh
+# + conductor-startup-script.sh pair, whose duplicated pins were exactly the
+# drift class scripts/validate-pins.sh was built to catch — one file is the
+# stronger guarantee):
 #
-#   bash scripts/conductor-startup-script.sh
+#   1. This repo's own workspaces: .conductor/settings.toml runs it before
+#      the harness. On the AL2023/Vercel sandbox class Conductor cloud
+#      provisions (https://vercel.com/docs/sandbox/concepts/runtimes —
+#      `dnf` for system packages, passwordless `sudo`, code running as the
+#      `vercel-sandbox` user, sandbox proxy CA trusted system-wide so plain
+#      `curl` works), AL2023's default `python3` is 3.9 while pyproject.toml
+#      requires >=3.11 — hence the python stage. Vercel deprecates those
+#      runtimes in favor of managed images, but Conductor cloud is still on
+#      the AL2023 class, so `dnf` stays the system-package path.
 #
-# Repo-agnostic by design: no repo paths, no repo scripts, nothing that
-# assumes a particular project — safe in any workspace, local or cloud.
-# (This repo's own .conductor/settings.toml deliberately does NOT call it:
-# its setup is repo-specific — the flox harness, infisical, FloxHub.)
+#   2. Any other repo's workspaces: the canonical, version-controlled copy
+#      of the paste-ready setup script for repos that have no committed
+#      .conductor/settings.toml setup of their own — open the workspace/repo
+#      settings in the Conductor GUI and paste this file's contents into the
+#      setup-script field (stored there as scripts.setup — "Shell script run
+#      when a workspace is created"). Conductor exposes no API for that
+#      field, so the GUI paste is the only mechanism; this file exists so
+#      the pasted text is reviewable and pin-checked instead of
+#      hand-carried. It also runs standalone, unchanged:
+#
+#        bash scripts/conductor-startup-script-cloud.sh
+#
+#      Repo-agnostic by design: no repo paths, no repo scripts, nothing that
+#      assumes a particular project — safe in any workspace, local or cloud.
+#      The trunk and python stages are reuse-if-present and SKIP cleanly off
+#      the target class, so pasting this into a repo that needs neither
+#      costs nothing.
 #
 # What "work" means here, beyond the binaries landing on PATH:
 #   roborev  installed (pinned, checksum-verified) + `git roborev` alias +
@@ -26,26 +44,56 @@
 #            core.hooksPath points at a machine-global hooks dir (often
 #            another tool's, e.g. git-lfs's), init is skipped too — roborev
 #            init installs the hook itself — and no hook is ever written.
+#   trunk    the official launcher, content-pinned by sha256: trunk
+#            publishes no versioned launcher URL (trunk.io/releases/trunk
+#            is latest-only), but the artifact is a portable bash script
+#            that has been byte-stable since 2024-11-06 (S3 last-modified) —
+#            fail closed on any upstream change, bump deliberately. What the
+#            launcher then fetches is trunk's own managed update channel,
+#            out of this script's control. Same download as
+#            scripts/conductor-trunk-preflight.sh, which this repo's setup
+#            runs first, so this stage is normally verify-only reuse there.
 #   rwx      installed (pinned, checksum-verified) + token validated BEFORE
 #            it is persisted (a bad token never overwrites a good one), so
-#            every later shell is authenticated, not just setup
+#            every later shell is authenticated, not just setup.
+#   python3.11  installed ALONGSIDE 3.9, never as a replacement, on the
+#            AL2023 class only (see the stage body for the shadow-safety
+#            facts); SKIP elsewhere. The only stage whose failure is a
+#            stated requirement rather than a nice-to-have.
 #
-# Pins: ROBOREV_PIN/RWX_PIN and every sha256 below are deliberately
-# duplicated from scripts/conductor-cloud-install.sh (the repo-specific
-# provisioner of the same binaries) — scripts/validate-pins.sh cross-checks
-# them in CI; bump both files together, per its bump runbook.
+# Pins: ROBOREV_PIN/RWX_PIN and every sha256 below are the single in-repo
+# home of those constants. The roborev pin is kept in sync with
+# envs/repackage/.flox/env/manifest.toml's [build.roborev] and
+# envs/floxhub-provision's roborev.version — scripts/validate-pins.sh
+# cross-checks them in CI; bump runbook: new pin + sha256s from the
+# release's checksums file, then republish the FloxHub package — don't
+# hand-edit any lock. The rwx block's sibling copy in gtm-sdk's
+# conductor-workspace-setup.sh (its PR #699) is comment-synced only — that
+# repo is private, so no machine check can reach it; bump both together.
 #
-# Paste-safety constraints (load-bearing for the GUI field, which Conductor
-# serializes into a TOML multiline string): NO triple-double-quote sequences
-# and NO backslash line-continuations anywhere in this file — a future editor
-# must keep long commands on one line. Same sandbox rules as every
-# provisioning
-# script here: no process substitution (sandboxes can lack /dev/fd and
-# `set -e` then kills the script silently); log to ~/.conductor-setup.log via
-# a plain append redirect, not tee; idempotent (reuse-if-present, safe to
-# re-run); one WORK dir cleaned by a single EXIT trap; per-CLI failures
-# recorded and summarized, with the hard failure deferred to the very end so
-# every step still gets a chance to run and report.
+# Paste-safety constraints (load-bearing for consumer 2, because Conductor
+# serializes the GUI setup field into a TOML multiline string): NO
+# triple-double-quote sequences and NO backslash line-continuations
+# anywhere in this file — a future editor must keep long commands on one
+# line. Same sandbox rules as every provisioning script here: no process
+# substitution (sandboxes can lack /dev/fd and `set -e` then kills the
+# script silently, gtm-sdk#279); log to ~/.conductor-setup.log via a plain
+# append redirect, not tee; idempotent (reuse-if-present, safe to re-run);
+# one WORK dir cleaned by a single EXIT trap; per-stage failures recorded
+# and summarized with the hard failure deferred to the very end so every
+# stage still gets its chance to run and report.
+#
+# Failure semantics — two reviewed contracts, one file, one opt-in flag:
+# by default any FAIL row fails the run (deferred to the end), the posture
+# the paste-ready consumer was reviewed with: a roborev/rwx/auth failure
+# in the tools a workspace exists for must fail setup loudly, not pass
+# silently. This repo's own settings.toml instead opts into the
+# best-effort posture its former cloud-install carried (gtm-sdk#702's
+# fallback-installer idiom) by exporting STARTUP_BEST_EFFORT=1: then the
+# tool stages (roborev/trunk/rwx install, rwx auth, roborev init) record
+# their FAIL rows but do not fail the run, and only a Python 3.11 failure
+# on the AL2023 target class (the stated >=3.11 requirement) exits
+# non-zero.
 #
 # Environment variables (set them in Conductor's environment variables
 # settings — never inline them in this script: settings values are plain
@@ -57,6 +105,9 @@
 #                     claude-code, gemini, copilot, opencode, cursor, kiro,
 #                     kilo. Defaults to claude-code, which Conductor cloud
 #                     sandboxes ship pre-authenticated.
+#   STARTUP_BEST_EFFORT  set to 1 (this repo's settings.toml does) to make
+#                     the tool stages recorded-but-non-fatal; see the
+#                     failure-semantics section above.
 set -euo pipefail
 
 # Save the original stdout/stderr as fd 3/4 BEFORE the log redirect: the
@@ -64,8 +115,12 @@ set -euo pipefail
 # setup is visible wherever its output is presented, not only in the log
 # file. Pure fd duplication — no process substitution (the /dev/fd rule).
 exec 3>&1 4>&2
+# APPEND, never truncate: this repo's .conductor/settings.toml already
+# appends everything to this same file, and a standalone/pasted run must
+# not wipe an earlier run's log either — each run's "=== setup started ==="
+# header keeps the appended log readable run-by-run.
 SETUP_LOG="$HOME/.conductor-setup.log"
-: > "$SETUP_LOG"
+touch "$SETUP_LOG"
 exec >> "$SETUP_LOG" 2>&1
 echo "=== setup started $(date -u +%FT%TZ) ==="
 
@@ -76,6 +131,11 @@ export PATH="${HOME}/.local/bin:${PATH}"
 LOCAL_BIN="/usr/local/bin"
 RESULTS=""
 FAILED=0
+# Tools that had to land in ~/.local/bin because /usr/local/bin was not
+# writable and no passwordless sudo existed. They are NOT on the default
+# PATH of later setup steps; the summary warns about them and callers must
+# export ~/.local/bin (this repo's settings.toml does).
+LOCAL_FALLBACK_TOOLS=""
 
 WORK="$(mktemp -d)"
 cleanup() { rm -rf "${WORK}"; }
@@ -88,7 +148,7 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-log() { echo "[workspace-setup] $*"; }
+log() { echo "[startup] $*"; }
 
 record() { # <status> <name> <detail> — one summary row + one log line
   RESULTS="${RESULTS}
@@ -96,9 +156,21 @@ record() { # <status> <name> <detail> — one summary row + one log line
   log "[${1}] ${2} — ${3}"
 }
 
+# note_placement <path>: record tools whose install landed in the
+# ~/.local/bin fallback (see LOCAL_FALLBACK_TOOLS above).
+note_placement() {
+  case "$1" in
+  "${HOME}/.local/bin/"*)
+    LOCAL_FALLBACK_TOOLS="${LOCAL_FALLBACK_TOOLS} $(basename "$1")"
+    ;;
+  esac
+}
+
 # install_bin <src> <name>: place a file as an executable under
-# /usr/local/bin when root or passwordless sudo allows it, else under
-# ~/.local/bin. Echoes the installed path on success (nothing on failure).
+# /usr/local/bin (the convention this repo's setup already uses for
+# roborev/infisical/trunk) when root or passwordless sudo allows it,
+# else under ~/.local/bin. Echoes the installed path on success (nothing on
+# failure).
 install_bin() {
   local src="$1" name="$2" dir
   if [[ "$(id -u)" == 0 || -w "${LOCAL_BIN}" ]]; then
@@ -118,7 +190,9 @@ install_bin() {
 
 # link_bin <target> <name>: symlink <name> -> <target> next to <target>
 # (e.g. git-roborev -> roborev, so `git roborev ...` resolves as a native
-# git subcommand).
+# git subcommand). Derives the directory from <target> itself: callers run
+# install_bin inside command substitution, so any directory state set there
+# never propagates out.
 link_bin() {
   local target="$1" name="$2" dir
   dir="$(dirname "${target}")"
@@ -146,9 +220,11 @@ checksum_verify() {
   fi
 }
 
-# --- roborev --------------------------------------------------------------
+# --- roborev ----------------------------------------------------------------
 # Pinned release binary, fail-closed sha256 (same pins the sandbox repos
-# cross-check in CI). Reuse-if-present keeps re-runs cheap.
+# cross-check in CI). Reuse-if-present keeps re-runs cheap. No FloxHub
+# deferral here, deliberately (roborev review finding): this pinned binary
+# is the guaranteed floor, installed immediately.
 ROBOREV_PIN="0.63.0"
 
 roborev_install() {
@@ -193,6 +269,7 @@ roborev_install() {
     log "error: could not place the roborev binary in a bin directory"
     return 1
   fi
+  note_placement "${path}"
   link_bin "${path}" git-roborev || true
   hash -r 2>/dev/null || true
   if ! command -v roborev >/dev/null 2>&1; then
@@ -202,10 +279,58 @@ roborev_install() {
   record PASS roborev "v${ROBOREV_PIN} (${path})"
 }
 
-# --- rwx ------------------------------------------------------------------
+# --- trunk ------------------------------------------------------------------
+# Same launcher download as scripts/conductor-trunk-preflight.sh (which
+# .conductor/settings.toml runs before this script in this repo, so this
+# stage is normally verify-only reuse there; the preflight pins the same
+# checksum — scripts/validate-pins.sh cross-checks the two constants). Kept
+# inline so the script stays a self-contained recipe for pasting (the
+# gtm-sdk#702 porting rationale).
+TRUNK_LAUNCHER_URL="https://trunk.io/releases/trunk"
+TRUNK_LAUNCHER_SHA256="89fbdd8c7b63649eeb1479415757b898903c041e73b49b78028dbd64eca3087a"
+# Bump runbook: trunk publishes no versioned launcher URL, so re-download
+# ${TRUNK_LAUNCHER_URL} by hand, re-hash it, and update this constant (and
+# the preflight's copy) in the same commit.
+
+trunk_stage() {
+  if command -v trunk >/dev/null 2>&1; then
+    record PASS trunk "reused $(command -v trunk) ($(trunk --version 2>&1 | head -1 || true))"
+    return 0
+  fi
+  local launcher="${WORK}/trunk"
+  if ! curl -fsSL "${TRUNK_LAUNCHER_URL}" -o "${launcher}"; then
+    return 1
+  fi
+  if ! checksum_verify "${TRUNK_LAUNCHER_SHA256}" "${launcher}"; then
+    return 1
+  fi
+  chmod 755 "${launcher}"
+  local path
+  path="$(install_bin "${launcher}" trunk || true)"
+  if [[ -z "${path}" ]]; then
+    log "error: could not place the trunk launcher in a bin directory"
+    return 1
+  fi
+  note_placement "${path}"
+  hash -r 2>/dev/null || true
+  # The launcher bootstraps (downloads the real binary) on first invocation;
+  # that cold start was observed to fail transiently once in a container
+  # test, passing on the very next run — retry once before declaring
+  # failure instead of recording a spurious FAIL on a fresh sandbox.
+  if ! trunk --version >/dev/null 2>&1; then
+    sleep 5
+    if ! trunk --version >/dev/null 2>&1; then
+      log "error: installed trunk launcher failed its version check (twice)"
+      return 1
+    fi
+  fi
+  record PASS trunk "launcher at ${path} ($(trunk --version 2>&1 | head -1 || true))"
+}
+
+# --- rwx --------------------------------------------------------------------
 # Pinned static release binary (RWX is not in nixpkgs/Flox; their docs
 # recommend pinning for scripted use). Reuse-if-present.
-RWX_PIN="v3.25.0"
+RWX_PIN="v3.33.0"
 
 rwx_install() {
   if command -v rwx >/dev/null 2>&1; then
@@ -216,10 +341,10 @@ rwx_install() {
   os="$(uname -s | tr '[:upper:]' '[:lower:]')"
   arch="$(uname -m | sed s/arm64/aarch64/)"
   case "${os}-${arch}" in
-  linux-x86_64) sha256="eb6b4488914e7751a94e194fc5f73efd74a2b4dc4acee4970993b986c697e291" ;;
-  linux-aarch64) sha256="f7945f82a1be281a6350948895ac15f0ac1c5ef890fb3c7d0eaabe169d05883f" ;;
-  darwin-x86_64) sha256="d46eac9b52e250122d79a76e17a360875d0b0a848120f828eb9a008d45f12539" ;;
-  darwin-aarch64) sha256="3da82699e2b779fadb3d0574740ddc8812606618030e5e52b6415a7b2c7abb36" ;;
+  linux-x86_64) sha256="a62408976abfa709d806cf2a30d73fb995eb1b343664caae6f7cfae260e0751c" ;;
+  linux-aarch64) sha256="2e5bcdf810c9dfd719ef4b38cdee665629e9a450e421b1a5cf3becd65f4893d2" ;;
+  darwin-x86_64) sha256="3bb95c3519413aaa45c94942bebea3200f722b8891b2c30463aeb2892e9b71ee" ;;
+  darwin-aarch64) sha256="c6254fd112a3bc666ca2a57130a7a6b9e293d5952d7014a6893984402360acee" ;;
   *)
     log "error: no pinned rwx asset for ${os}-${arch}"
     return 1
@@ -238,6 +363,7 @@ rwx_install() {
     log "error: could not place the rwx binary in a bin directory"
     return 1
   fi
+  note_placement "${path}"
   hash -r 2>/dev/null || true
   if ! rwx --version >/dev/null 2>&1; then
     log "error: installed rwx binary failed its version check"
@@ -246,7 +372,100 @@ rwx_install() {
   record PASS rwx "${RWX_PIN} (${path})"
 }
 
-# --- rwx authentication ----------------------------------------------------
+# --- python3.11 -------------------------------------------------------------
+python311_stage() {
+  # Single probe, no version-string parsing: exit status says whether the
+  # current `python3` is already >= 3.11 (also covers python3 missing).
+  if python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+    record PASS python3.11 "already $(python3 --version 2>&1 | head -1 || true) ($(command -v python3))"
+    return 0
+  fi
+  if [[ "$(uname -s)" != "Linux" ]] || ! command -v dnf >/dev/null 2>&1; then
+    record SKIP python3.11 "not the AL2023 target class (no dnf on $(uname -s)); cannot install here, continuing"
+    return 0
+  fi
+  local can_install=0
+  if [[ "$(id -u)" == 0 ]]; then
+    can_install=1
+  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    can_install=1
+  fi
+  if [[ ${can_install} != 1 ]]; then
+    record SKIP python3.11 "no root or passwordless sudo; cannot dnf-install here, continuing"
+    return 0
+  fi
+  # Install 3.11 ALONGSIDE 3.9, never as a replacement: AL2023's
+  # /usr/bin/python3 -> python3.9 is load-bearing for absolute-path system
+  # callers. /usr/local/bin precedes /usr/bin on PATH in these sandboxes
+  # (the same convention every other tool in this repo's setup relies on),
+  # so symlinks there shadow PATH lookups only.
+  #
+  # Shadow blast radius, verified empirically on the stock amazonlinux:2023
+  # image (asserted on every run by
+  # scripts/conductor-startup-script-cloud-test.sh): dnf's shebang is the
+  # absolute `#!/usr/bin/python3` (dnf-3 likewise), so it resolves through
+  # /usr/bin and never sees the /usr/local/bin shadow; /usr/bin and
+  # /usr/sbin contain zero `#!/usr/bin/env python3` consumers; and a
+  # post-shadow `dnf repolist` still succeeds. A future AL2023 update that
+  # adds env-shebang system tooling would be caught by that test.
+  log "installing python3.11 (AL2023 default python3 is 3.9; pyproject.toml requires >=3.11)"
+  if [[ "$(id -u)" == 0 ]]; then
+    if ! dnf install -y python3.11; then
+      log "error: dnf install python3.11 failed"
+      return 1
+    fi
+  else
+    if ! sudo dnf install -y python3.11; then
+      log "error: sudo dnf install python3.11 failed"
+      return 1
+    fi
+  fi
+  # pip for 3.11 is best-effort: prefer the distro package, fall back to
+  # ensurepip, warn (non-fatal) if neither lands — python3.11 itself is the
+  # requirement; pip is a convenience for the tools that assume it.
+  local pip_ok=0
+  if [[ "$(id -u)" == 0 ]]; then
+    if dnf install -y python3.11-pip; then
+      pip_ok=1
+    elif /usr/bin/python3.11 -m ensurepip --upgrade >/dev/null 2>&1; then
+      pip_ok=1
+    fi
+  else
+    if sudo dnf install -y python3.11-pip; then
+      pip_ok=1
+    elif sudo /usr/bin/python3.11 -m ensurepip --upgrade >/dev/null 2>&1; then
+      pip_ok=1
+    fi
+  fi
+  if [[ ! -x /usr/bin/python3.11 ]]; then
+    log "error: dnf reports success but /usr/bin/python3.11 is missing"
+    return 1
+  fi
+  if [[ "$(id -u)" == 0 || -w "${LOCAL_BIN}" ]]; then
+    ln -sfn /usr/bin/python3.11 "${LOCAL_BIN}/python3"
+    if [[ ${pip_ok} == 1 && -e /usr/bin/pip3.11 ]]; then
+      ln -sfn /usr/bin/pip3.11 "${LOCAL_BIN}/pip3"
+    fi
+  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    sudo ln -sfn /usr/bin/python3.11 "${LOCAL_BIN}/python3"
+    if [[ ${pip_ok} == 1 && -e /usr/bin/pip3.11 ]]; then
+      sudo ln -sfn /usr/bin/pip3.11 "${LOCAL_BIN}/pip3"
+    fi
+  fi
+  hash -r 2>/dev/null || true
+  if ! python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+    log "error: python3 still not >=3.11 after install (resolved: $(command -v python3 || true), $(python3 --version 2>&1 | head -1 || true))"
+    return 1
+  fi
+  local detail
+  detail="$(python3 --version 2>&1 | head -1 || true) via $(command -v python3)"
+  if [[ ${pip_ok} != 1 ]]; then
+    detail="${detail} (pip unavailable: no python3.11-pip package and ensurepip failed)"
+  fi
+  record PASS python3.11 "${detail}"
+}
+
+# --- rwx authentication -----------------------------------------------------
 # Validate FIRST via the env var (rwx reads RWX_ACCESS_TOKEN on its own),
 # persist ONLY on success — a bad token must never overwrite a valid token
 # left by a previous `rwx login`. The persisted file is byte-identical to
@@ -396,17 +615,38 @@ roborev_setup() {
 }
 
 # --- run -------------------------------------------------------------------
+# STARTUP_BEST_EFFORT=1 (exported by this repo's settings.toml) keeps the
+# former cloud-install contract: tool-stage failures are recorded but do
+# not fail the run (gtm-sdk#702's fallback-installer idiom). Default
+# (pasted standalone): any FAIL row fails the run. Python 3.11 on the
+# target class is a hard requirement either way; its SKIP paths return 0
+# and never reach the FAILED assignment.
+BEST_EFFORT="${STARTUP_BEST_EFFORT:-0}"
+
+maybe_fail() { # tool-stage failure: fatal unless best-effort mode is on
+  if [[ "${BEST_EFFORT}" != "1" ]]; then
+    FAILED=1
+  fi
+}
+
 log "host: $(uname -srm), user: $(id -un), pwd: $(pwd)"
 
-if roborev_install; then :; else FAILED=1; record FAIL roborev "provisioning failed — see messages above"; fi
-if rwx_install; then :; else FAILED=1; record FAIL rwx "provisioning failed — see messages above"; fi
-if rwx_auth; then :; else FAILED=1; fi
-if roborev_setup; then :; else FAILED=1; fi
+if roborev_install; then :; else record FAIL roborev "provisioning failed — see messages above"; maybe_fail; fi
+if trunk_stage; then :; else record FAIL trunk "provisioning failed — see messages above"; maybe_fail; fi
+if rwx_install; then :; else record FAIL rwx "provisioning failed — see messages above"; maybe_fail; fi
+if python311_stage; then :; else FAILED=1; record FAIL python3.11 "provisioning failed — see messages above"; fi
+if rwx_auth; then :; else maybe_fail; fi
+if roborev_setup; then :; else maybe_fail; fi
 
 log ""
-log "---- roborev + rwx setup summary ----"
+log "---- workspace startup summary ----"
 printf '%s' "${RESULTS}"
 echo
+if [[ -n "${LOCAL_FALLBACK_TOOLS}" ]]; then
+  log ""
+  log "warning: tools landed in ~/.local/bin (no writable /usr/local/bin, no passwordless sudo):${LOCAL_FALLBACK_TOOLS}"
+  log "warning: that directory is not on the default PATH of later setup steps — this repo's .conductor/settings.toml exports it for the rest of setup; other callers must add it themselves"
+fi
 log "-------------------------------------"
 log "full log: $SETUP_LOG"
 # Surface the summary + log path on the original stdout too (fd 3, saved
@@ -417,13 +657,20 @@ log "full log: $SETUP_LOG"
 # paste-safety hazard (see the header).
 printf '%s' "${RESULTS}" >&3 || true
 echo >&3 || true
+if [[ -n "${LOCAL_FALLBACK_TOOLS}" ]]; then
+  echo "warning: tools landed in ~/.local/bin (not on later steps' default PATH):${LOCAL_FALLBACK_TOOLS}" >&3 || true
+fi
 echo "full log: $SETUP_LOG" >&3 || true
 echo "=== setup finished $(date -u +%FT%TZ) ==="
 
-# Deferred failure (so the summary above always completes): a provisioning
-# or auth failure in the two CLIs this workspace exists for must fail setup
-# loudly, not pass silently. The error goes to the original stderr (fd 4)
-# as well as the log.
+# Deferred failure (so the summary above always completes): by default a
+# provisioning or auth failure in the tools this workspace exists for must
+# fail setup loudly, not pass silently — every stage still ran and reported
+# above, so this is loud-and-late, never an early abort. Under
+# STARTUP_BEST_EFFORT=1 only a target-class Python 3.11 failure reaches
+# this exit; tool FAIL rows were recorded and the run exits 0 (the
+# gtm-sdk#702 idiom this repo's settings.toml contracts for). The error
+# goes to the original stderr (fd 4) as well as the log.
 if [[ "${FAILED}" != 0 ]]; then
   log "error: setup finished with FAIL rows — see the summary and $SETUP_LOG"
   echo "error: setup finished with FAIL rows — see the summary and $SETUP_LOG" >&4 || true

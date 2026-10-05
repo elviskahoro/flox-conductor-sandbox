@@ -50,7 +50,7 @@ else
   # URL — trunk.io/releases/trunk is latest-only — but the artifact is a
   # portable bash script that has been byte-stable since 2024-11-06 (S3
   # last-modified), so fail closed on any upstream change and bump this
-  # deliberately. Keep in sync with conductor-cloud-install.sh's
+  # deliberately. Keep in sync with conductor-startup-script-cloud.sh's
   # TRUNK_LAUNCHER_SHA256; scripts/validate-pins.sh cross-checks the two.
   TRUNK_LAUNCHER_SHA256="89fbdd8c7b63649eeb1479415757b898903c041e73b49b78028dbd64eca3087a"
   LAUNCHER_CHECK_TOOL="sha256sum"
