@@ -30,6 +30,15 @@ and stages mean, and how to produce a new run.
   A/B, and the private-GHCR authenticated pull. Also records two RWX
   environment traps (anonymous git-https 401; empty task workspace on
   cli-dispatched runs).
+- [Trunk CLI env-var setup mechanics](20261005-141227Z-trunk-cli-env-var-setup-mechanics.md) —
+  research for configuring `trunk check` in Conductor cloud workspaces with
+  env vars only (no init/login): launcher-source and binary-strings ground
+  truth (`TRUNK_CLI_VERSION`, `TRUNK_CACHE`, `TRUNK_TELEMETRY=off`,
+  `TRUNK_LAUNCHER_QUIET`, `TRUNK_TOKEN` vs the analytics CLI's
+  `TRUNK_API_TOKEN`, proxy/`SSL_CERT_FILE` support), plus live proof that a
+  fresh-cache env-pinned bootstrap runs fully unauthenticated and that
+  `.trunk/trunk.yaml` in the target repo is the one thing no env var can
+  replace (`trunk init --yes-to-all` is the non-interactive bootstrap).
 
 ## Runs so far, oldest to newest
 
@@ -56,6 +65,7 @@ and stages mean, and how to produce a new run.
 | `20260803-153233Z` | Same Amazon Linux 2023 / Vercel / Conductor cloud sandbox, deliberately re-authenticated for `TEST_FLOXHUB_PROVISION=1` | **Yes** | **Stage 7 (Phase D MVP) PASS on the real target class** — closes the gap left by `20260803-134541Z` (macOS-only). `scripts/floxhub-provision.sh` resolves and runs all 7 tools (`uv`, `dolt`, `infisical`, `gh`, `git`, `bd` 1.1.2, `roborev` 0.63.0) under `envs/floxhub-provision/.flox/run/x86_64-linux.floxhub-provision-run/bin`. Token confirmed absent from both the report and full log (grepped before committing). Stage 4's SKIP in this same run was captured before Stage 7's auth side effect, so it's not contaminated |
 | `20260803-214655Z` | macOS, developer machine, already authenticated to FloxHub | No | Verifies `scripts/floxhub-provision.sh`'s switch from `flox auth login --token-file` to exporting `FLOX_FLOXHUB_TOKEN` directly (Flox's documented CI pattern, see `findings/20260803-171000Z-floxhub-machine-token-cli-mechanics.md`'s follow-up). Stage 7 still PASSes — all 7 tools resolve — with no `flox auth login` call and no keyring/disk credential write. Token confirmed absent from report/full log |
 | `20260803-215742Z` | macOS, developer machine, already authenticated to FloxHub | No | Routine default-path run (`FLAKE_REPRO=0`, `TEST_AUTH_PLUMBING=0`, `TEST_FLOXHUB_PROVISION=0`), no opt-in stages exercised. H1 + H3 (all sub-stages) PASS; Stage 4 correctly SKIPs (already-authenticated). Nothing new — committed for the record per this repo's one-commit-per-run convention |
+| `20261005-141016Z` | macOS (Conductor `chengdu` workspace), already authenticated to FloxHub | No | Automatic startup-mode provisioning run (`.conductor/settings.toml`, `CONDUCTOR_STARTUP_MODE=1`): H1 PASS (all 5 prebuilt tools resolve under `.flox/run` and execute, 0s); Stage 3a PASS (trivial build+run, 4s) and 3d PASS (hookdeck repackage build → `hookdeck version` 2.3.1, 4s); Stages 1, 3b, 3c, 5, 6, 7 SKIP (non-Linux host / omitted during startup / opt-in); Stage 4 SKIP (already authenticated — `You are logged in as elvis` — so not an H4 data point, per issue #16 trap 4) |
 
 ## Current bottom line (as of the last run above)
 
