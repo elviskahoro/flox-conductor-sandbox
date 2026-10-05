@@ -73,8 +73,12 @@ Nowhere outside this repo — by design. gtm-sdk **retired** its
 logic is owned by this repo, whose `scripts/conductor-startup-script-cloud.sh`
 is the single source of truth for workspace provisioning (paste-ready into
 the Conductor GUI setup field per this repo's README). This findings doc is
-the canonical reference for the trunk-merge-auth recipe; the two Infisical
-secrets it depends on (`TRUNK_USER_YAML`, and
+the canonical reference for the trunk-merge-auth recipe, and
+`scripts/trunk-merge-auth.sh` is its executable helper — the shape the
+startup script's deferred trunk-merge-auth stage will absorb when issue
+#40's port is revisited (operator decision: helpers and documentation now,
+wiring later). The two Infisical secrets it depends on (`TRUNK_USER_YAML`,
+and
 `FLOXHUB_TOKEN` for the sibling FloxHub-token pattern) are stored in
 gtm-sdk's Infisical project (dev environment). gtm-sdk's PR keeps only its
 own Flox manifest port (`elvis/roborev` `^0.63.0` on both supported

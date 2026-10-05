@@ -35,10 +35,9 @@
 # (conductor-cloud-install.sh vs conductor-startup-script.sh, before they
 # merged into the single startup script) died with that merge: one file is
 # now the only in-repo pin home. The remaining sync surfaces are the Flox
-# manifests (checks 1-2, 5), the trunk preflight (check 3), and gtm-sdk's
-# conductor-workspace-setup.sh — a private repo, so comment-synced only,
-# no machine check can reach it; bump both together per the startup
-# script's header.
+# manifests (checks 1-2, 5) and the trunk preflight (check 3). (gtm-sdk's
+# former conductor-workspace-setup.sh sibling died with that repo's
+# retirement of the script, gtm-sdk#944 — nothing to sync there anymore.)
 #
 # No process substitution anywhere (gtm-sdk#279 — same rule as every other
 # provisioning script in this repo).
