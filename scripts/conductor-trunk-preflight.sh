@@ -48,11 +48,12 @@ else
   # Content-pin the launcher (roborev review finding: it was previously
   # downloaded unpinned and executed). Trunk publishes no versioned launcher
   # URL — trunk.io/releases/trunk is latest-only — but the artifact is a
-  # portable bash script that has been byte-stable since 2024-11-06 (S3
-  # last-modified), so fail closed on any upstream change and bump this
-  # deliberately. Keep in sync with conductor-startup-script-cloud.sh's
-  # TRUNK_LAUNCHER_SHA256; scripts/validate-pins.sh cross-checks the two.
-  TRUNK_LAUNCHER_SHA256="89fbdd8c7b63649eeb1479415757b898903c041e73b49b78028dbd64eca3087a"
+  # portable bash script that stayed byte-stable from 2024-11-06 until its
+  # 2026-10-06 update to launcher 1.3.5 (S3 last-modified), so fail closed on
+  # any upstream change and bump this deliberately. Keep in sync with
+  # conductor-startup-script-cloud.sh's TRUNK_LAUNCHER_SHA256;
+  # scripts/validate-pins.sh cross-checks the two.
+  TRUNK_LAUNCHER_SHA256="700f8bbedfd226595999ea2202b9a7af75ba8398dd711f5f159f5bbba6cbf322"
   LAUNCHER_CHECK_TOOL="sha256sum"
   if ! command -v sha256sum >/dev/null 2>&1 && command -v shasum >/dev/null 2>&1; then
     LAUNCHER_CHECK_TOOL="shasum -a 256"

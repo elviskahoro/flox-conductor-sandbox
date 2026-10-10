@@ -67,8 +67,9 @@
 #   trunk    the official launcher, content-pinned by sha256: trunk
 #            publishes no versioned launcher URL (trunk.io/releases/trunk
 #            is latest-only), but the artifact is a portable bash script
-#            that has been byte-stable since 2024-11-06 (S3 last-modified) —
-#            fail closed on any upstream change, bump deliberately. What the
+#            that stayed byte-stable from 2024-11-06 until its 2026-10-06
+#            update to launcher 1.3.5 (S3 last-modified) — fail closed on
+#            any upstream change, bump deliberately. What the
 #            launcher then fetches is trunk's own managed update channel,
 #            out of this script's control. Same download as
 #            scripts/conductor-trunk-preflight.sh, which this repo's setup
@@ -370,10 +371,11 @@ roborev_install() {
 # inline so the script stays a self-contained recipe for pasting (the
 # gtm-sdk#702 porting rationale).
 TRUNK_LAUNCHER_URL="https://trunk.io/releases/trunk"
-TRUNK_LAUNCHER_SHA256="89fbdd8c7b63649eeb1479415757b898903c041e73b49b78028dbd64eca3087a"
+TRUNK_LAUNCHER_SHA256="700f8bbedfd226595999ea2202b9a7af75ba8398dd711f5f159f5bbba6cbf322"
 # Bump runbook: trunk publishes no versioned launcher URL, so re-download
 # ${TRUNK_LAUNCHER_URL} by hand, re-hash it, and update this constant (and
-# the preflight's copy) in the same commit.
+# the preflight's copy) in the same commit. Last bumped 2026-10-09 for the
+# 2026-10-06 launcher 1.3.5 artifact (previous pin: the 2024-11-06 one).
 
 trunk_stage() {
   if command -v trunk >/dev/null 2>&1; then
