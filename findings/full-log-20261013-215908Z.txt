@@ -1,0 +1,39 @@
+Darwin 25.5.0 arm64
+no /etc/os-release
+
+build-users-group = nixbld
+
+include flox.conf
+sh: getent: command not found
+no nixbld group
+dr-xr-xr-x  1 root  wheel  0 Oct 13 14:22 /dev/fd
+absent (good)
+absent
+neither on PATH
+==> [0 fingerprint] PASS — recorded (see report body)
+==> [1 flox bootstrap] SKIP — non-Linux host; install flox manually
+==> [2 H1 prebuilt activate] SKIP — no flox
+==> [3a hello build] SKIP — no flox
+==> [3b bd repackage build] SKIP — no flox
+==> [3c bd flag surface] SKIP — no flox
+==> [3d hookdeck repackage build] SKIP — no flox
+==> [4 FloxHub fetch] SKIP — no flox
+==> [5 H2 flake repro] SKIP — omitted during Conductor startup
+==> [6 auth plumbing] SKIP — opt-in: re-run with TEST_AUTH_PLUMBING=1 FLOXHUB_TOKEN=<token> (permanently authenticates this sandbox — never run on the one testing Stage 4)
+==> [7 floxhub provision MVP] SKIP — omitted during Conductor startup
+
+Report: findings/report-20261013-215908Z.md
+Full log: findings/full-log-20261013-215908Z.txt
+
+| Stage | Result | Detail |
+| 0 fingerprint | **PASS** | recorded (see report body) |
+| 1 flox bootstrap | **SKIP** | non-Linux host; install flox manually |
+| 2 H1 prebuilt activate | **SKIP** | no flox |
+| 3a hello build | **SKIP** | no flox |
+| 3b bd repackage build | **SKIP** | no flox |
+| 3c bd flag surface | **SKIP** | no flox |
+| 3d hookdeck repackage build | **SKIP** | no flox |
+| 4 FloxHub fetch | **SKIP** | no flox |
+| 5 H2 flake repro | **SKIP** | omitted during Conductor startup |
+| 6 auth plumbing | **SKIP** | opt-in: re-run with TEST_AUTH_PLUMBING=1 FLOXHUB_TOKEN=<token> (permanently authenticates this sandbox — never run on the one testing Stage 4) |
+| 7 floxhub provision MVP | **SKIP** | omitted during Conductor startup |
