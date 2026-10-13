@@ -1,0 +1,8 @@
+# Seeded by conductor-startup-script-cloud.sh; now tracked and
+# hand-maintained. The startup script never overwrites a committed
+# copy (it treats one as the repo's own configuration), so its
+# ROBOREV_AGENT override does not apply in this repo — set `agent`
+# here directly. Reviews are on demand and blocking (roborev review
+# --wait); no post-commit auto-review hook is installed (see that
+# script for the reasoning).
+agent = "claude-code"
