@@ -275,8 +275,9 @@ roborev review --wait
 
 - `--wait` is **required**, not optional — it blocks until the review completes so findings are available before the draft is shown. Do not run `roborev review` without `--wait`.
 - A bare `roborev review` — or a leftover post-commit auto-review hook — only **enqueues a background daemon job and returns before a verdict exists**. An enqueue is not a pass: if HEAD already has a queued or running background review, block on it (`roborev review --wait`, or `roborev wait` for the already-enqueued job) so an actual verdict is in hand before drafting. Never report "review enqueued" or a missing verdict as clean.
-- Capture the outcome (clean, N findings, unavailable) — Step 8 surfaces it inside the draft preview so the user can see the gate was walked.
-- If roborev surfaces issues, **stop and show them to the user**. Do not draft, push, or create the PR until the user decides to fix, defer, or proceed. Fixes go into a follow-up commit and then back through Step 4 (re-squash) and Step 5 (re-run roborev) — never amend or force-push past findings silently.
+- Capture the outcome (clean, N findings fixed in M rounds, N findings unresolved, unavailable) — Step 8 surfaces it inside the draft preview so the user can see the gate was walked.
+- **Review loop (no permission prompts):** if roborev surfaces findings, fix them yourself without asking. Put the fixes in a follow-up commit, re-squash (Step 4), and re-run `roborev review --wait` (this step). Repeat until a run comes back clean. Do not ask "fix and rerun?" — that is the default action.
+- **Loop cap:** stop after 3 fix rounds. If findings remain, or a finding would need a product or design decision rather than a code fix, stop looping and list the unresolved findings in the Step 8 draft preview, so the user decides at the single approval gate. Never amend or force-push past findings silently.
 - If roborev is unavailable (command not installed, no network), say so explicitly to the user and ask whether to proceed without review. Do not silently skip.
 - For deeper fix/refine loops, consult the repo's roborev guide skill if it ships one.
 
@@ -357,7 +358,7 @@ Body:
 <draft body>
 ---
 
-Roborev: <clean | N findings acknowledged | unavailable (reason)>
+Roborev: <clean (after M fix rounds) | N findings unresolved (list them) | unavailable (reason)>
 
 Push and create this PR? (or edit before I submit)
 ```
@@ -446,6 +447,18 @@ gh issue comment <number> --repo <owner/repo> --body "Addressed in <PR URL from 
 - `<PR URL>` is the output from Step 12 — this step cannot run before Step 12 for exactly that reason.
 - Do not close the issue yourself; partial or cross-repo work isn't the maintainer's signal to close it.
 - Skip silently if Step 9 found nothing to do here.
+
+### Step 13: Suggest the merge once tests and checks pass
+
+Merging is never automatic. Once the PR is open, check its status with a single call (`gh pr checks <pr-number>`). When tests and required checks have passed, suggest merging with the GitHub CLI and wait for the user to say yes:
+
+```bash
+gh pr merge <pr-number> --squash
+```
+
+- Do not poll in a loop. If checks are still running, report that and stop; the user can ask again later.
+- Do not log in to, configure, or call any merge-queue service. If `gh` is not authenticated, say so and stop.
+- Never pass `--admin` or `--auto` unless the user asks for it.
 
 ## Modifiers: drafts, reviewers, labels
 
