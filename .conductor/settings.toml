@@ -238,7 +238,7 @@ If none of these sources establishes a clear Why, **stop and ask the user**. Don
 If the pre-flight check surfaced uncommitted changes that belong in this PR, commit them **before** running roborev — roborev reviews committed history, not the working tree, so uncommitted edits would be invisible to it.
 
 - Stage only the files that belong in this PR. Skip tool-local cruft (e.g., `.agents/`, `.claude/`, Conductor-local files) unless the user explicitly opts in.
-- Confirm the file list and commit message with the user before running `git commit`. The commit message should mirror the PR title's intent (sentence-cased, why-focused) — not a Conventional Commits subject.
+- Commit without asking for approval: run `git commit` directly once the files are staged. The commit message should mirror the PR title's intent (sentence-cased, why-focused) — not a Conventional Commits subject. The Step 8 draft approval is still the only user-approval gate before push.
 - Do **not** push yet. Push happens in Step 11, after squash, roborev, the user-confirmation gate, and the rebase.
 
 If the working tree is already clean, skip this step.
