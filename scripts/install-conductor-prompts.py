@@ -483,13 +483,36 @@ def self_test(prompts_dir: Path) -> int:
         # 10. Guest tables (no ownership marker) keep their foreign keys:
         #     the installer adds its own but never removes what it didn't
         #     create, and --check skips the reverse sweep for them.
+        #     The fixture key must be foreign BY CONSTRUCTION, never a
+        #     hardcoded name: this fixture hardcoded `general`, which
+        #     000e3df made installer-owned by adding
+        #     prompts/conductor/general.md, so the installer legitimately
+        #     overwrote the "foreign" value and the assertion failed (CI
+        #     red on every run since 2026-10-15T15:19Z). Pick the first
+        #     candidate no source maps to; the guard below turns any
+        #     future collision into a loud, explained failure instead of
+        #     a silently degraded fixture.
+        foreign_key_candidates = ("guest_custom", "hand_written", "legacy_prompt")
+        foreign_key = next(
+            (name for name in foreign_key_candidates if name not in prompts), None
+        )
+        assert foreign_key is not None, (
+            "self-test fixture: every guest-key candidate is installer-owned; "
+            "add a new never-owned candidate (a prompts/conductor/ source now "
+            "maps to each existing one)"
+        )
         guest = Path(tmp) / "guest" / ".conductor" / "settings.toml"
         guest.parent.mkdir(parents=True)
-        guest.write_text('[prompts]\ngeneral = """custom"""\n', encoding="utf-8")
+        guest.write_text(
+            f'[prompts]\n{foreign_key} = """custom"""\n', encoding="utf-8"
+        )
         code, _ = _quiet(cmd_install, prompts, guest)
         check("guest install exits 0", code == 0)
         guest_doc = parse_settings(guest)
-        check("guest table keeps foreign key", guest_doc["prompts"].get("general") == "custom")
+        check(
+            "guest table keeps foreign key",
+            guest_doc["prompts"].get(foreign_key) == "custom",
+        )
         check(
             "guest table gains installer key",
             str(guest_doc["prompts"].get(first_key)) == prompts[first_key],
