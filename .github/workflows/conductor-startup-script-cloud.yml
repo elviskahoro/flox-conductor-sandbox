@@ -40,6 +40,9 @@ jobs:
       - name: Conductor prompts drift check (prompts/conductor/*.md vs .conductor/settings.toml)
         run: uv run --no-project --with "tomlkit>=0.15.1" scripts/install-conductor-prompts.py --check
 
+      - name: Infisical preflight self-test (host-class resolution branches)
+        run: bash scripts/conductor-infisical-preflight.sh --self-test
+
       - name: Shellcheck the provisioning scripts
         run: |
           sudo apt-get update -q
@@ -47,6 +50,7 @@ jobs:
           shellcheck \
             scripts/conductor-startup-script-cloud.sh \
             scripts/conductor-trunk-preflight.sh \
+            scripts/conductor-infisical-preflight.sh \
             scripts/validate-pins.sh \
             scripts/conductor-startup-script-cloud-test.sh
 
