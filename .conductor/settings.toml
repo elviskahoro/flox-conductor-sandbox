@@ -62,17 +62,16 @@ export PATH="${HOME}/.local/bin:${PATH}"
 # fresh sandbox. It never hard-fails; findings land in findings/report-*.md.
 CONDUCTOR_STARTUP_MODE=1 bash scripts/sandbox-test.sh
 
-# Make Infisical available to subsequent agent commands. Flox activation is
-# process-scoped, so its run-bin directory disappears from PATH when setup
-# exits.
-INFISICAL_BIN="$(flox activate --dir "$PWD/envs/prebuilt" --mode run -- sh -c 'command -v infisical')"
-if [ ! -x "$INFISICAL_BIN" ]; then
-  echo "error: setup did not produce a runnable infisical command" >&2
-  exit 1
-fi
-sudo install -d -m 755 /usr/local/bin
-sudo ln -sfn "$INFISICAL_BIN" /usr/local/bin/infisical
-infisical --version
+# Expose infisical to subsequent agent commands. Resolution lives in
+# scripts/conductor-infisical-preflight.sh: pinned flox-env link on the
+# Linux sandbox class when flox + passwordless sudo are usable (the
+# original #34 cloud contract), PATH infisical otherwise — local Macs
+# (which never enter the flox branch, no matter their sudo state) and
+# Linux hosts without flox. The inline `flox activate` this replaced ran
+# unconditionally and, under `set -e`, failed every Mac workspace at
+# creation with "command not found: flox". Its --self-test codifies every
+# branch — run it after touching the script.
+bash scripts/conductor-infisical-preflight.sh
 
 # Validate workspace-provided Infisical machine credentials without exposing
 # secret values. The export output is discarded; only the command status is
