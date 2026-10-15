@@ -45,7 +45,8 @@ the slot's snake_case key:
 | `resolve-merge-conflicts.md`| `resolve_merge_conflicts`  | The merge-conflict resolution    |
 | `general.md`                | `general`                  | Appended to every agent session  |
 
-Only `create-pr.md` exists today (ported from gtm-sdk). Add the others the
+`create-pr.md` (ported from gtm-sdk) and `resolve-merge-conflicts.md` exist
+today. Add the others the
 same way when needed: drop the `.md` in `conductor/`, run the installer.
 
 ## Installing into another repo
