@@ -34,8 +34,8 @@ in the report (because it was fixed, or the offending file was removed) can
 have its bead closed automatically, but only when the underlying `trunk
 check` run completed cleanly (exit 0 or 1) -- any other exit code aborts
 before touching beads at all, since the captured output can't be trusted as a
-complete report. This is opt-in because a caller that passes `--report` with
-a narrower slice of the tree than usual (or a transient parse gap) would
+complete report. This is opt-in because a partial trunk run (a linter that failed to
+install, or a transient parse gap) would
 otherwise look identical to "these files are fixed" and silently close beads
 for issues that never went away.
 
@@ -148,7 +148,8 @@ _CLEAN_RUN_RETURN_CODES = (0, 1)
 
 @dataclass
 class TrunkRunResult:
-    output: str
+    output: str  # stdout only: the parseable report
+    stderr: str
     return_code: int | None  # None when the transport can't surface an exit code
 
 
@@ -173,7 +174,8 @@ def run_trunk_check(*, fix: bool) -> TrunkRunResult:
         msg = f"trunk check failed to run: {exc}"
         raise TrunkCommandError(msg) from exc
     return TrunkRunResult(
-        output=(proc.stdout or "") + (proc.stderr or ""),
+        output=proc.stdout or "",
+        stderr=proc.stderr or "",
         return_code=proc.returncode,
     )
 
@@ -257,7 +259,7 @@ def list_existing_beads() -> dict[str, str]:
     clean idempotent re-run while actually duplicating every bead. Raising
     lets the caller abort instead.
     """
-    result = run_bd(["list", "--label", BEAD_LABEL, "--json"], cwd=REPO_ROOT)
+    result = run_bd(["list", "--label", BEAD_LABEL, "--limit", "0", "--json"], cwd=REPO_ROOT)
     stdout = result.stdout.strip() if result.stdout else ""
     try:
         # An empty stdout is treated as "no beads" only when it is truly
@@ -303,6 +305,8 @@ def _list_epic_candidates() -> list[dict[str, object]]:
             EPIC_LABEL,
             "--metadata-field",
             f"{EPIC_METADATA_KEY}={EPIC_METADATA_VALUE}",
+            "--limit",
+            "0",
             "--json",
         ],
         cwd=REPO_ROOT,
@@ -385,18 +389,27 @@ def find_or_create_epic(*, dry_run: bool) -> str:
         ],
         cwd=REPO_ROOT,
     )
-    created = json.loads(result.stdout)
+    created_id = parse_created_id(result.stdout)
 
     # Re-list to catch a sibling process that created a competing epic
     # between this call's initial lookup and its own create above.
     settled_id = _lowest_epic_id(_list_epic_candidates())
-    if settled_id != created["id"]:
+    if settled_id != created_id:
         typer.echo(
-            f"→ created epic {created['id']} but {settled_id} won the race, using it",
+            f"→ created epic {created_id} but {settled_id} won the race, using it",
         )
         return settled_id
-    typer.echo(f"→ created epic {created['id']}: {EPIC_TITLE}")
-    return created["id"]
+    typer.echo(f"→ created epic {created_id}: {EPIC_TITLE}")
+    return created_id
+
+
+def parse_created_id(stdout: str) -> str:
+    try:
+        created = json.loads(stdout)
+        return str(created["id"])
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        msg = f"bd create --json returned no usable id: {stdout[:200]!r}"
+        raise BdListParseError(msg) from exc
 
 
 def bead_title(finding: FileFindings) -> str:
@@ -404,12 +417,18 @@ def bead_title(finding: FileFindings) -> str:
     return f"trunk lint: {finding.issue_count} issue{plural} in {finding.path}"
 
 
+MAX_BLOCK_CHARS = 20_000
+
+
 def bead_description(finding: FileFindings, *, report_path: Path) -> str:
+    block = finding.block
+    if len(block) > MAX_BLOCK_CHARS:
+        block = block[:MAX_BLOCK_CHARS] + "\n... (truncated; see full report)"
     return (
         f"`trunk check --all --show-existing` findings for `{finding.path}`.\n"
         f"Full report: {report_path}\n\n"
         "```\n"
-        f"{finding.block}\n"
+        f"{block}\n"
         "```\n"
     )
 
@@ -474,8 +493,7 @@ def upsert_bead(
         ],
         cwd=REPO_ROOT,
     )
-    created = json.loads(result.stdout)
-    return f"created {created['id']}: {title}"
+    return f"created {parse_created_id(result.stdout)}: {title}"
 
 
 def close_stale_beads(
@@ -527,6 +545,10 @@ def main(
         "prune is unsafe.",
     ),
 ) -> None:
+    if dry_run and fix:
+        typer.echo("error: --dry-run cannot be combined with --fix (trunk would mutate the tree)", err=True)
+        raise typer.Exit(2)
+
     try:
         run_result = run_trunk_check(fix=fix)
     except TrunkCommandError as exc:
@@ -534,7 +556,7 @@ def main(
         raise typer.Exit(1) from None
 
     report.parent.mkdir(parents=True, exist_ok=True)
-    report.write_text(run_result.output)
+    report.write_text(run_result.output + (f"\n--- stderr ---\n{run_result.stderr}" if run_result.stderr else ""))
     typer.echo(f"→ wrote full trunk report to {report}")
 
     if run_result.return_code not in _CLEAN_RUN_RETURN_CODES:
@@ -585,7 +607,9 @@ def main(
                 )
                 typer.echo(f"  {summary}")
 
-        if prune_resolved:
+        if prune_resolved and re.search(r"(?i)failed to (install|run)|linter .* failed", run_result.stderr + run_result.output):
+            typer.echo("warning: trunk reported linter failures; report may be partial, skipping --prune-resolved", err=True)
+        elif prune_resolved:
             stale_summaries = close_stale_beads(
                 existing_beads,
                 current_paths={finding.path for finding in findings},
