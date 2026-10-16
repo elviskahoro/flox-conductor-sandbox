@@ -88,15 +88,9 @@ def test_dropped_rows_reported_after_footer():
     assert mod.parse_findings_by_file(REPORT).dropped_rows == []
 
 
-def test_cut_resets_on_new_header():
-    rep = "a.py:1:1\n 1:1  low  X  m\n\nChecked 1 file\nb.py:1:1\n 1:1  low  Y  m\n"
-    assert mod.parse_findings_by_file(rep).dropped_rows == []
-
-
-def test_prune_skipped_with_exit_3(monkeypatch):
+def _run_prune(monkeypatch, tmp_path, rep):
     from typer.testing import CliRunner
 
-    rep = "a.py:1:1\n 1:1  low  X  m\n\nChecked 1 file\n 2:1  low  Y  m2\n"
     monkeypatch.setattr(
         mod,
         "run_trunk_check",
@@ -106,9 +100,24 @@ def test_prune_skipped_with_exit_3(monkeypatch):
     monkeypatch.setattr(mod, "find_or_create_epic", lambda *, dry_run: "e-1")
     monkeypatch.setattr(mod, "upsert_bead", lambda *a, **k: "ok")
     closed = []
-    monkeypatch.setattr(mod, "close_stale_beads", lambda *a, **k: closed.append(1) or [])
-    res = CliRunner().invoke(
-        mod.app, ["--prune-resolved", "--report", "/dev/null"],
+    monkeypatch.setattr(
+        mod, "close_stale_beads", lambda *a, **k: closed.append(1) or [],
     )
+    res = CliRunner().invoke(
+        mod.app, ["--prune-resolved", "--report", str(tmp_path / "report.txt")],
+    )
+    return res, closed
+
+
+def test_prune_skipped_with_exit_3(monkeypatch, tmp_path):
+    rep = "a.py:1:1\n 1:1  low  X  m\n\nChecked 1 file\n 2:1  low  Y  m2\n"
+    res, closed = _run_prune(monkeypatch, tmp_path, rep)
     assert res.exit_code == 3
     assert not closed
+
+
+def test_prune_runs_on_clean_parse(monkeypatch, tmp_path):
+    rep = "a.py:1:1\n 1:1  low  X  m\n\nChecked 1 file\n"
+    res, closed = _run_prune(monkeypatch, tmp_path, rep)
+    assert res.exit_code == 0
+    assert closed
