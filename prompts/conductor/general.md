@@ -98,6 +98,10 @@ Apply these steps when asked to inspect queue or PR status in a repository that 
 - Surface decisions and risks the user should weigh in on. Don't bury them, and don't ask about things with an obvious default.
 - Plain, specific language. No filler, hype, or boilerplate ("This PR makes some improvements to ...").
 
+## Prompt helpers
+
+Prompts reference named helpers instead of inlining shell. Run one with `bash <(curl -fsSL "https://raw.githubusercontent.com/elviskahoro/flox-conductor-sandbox/${CONDUCTOR_PROMPTS_REF:-main}/scripts/conductor-prompts/<name>.sh") [args]`, or `scripts/conductor-prompts/<name>.sh` directly when this repo is checked out. Helpers: `pr-preflight`, `push`, `pr-submit`, `pr-context`, `conflict-context`, `conflict-check`. If a helper can't be fetched, say so and stop on that step; don't reimplement it from memory.
+
 ## When to stop and ask
 
 Stop and check with the user when:

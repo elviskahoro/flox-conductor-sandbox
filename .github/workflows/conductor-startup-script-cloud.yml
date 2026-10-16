@@ -43,6 +43,9 @@ jobs:
       - name: Infisical preflight self-test (host-class resolution branches)
         run: bash scripts/conductor-infisical-preflight.sh --self-test
 
+      - name: Conductor prompt helpers self-test (preflight, push, submit, context, conflict check)
+        run: bash scripts/conductor-prompts/self-test.sh
+
       - name: Shellcheck the provisioning scripts
         run: |
           sudo apt-get update -q
@@ -51,6 +54,7 @@ jobs:
             scripts/conductor-startup-script-cloud.sh \
             scripts/conductor-trunk-preflight.sh \
             scripts/conductor-infisical-preflight.sh \
+            scripts/conductor-prompts/*.sh \
             scripts/validate-pins.sh \
             scripts/conductor-startup-script-cloud-test.sh
 
