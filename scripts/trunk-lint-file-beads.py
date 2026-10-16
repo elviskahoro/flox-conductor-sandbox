@@ -39,6 +39,9 @@ install, or a transient parse gap) would
 otherwise look identical to "these files are fixed" and silently close beads
 for issues that never went away.
 
+Exit codes: 0 ok, 1 error, 2 bad flags, 3 --prune-resolved skipped because
+trunk reported a linter failure (report may be partial).
+
 Usage:
     scripts/trunk-lint-file-beads.py
     scripts/trunk-lint-file-beads.py --fix
@@ -122,7 +125,7 @@ _ISSUE_ROW_RE = re.compile(r"^\s*\d+:\d+\s+(low|medium|high|critical)\s", re.IGN
 
 # Known report footers only; any other flush-left text stays in the block so
 # diff hunks / wrapped messages are never cut off.
-_FOOTER_RE = re.compile(r"^(Checked \d+ |✔|✖|\d+ (issues?|files?) )")
+_FOOTER_RE = re.compile(r"^(Checked \d+\b|✔|✖|\d+ (issues?|files?)\b|Summary\b|Run `trunk)")
 
 _LINTER_FAILURE_RE = re.compile(r"(?i)failed to (install|run)|linter .* failed")
 
@@ -239,7 +242,8 @@ def parse_findings_by_file(raw_output: str) -> list[FileFindings]:
         elif current_path is not None:
             # Flush-left, non-blank, non-header text ("Checked N files",
             # banners) is a footer, not part of the finding: end the block.
-            if _FOOTER_RE.match(line):
+            after_blank = bool(current_lines) and not current_lines[-1].strip()
+            if _FOOTER_RE.match(line) or (after_blank and line.strip() and not line[0].isspace()):
                 flush()
                 current_path = None
                 current_lines = []
@@ -620,8 +624,15 @@ def main(
                 )
                 typer.echo(f"  {summary}")
 
-        if prune_resolved and _LINTER_FAILURE_RE.search(run_result.stderr):
-            typer.echo("warning: trunk reported linter failures; report may be partial, skipping --prune-resolved", err=True)
+        linter_failed = prune_resolved and _LINTER_FAILURE_RE.search(
+            run_result.stderr + "\n" + run_result.output,
+        )
+        if linter_failed:
+            typer.echo(
+                "warning: trunk reported linter failures; report may be partial, "
+                "skipping --prune-resolved (exit 3)",
+                err=True,
+            )
             raise typer.Exit(3)
         elif prune_resolved:
             stale_summaries = close_stale_beads(
