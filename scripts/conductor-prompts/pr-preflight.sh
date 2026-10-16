@@ -70,7 +70,10 @@ if [ -n "$upstream_ref" ] && [ "$upstream_ref" != "refs/heads/$base" ] && [ -n "
   fi
 fi
 if [ "$pr_state" = OPEN ] && [ -z "$push_remote" ]; then
-  [ -n "$pr_head_branch" ] && [ -n "$pr_head_owner" ] && [ -n "$pr_head_repo" ] || { echo "open PR has incomplete head details; surface the push-target ambiguity" >&2; exit 1; }
+  if [ -z "$pr_head_branch" ] || [ -z "$pr_head_owner" ] || [ -z "$pr_head_repo" ]; then
+    echo "open PR has incomplete head details; surface the push-target ambiguity" >&2
+    exit 1
+  fi
   pr_remote_count=0
   pr_seen_remote_urls=()
   pr_head_lc="$(printf '%s' "$pr_head" | tr '[:upper:]' '[:lower:]')"
@@ -130,7 +133,10 @@ elif [ -z "$push_remote" ]; then
   push_remote=origin
   push_ref="refs/heads/$branch"
 fi
-[ -n "$push_remote" ] && [ -n "$push_ref" ] || { echo "push target is ambiguous; surface it before continuing" >&2; exit 1; }
+if [ -z "$push_remote" ] || [ -z "$push_ref" ]; then
+  echo "push target is ambiguous; surface it before continuing" >&2
+  exit 1
+fi
 [ "$push_ref" != "refs/heads/$base" ] || { echo "push target is the base branch; stop before pushing" >&2; exit 1; }
 push_remote_url="$(git ls-remote --get-url "$push_remote")" || { echo "could not inspect push remote URL" >&2; exit 1; }
 case "$push_remote_url" in

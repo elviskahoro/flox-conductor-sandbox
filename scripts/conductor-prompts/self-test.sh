@@ -71,4 +71,42 @@ check "conflict-check: clean tree" 0 bash "$here/conflict-check.sh"
 printf '<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> o\n' > g; git add g
 check "conflict-check: detects markers" 1 bash "$here/conflict-check.sh"
 
+prompt_source="$here/../../prompts/conductor/create-pr.md"
+prompt_settings="$here/../../.conductor/settings.toml"
+toml_delimiter="'''"
+awk -v start="create_pr = $toml_delimiter" -v end="$toml_delimiter" \
+  '$0 == start { in_prompt = 1; next } in_prompt && $0 == end { exit } in_prompt { print }' \
+  "$prompt_settings" > "$tmp/installed-create-pr.md"
+if cmp -s "$prompt_source" "$tmp/installed-create-pr.md"; then
+  ok "create-pr: installed TOML matches the Markdown source"
+else
+  bad "create-pr: installed TOML differs from the Markdown source"
+fi
+for prompt in "$prompt_source" "$prompt_settings"; do
+  if grep -Fq 'directly asking in unquoted chat to create, open, or publish a PR authorizes publication without separate approval of draft text.' "$prompt"; then
+    ok "create-pr: direct publish request skips draft approval in $prompt"
+  else
+    bad "create-pr: direct publish request skips draft approval in $prompt"
+  fi
+  if grep -Fq '### Step 8: Show a preview when requested' "$prompt" &&
+    grep -Fq 'run only the read-only parts of Steps 1–2, draft with Steps 6–7, show Step 8, and stop.' "$prompt" &&
+    grep -Fq 'Do not commit, squash, run publication review, update the base, push, or create/update the PR on a preview-only request.' "$prompt"; then
+    ok "create-pr: preview-only requests stop before publication in $prompt"
+  else
+    bad "create-pr: preview-only requests stop before publication in $prompt"
+  fi
+  for stale in \
+    'approved Step 8 preview' \
+    'user-confirmation gate' \
+    'preview remains accurate' \
+    'Proceed with this action?' \
+    'Single publication approval gate' \
+    'Show draft, wait for confirmation' \
+    'draft approval is still the only user-approval gate'; do
+    if grep -Fq "$stale" "$prompt"; then
+      bad "create-pr: stale approval wording '$stale' remains in $prompt"
+    fi
+  done
+done
+
 [ "$fail" -eq 0 ] && echo "[prompt-helpers-self-test] all behaviors verified" || exit 1

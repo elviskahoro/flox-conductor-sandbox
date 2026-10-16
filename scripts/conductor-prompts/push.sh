@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Push for the create-pr prompt. Usage: push.sh <base> <push_remote> <push_ref>
-# Values come from the approved pr-preflight output.
+# Values come from the resolved pr-preflight output.
 set -u
 [ "$#" -eq 3 ] || { echo "usage: push.sh <base> <push_remote> <push_ref>" >&2; exit 2; }
 base="$1"; push_remote="$2"; push_ref="$3"
@@ -8,10 +8,10 @@ upstream_remote="$(git config --get "branch.$(git branch --show-current).remote"
 upstream_ref="$(git config --get "branch.$(git branch --show-current).merge" || true)"
 for value in "$base" "$push_remote"; do
   case "$value" in
-    ''|*'<'*|*'>'*) echo "base and push_remote must be resolved from the approved preflight" >&2; exit 1 ;;
+    ''|*'<'*|*'>'*) echo "base and push_remote must be resolved from pr-preflight" >&2; exit 1 ;;
   esac
 done
-[ -n "$push_ref" ] || { echo "push_ref must be resolved from the approved preflight" >&2; exit 1; }
+[ -n "$push_ref" ] || { echo "push_ref must be resolved from pr-preflight" >&2; exit 1; }
 [ "$push_ref" != "refs/heads/$base" ] || { echo "push target is the base branch; stop before pushing" >&2; exit 1; }
 needs_upstream=no
 if [ -z "$upstream_remote" ] || [ "$upstream_remote" = "." ] || [ -z "$upstream_ref" ] || [ "$upstream_ref" = "refs/heads/$base" ]; then
