@@ -74,3 +74,9 @@ def test_bare_count_footer_and_blank_then_flush_left():
     rep2 = "a.py:1:1\n 1:1  low  X  msg\n\nsome trailer\n"
     (g,) = mod.parse_findings_by_file(rep2)
     assert "trailer" not in g.block
+
+
+def test_linter_failure_ignores_indented_finding_text():
+    out = "a.py:1:1\n 1:1  low  X  trunk check failed to run\n"
+    assert not mod._LINTER_FAILURE_RE.search(mod._unindented_lines(out))
+    assert mod._LINTER_FAILURE_RE.search(mod._unindented_lines("Linter foo failed to install\n"))
