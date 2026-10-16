@@ -90,11 +90,11 @@ def test_dropped_rows_reported_after_footer():
     assert mod.parse_findings_by_file(REPORT).dropped_rows == []
 
 
-def _run_prune(monkeypatch, tmp_path, rep):
+def _run_prune(monkeypatch, tmp_path, rep, stderr=""):
     monkeypatch.setattr(
         mod,
         "run_trunk_check",
-        lambda *, fix: mod.TrunkRunResult(output=rep, stderr="", return_code=1),
+        lambda *, fix: mod.TrunkRunResult(output=rep, stderr=stderr, return_code=1),
     )
     monkeypatch.setattr(mod, "list_existing_beads", lambda: {"gone.py": "b-1"})
     monkeypatch.setattr(mod, "find_or_create_epic", lambda *, dry_run: "e-1")
@@ -129,3 +129,13 @@ def test_prune_runs_on_clean_parse(monkeypatch, tmp_path):
     assert closed[0][0] == {"gone.py": "b-1"}
     assert closed[0][1]["current_paths"] == {"a.py"}
     assert closed[0][1]["dry_run"] is False
+
+
+def test_prune_skipped_on_ansi_linter_failure(monkeypatch, tmp_path):
+    rep = "a.py:1:1\n 1:1  low  X  m\n\nChecked 1 file\n"
+    res, closed = _run_prune(
+        monkeypatch, tmp_path, rep, stderr="\x1b[31mLinter foo failed to run\x1b[0m"
+    )
+    assert res.exit_code == 3
+    assert "skipping --prune-resolved" in res.output
+    assert not closed
