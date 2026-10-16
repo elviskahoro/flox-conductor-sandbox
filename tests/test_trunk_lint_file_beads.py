@@ -29,6 +29,7 @@ def test_groups_by_file_and_merges_repeats():
     assert list(found) == ["foo/a.py", "foo/b.md"]
     assert found["foo/a.py"].issue_count == 3
     assert found["foo/b.md"].issue_count == 1
+    assert "Checked 3 files" not in found["foo/a.py"].block
 
 
 def test_bare_banner_is_not_a_header():

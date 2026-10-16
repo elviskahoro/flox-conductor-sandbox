@@ -231,7 +231,14 @@ def parse_findings_by_file(raw_output: str) -> list[FileFindings]:
             current_path = header.group("path")
             current_lines = [line]
         elif current_path is not None:
-            current_lines.append(line)
+            # Flush-left, non-blank, non-header text ("Checked N files",
+            # banners) is a footer, not part of the finding: end the block.
+            if line.strip() and not line[0].isspace():
+                flush()
+                current_path = None
+                current_lines = []
+            else:
+                current_lines.append(line)
     flush()
 
     findings = []
@@ -607,7 +614,7 @@ def main(
                 )
                 typer.echo(f"  {summary}")
 
-        if prune_resolved and re.search(r"(?i)failed to (install|run)|linter .* failed", run_result.stderr + run_result.output):
+        if prune_resolved and re.search(r"(?i)failed to (install|run)|linter .* failed", run_result.stderr):
             typer.echo("warning: trunk reported linter failures; report may be partial, skipping --prune-resolved", err=True)
         elif prune_resolved:
             stale_summaries = close_stale_beads(
