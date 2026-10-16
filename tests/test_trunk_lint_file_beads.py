@@ -116,6 +116,7 @@ def test_prune_skipped_with_exit_3(monkeypatch, tmp_path):
     res, closed = _run_prune(monkeypatch, tmp_path, rep)
     assert res.exit_code == 3
     assert "dropped orphan issue row" in res.output
+    assert "skipping --prune-resolved" in res.output
     assert not closed
 
 
@@ -124,4 +125,7 @@ def test_prune_runs_on_clean_parse(monkeypatch, tmp_path):
     res, closed = _run_prune(monkeypatch, tmp_path, rep)
     assert res.exit_code == 0
     assert "dropped" not in res.output
+    assert len(closed) == 1
     assert closed[0][0] == {"gone.py": "b-1"}
+    assert closed[0][1]["current_paths"] == {"a.py"}
+    assert closed[0][1]["dry_run"] is False
