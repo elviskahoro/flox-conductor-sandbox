@@ -61,6 +61,7 @@ Baseline working agreements for every session in this workspace. Task-specific p
 
 ## Dependencies and environment
 
+- Use `python3`, not `python`, when running Python scripts or modules; don't assume a `python` executable is available.
 - Use the repo's own tooling (e.g. `uv`, `flox`, `npm`, `make`); don't mix in a second package manager.
 - Add a dependency only when the standard library or existing deps can't reasonably do the job. Pin versions the way the repo already does, and mention the new dependency and why in your summary.
 - Prefer reproducible commands over one-off machine state. If you had to change the environment to proceed, say how.
