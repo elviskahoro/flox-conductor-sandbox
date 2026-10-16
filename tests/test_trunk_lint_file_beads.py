@@ -80,3 +80,35 @@ def test_linter_failure_ignores_indented_finding_text():
     out = "a.py:1:1\n 1:1  low  X  trunk check failed to run\n"
     assert not mod._LINTER_FAILURE_RE.search(mod._unindented_lines(out))
     assert mod._LINTER_FAILURE_RE.search(mod._unindented_lines("Linter foo failed to install\n"))
+
+
+def test_dropped_rows_reported_after_footer():
+    rep = "a.py:1:1\n 1:1  low  X  m\n\nChecked 1 file\n 2:1  low  Y  m2\n"
+    assert mod.parse_findings_by_file(rep).dropped_rows == ["2:1  low  Y  m2"]
+    assert mod.parse_findings_by_file(REPORT).dropped_rows == []
+
+
+def test_cut_resets_on_new_header():
+    rep = "a.py:1:1\n 1:1  low  X  m\n\nChecked 1 file\nb.py:1:1\n 1:1  low  Y  m\n"
+    assert mod.parse_findings_by_file(rep).dropped_rows == []
+
+
+def test_prune_skipped_with_exit_3(monkeypatch):
+    from typer.testing import CliRunner
+
+    rep = "a.py:1:1\n 1:1  low  X  m\n\nChecked 1 file\n 2:1  low  Y  m2\n"
+    monkeypatch.setattr(
+        mod,
+        "run_trunk_check",
+        lambda *, fix: mod.TrunkRunResult(output=rep, stderr="", return_code=1),
+    )
+    monkeypatch.setattr(mod, "list_existing_beads", lambda: {"gone.py": "b-1"})
+    monkeypatch.setattr(mod, "find_or_create_epic", lambda *, dry_run: "e-1")
+    monkeypatch.setattr(mod, "upsert_bead", lambda *a, **k: "ok")
+    closed = []
+    monkeypatch.setattr(mod, "close_stale_beads", lambda *a, **k: closed.append(1) or [])
+    res = CliRunner().invoke(
+        mod.app, ["--prune-resolved", "--report", "/dev/null"],
+    )
+    assert res.exit_code == 3
+    assert not closed
