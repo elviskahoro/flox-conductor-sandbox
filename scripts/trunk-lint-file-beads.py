@@ -40,7 +40,8 @@ otherwise look identical to "these files are fixed" and silently close beads
 for issues that never went away.
 
 Exit codes: 0 ok, 1 error, 2 bad flags, 3 --prune-resolved skipped because
-trunk reported a linter failure (report may be partial).
+trunk reported a linter failure (report may be partial). Bead creates/updates
+still happened; only pruning is skipped.
 
 Usage:
     scripts/trunk-lint-file-beads.py
@@ -123,11 +124,14 @@ _FILE_HEADER_RE = re.compile(r"^(?P<path>\S+?)(?::(?P<line>\d+):(?P<col>\d+))?\s
 # human-friendly count in the bead title.
 _ISSUE_ROW_RE = re.compile(r"^\s*\d+:\d+\s+(low|medium|high|critical)\s", re.IGNORECASE)
 
-# Known report footers only; any other flush-left text stays in the block so
-# diff hunks / wrapped messages are never cut off.
-_FOOTER_RE = re.compile(r"^(Checked \d+\b|✔|✖|\d+ (issues?|files?)\b|Summary\b|Run `trunk)")
+# A block ends at a known footer, or at flush-left text that follows a blank
+# line. Flush-left text with no blank line before it (diff hunks, wrapped
+# messages) stays inside the block.
+_FOOTER_RE = re.compile(r"^Checked \d+\b")
 
-_LINTER_FAILURE_RE = re.compile(r"(?i)failed to (install|run)|linter .* failed")
+_LINTER_FAILURE_RE = re.compile(
+    r"(?im)^\s*(error|warning)?:?\s*(linter\b.*\bfailed|failed to (install|run)\b)",
+)
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
@@ -429,6 +433,15 @@ def parse_created_id(stdout: str) -> str:
         raise BdListParseError(msg) from exc
 
 
+def _unindented_lines(output: str) -> str:
+    """Flush-left stdout lines only: banners/errors, not indented finding rows."""
+    return "\n".join(
+        line
+        for line in strip_ansi(output).splitlines()
+        if line and not line[0].isspace()
+    )
+
+
 def bead_title(finding: FileFindings) -> str:
     plural = "" if finding.issue_count == 1 else "s"
     return f"trunk lint: {finding.issue_count} issue{plural} in {finding.path}"
@@ -624,8 +637,10 @@ def main(
                 )
                 typer.echo(f"  {summary}")
 
-        linter_failed = prune_resolved and _LINTER_FAILURE_RE.search(
-            run_result.stderr + "\n" + run_result.output,
+        linter_failed = prune_resolved and bool(
+            _LINTER_FAILURE_RE.search(
+                run_result.stderr + "\n" + _unindented_lines(run_result.output),
+            ),
         )
         if linter_failed:
             typer.echo(
@@ -634,7 +649,7 @@ def main(
                 err=True,
             )
             raise typer.Exit(3)
-        elif prune_resolved:
+        if prune_resolved:
             stale_summaries = close_stale_beads(
                 existing_beads,
                 current_paths={finding.path for finding in findings},
