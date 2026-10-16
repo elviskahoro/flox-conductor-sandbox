@@ -19,6 +19,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Offline tests for trunk-queue-status
+        run: python3 scripts/conductor-startup-script-cloud-helper-test.py
+
       - name: Pin sync + paste-safety (roborev/trunk pins vs the Flox manifests and the trunk preflight)
         run: bash scripts/validate-pins.sh
 

@@ -95,6 +95,8 @@
 #     with a bin/python-less directory (an interrupted uv venv) and
 #     asserts the heal branch recreates it (a created, NOT reused,
 #     pytools-venv row) and reinstalls both packages.
+#   - the offline helper suite (issue #64) extracts the actual install/stage
+#     shell functions and checks missing-python behavior with and without a token.
 # Exits non-zero on the first broken assertion.
 set -euo pipefail
 
@@ -142,6 +144,11 @@ case "${RUN1_OUTPUT}" in *"RWX_ACCESS_TOKEN not set"*) ;; *) fail "fresh run mis
 # the SKIP row — a regression that provisioned anyway, or one that
 # dropped the row entirely, both fail here.
 case "${RUN1_OUTPUT}" in *"pytools | SKIP"*) ;; *) fail "fresh run missing the pytools gate SKIP row" ;; esac
+case "${RUN1_OUTPUT}" in *"trunk-queue-status | PASS"*) ;; *) fail "fresh run missing the trunk-queue-status installation row" ;; esac
+su - sandbox-user -c "trunk-queue-status --help >/dev/null" ||
+  fail "installed trunk-queue-status --help failed without a token"
+python3 /src/scripts/conductor-startup-script-cloud-helper-test.py ||
+  fail "offline trunk-queue-status helper tests failed"
 
 echo "=== VERIFY: every deliverable resolves as sandbox-user ==="
 su - sandbox-user -c "

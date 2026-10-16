@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2312  # $(...) in assignments and rows: stage failures surface through the stages' own || returns and the summary, not by killing the script mid-row
-# The single Conductor workspace startup script: roborev + trunk + rwx +
-# Python 3.11 + the opt-in Python dev tools (uv/pytest/reflex), then the
-# auth/init that makes them work rather than merely exist.
+# The single Conductor workspace startup script: roborev + trunk +
+# trunk-queue-status + rwx + Python 3.11 + the opt-in Python dev tools
+# (uv/pytest/reflex), then the auth/init that makes them work rather than
+# merely exist.
 #
 # Two consumers, one file (it replaced the former conductor-cloud-install.sh
 # + conductor-startup-script.sh pair, whose duplicated pins were exactly the
@@ -42,8 +43,10 @@
 #      Repo-agnostic by design: no repo paths, no repo scripts, nothing that
 #      assumes a particular project — safe in any workspace, local or cloud.
 #      The trunk and python stages are reuse-if-present and SKIP cleanly off
-#      the target class, so pasting this into a repo that needs neither
-#      costs nothing. The uv/pytest/reflex stage (issue #44) is opt-in via
+#      the target class. The queue helper installs when Python is available;
+#      without Python it is skipped unless TRUNK_API_TOKEN is configured,
+#      in which case setup fails rather than leaving the requested command
+#      missing. The uv/pytest/reflex stage (issue #44) is opt-in via
 #      STARTUP_PY_DEV_TOOLS=1 and SKIPs when unset, so the paste surface is
 #      exactly what it was before that stage existed — only this repo's
 #      own settings.toml turns it on.
@@ -74,6 +77,11 @@
 #            out of this script's control. Same download as
 #            scripts/conductor-trunk-preflight.sh, which this repo's setup
 #            runs first, so this stage is normally verify-only reuse there.
+#   trunk-queue-status  a standard-library Python helper installed from
+#            this paste-ready script. It reads TRUNK_API_TOKEN from the
+#            caller's environment and uses only Trunk's read-only Merge
+#            Queue endpoints; it never creates a Trunk login session or
+#            writes token/config files.
 #   rwx      installed (pinned, checksum-verified) + token validated BEFORE
 #            it is persisted (a bad token never overwrites a good one), so
 #            every later shell is authenticated, not just setup.
@@ -131,13 +139,11 @@
 # silently. This repo's own settings.toml instead opts into the
 # best-effort posture its former cloud-install carried (gtm-sdk#702's
 # fallback-installer idiom) by exporting STARTUP_BEST_EFFORT=1: then the
-# tool stages (roborev/trunk/rwx install, rwx auth, roborev
-# config/daemon) record
-# their FAIL rows but do not fail the run, and only a Python 3.11 failure
-# on the AL2023 target class (the stated >=3.11 requirement) or a
-# pytools-stage failure when STARTUP_PY_DEV_TOOLS=1 requested them
-# (issue #44: a requested tool that cannot be provisioned must never
-# leave a workspace that appears ready but lacks it) exits non-zero.
+# roborev/trunk/rwx install, rwx auth, and roborev config/daemon stages
+# record their FAIL rows but do not fail the run. Python 3.11 failure on
+# the AL2023 target class, a requested pytools-stage failure (issue #44),
+# or failure to install trunk-queue-status when TRUNK_API_TOKEN is set
+# (issue #64) exits non-zero.
 #
 # Environment variables (set them in Conductor's environment variables
 # settings — never inline them in this script: settings values are plain
@@ -145,6 +151,11 @@
 #   RWX_ACCESS_TOKEN  RWX personal access token (cloud.rwx.com -> Settings ->
 #                     Personal access tokens). Without it, rwx installs but
 #                     stays unauthenticated (warning, not failure).
+#   TRUNK_API_TOKEN   Trunk organization API token for read-only queue/PR
+#                     inspection with `trunk-queue-status`. The helper reads
+#                     it from each caller's environment; setup never stores
+#                     it. It is not a Trunk CLI login token and does not
+#                     enable `trunk merge status`.
 #   ROBOREV_AGENT     optional review-agent override; any lowercase agent
 #                     slug (codex, claude-code, gemini, copilot, opencode,
 #                     cursor, kiro, kilo, pi, ...) — deliberately not a
@@ -411,6 +422,593 @@ trunk_stage() {
   fi
   record PASS trunk "launcher at ${path} ($(trunk --version 2>&1 | head -1 || true))"
 }
+
+# --- token-only Trunk Merge Queue inspection ------------------------------
+# BEGIN trunk-queue-status install functions (offline tests extract this range)
+# Keep the helper source inside this canonical script: consuming repos get
+# this file as a pasted setup snapshot and must not need a second checkout
+# path. The installed command is read-only and deliberately does not use
+# trunk's login cache or persist TRUNK_API_TOKEN. This sizeable embedded
+# helper is intentionally self-contained for pasted snapshots, and is
+# rewritten from the snapshot on each setup run; its version identifies the
+# helper source installed by that snapshot.
+trunk_queue_status_install() {
+  local helper path
+  command -v python3 >/dev/null 2>&1 || {
+    log "error: python3 is required to install trunk-queue-status"
+    return 1
+  }
+  helper="${WORK}/trunk-queue-status"
+  # BEGIN trunk-queue-status Python helper (offline tests extract this range)
+  cat >"${helper}" <<'PYTHON' || return 1
+#!/usr/bin/env python3
+'Read-only Trunk Merge Queue status using TRUNK_API_TOKEN.'
+
+import argparse
+import http.client
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+import unicodedata
+import urllib.error
+import urllib.parse
+import urllib.request
+
+
+API_ROOT = "https://api.trunk.io/v1"
+VERSION = "1.0.0"
+PAGE_SIZE = 50
+DEFAULT_MAX_PAGES = 5
+ACTIVE_STATES = {"not_ready", "pending", "testing", "tests_passed", "pending_failure"}
+
+
+class StatusError(Exception):
+    pass
+
+
+class ScanLimitReached(StatusError):
+    def __init__(self, pages):
+        self.pages = pages
+        super().__init__(f"Trunk API scan reached the {pages}-page limit")
+
+
+def validate_optional_strings(data, fields, message):
+    for field in fields:
+        if data.get(field) is not None and not isinstance(data[field], str):
+            raise StatusError(message)
+
+
+def as_dict(value, message, optional=False):
+    if value is None and optional:
+        return {}
+    if not isinstance(value, dict):
+        raise StatusError(message)
+    return value
+
+
+def as_list(value, message, optional=False):
+    if value is None and optional:
+        return []
+    if not isinstance(value, list):
+        raise StatusError(message)
+    return value
+
+
+def git_output(args, timeout=10):
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    if args and args[0] == "ls-remote":
+        ssh_command = env.get("GIT_SSH_COMMAND")
+        core_ssh_command = False
+        if not ssh_command:
+            try:
+                configured = subprocess.run(
+                    ["git", "config", "--get", "core.sshCommand"],
+                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                    timeout=2, check=False, env=env,
+                )
+                ssh_command = configured.stdout.strip() if configured.returncode == 0 else ""
+                core_ssh_command = bool(ssh_command)
+            except (OSError, subprocess.TimeoutExpired):
+                ssh_command = ""
+        if not ssh_command:
+            ssh_command = env.get("GIT_SSH", "")
+            if ssh_command:
+                ssh_command = shlex.quote(ssh_command)
+        if not ssh_command:
+            ssh_command = "ssh"
+        try:
+            executable = os.path.basename(shlex.split(ssh_command)[0]).lower()
+        except (IndexError, ValueError):
+            executable = ""
+        if executable in {"ssh", "ssh.exe"}:
+            env["GIT_SSH_COMMAND"] = ssh_command + " -o BatchMode=yes"
+        elif core_ssh_command:
+            env["GIT_SSH_COMMAND"] = ssh_command
+    try:
+        result = subprocess.run(
+            ["git", *args], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, timeout=timeout, check=False, env=env,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def repository(args):
+    remote = args.remote
+    remotes = git_output(["remote"]).splitlines()
+    if remote and remote not in remotes:
+        raise StatusError(f"Git remote {safe_text(remote, '')!r} is not configured")
+    if not remote:
+        remote = next((name for name in ("origin", "upstream") if name in remotes), "")
+        if not remote and remotes:
+            remote = remotes[0]
+
+    remote_url = git_output(["remote", "get-url", "--", remote]) if remote else ""
+    if args.repo:
+        value = args.repo.strip().rstrip("/")
+        if "://" in value:
+            parsed = urllib.parse.urlsplit(value)
+            host = parsed.hostname or ""
+            path = parsed.path.strip("/")
+        else:
+            # Accept owner/name or host/owner/name.
+            parts = strip_git_suffix(value).split("/")
+            if len(parts) == 2:
+                host, path = "github.com", "/".join(parts)
+            elif len(parts) == 3:
+                host, path = parts[0], "/".join(parts[1:])
+            else:
+                raise StatusError("--repo must be owner/name, host/owner/name, or a repository URL")
+        pieces = strip_git_suffix(path).split("/")
+        if not host or len(pieces) != 2 or not all(pieces):
+            raise StatusError("could not parse --repo; expected host/owner/name")
+        host, owner, name = host, pieces[0], pieces[1]
+    else:
+        value = remote_url
+        if not value:
+            raise StatusError("could not find a Git remote; use --repo host/owner/name")
+        remote_repo = remote_repository(value)
+        if not remote_repo:
+            raise StatusError("Git remote must identify host/owner/name; use --repo to override")
+        host = remote_repo["host"]
+        owner = remote_repo["owner"]
+        name = remote_repo["name"]
+        if not host:
+            raise StatusError("Git remote must identify host/owner/name; use --repo to override")
+        if not hostname_shaped(host):
+            raise StatusError(
+                f"Git remote host {safe_text(host, '')!r} may be an SSH alias; "
+                f"pass --repo with the actual API host, such as github.com/{owner}/{name}"
+            )
+
+    branch = args.target_branch
+    remote_identity = remote_repository(remote_url) if remote_url else None
+    requested_identity = {"host": host, "owner": owner, "name": name}
+    same_repository = remote_identity is not None and all(
+        remote_identity[field].casefold() == requested_identity[field].casefold()
+        for field in ("host", "owner", "name")
+    )
+    alias_override = (
+        args.repo
+        and remote_identity is not None
+        and not hostname_shaped(remote_identity["host"])
+        and all(
+            remote_identity[field].casefold() == requested_identity[field].casefold()
+            for field in ("owner", "name")
+        )
+    )
+    matching_remote = bool(remote) and (same_repository or alias_override)
+    if not branch and matching_remote:
+        symbolic = git_output(["symbolic-ref", "--quiet", "--short", f"refs/remotes/{remote}/HEAD"])
+        prefix = remote + "/"
+        if symbolic.startswith(prefix):
+            branch = symbolic[len(prefix):]
+    if not branch and matching_remote:
+        # A fresh checkout may not have refs/remotes/<remote>/HEAD yet.
+        # Ask Git for the remote's advertised HEAD; do not guess `main`.
+        advertised = git_output(["ls-remote", "--symref", "--", remote, "HEAD"], timeout=15)
+        for line in advertised.splitlines():
+            match = re.match(r"ref: refs/heads/(\S+)\s+HEAD$", line)
+            if match:
+                branch = match.group(1)
+                break
+    if not branch:
+        raise StatusError("could not resolve the repository default branch; pass --target-branch")
+    return {"host": host, "owner": owner, "name": name}, branch
+
+
+def remote_repository(value):
+    try:
+        if re.match(r"^[^/]+@[^:]+:", value):
+            host, path = value.split("@", 1)[1].split(":", 1)
+        elif "://" in value:
+            parsed = urllib.parse.urlsplit(value)
+            host, path = parsed.hostname or "", parsed.path
+        else:
+            return None
+    except ValueError:
+        return None
+    pieces = strip_git_suffix(path.strip("/")).split("/")
+    if not host or len(pieces) != 2 or not all(pieces):
+        return None
+    return {"host": host, "owner": pieces[0], "name": pieces[1]}
+
+
+def strip_git_suffix(value):
+    return value[:-4] if value.endswith(".git") else value
+
+
+def hostname_shaped(value):
+    if not value or len(value) > 253:
+        return False
+    labels = value.rstrip(".").split(".")
+    return len(labels) > 1 and all(
+        label and len(label) <= 63 and re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?", label)
+        for label in labels
+    )
+
+
+def safe_text(value, token):
+    text = "".join(" " if unicodedata.category(char).startswith("C") else char for char in str(value))
+    return text.replace(token, "[redacted]") if token else text
+
+
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    handler_order = urllib.request.HTTPRedirectHandler.handler_order - 1
+
+    def redirect_request(self, request, response, code, message, headers, new_url):
+        raise urllib.error.HTTPError(request.full_url, code, message, headers, response)
+
+
+def open_no_redirect(request, timeout):
+    opener = urllib.request.build_opener(NoRedirectHandler)
+    return opener.open(request, timeout=timeout)
+
+
+def request_json(endpoint, payload, token, timeout=30):
+    if not token.isascii() or any(ord(char) <= 32 or ord(char) == 127 for char in token):
+        raise StatusError("TRUNK_API_TOKEN contains whitespace or unsupported header characters")
+    body = json.dumps(payload).encode("utf-8")
+    try:
+        request = urllib.request.Request(
+            API_ROOT + "/" + endpoint,
+            data=body,
+            headers={"Content-Type": "application/json", "x-api-token": token},
+            method="POST",
+        )
+        with open_no_redirect(request, timeout=timeout) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        try:
+            if exc.code == 401:
+                raise StatusError("Trunk rejected TRUNK_API_TOKEN (HTTP 401); check the token and whether it was rotated")
+            if exc.code == 403:
+                raise StatusError("Trunk denied this API request (HTTP 403); check token access to this repository")
+            message = ""
+            try:
+                error_data = json.loads(exc.read().decode("utf-8"))
+                message = error_data.get("message") or error_data.get("error") or ""
+            except (ValueError, AttributeError):
+                pass
+            suffix = ": " + safe_text(message, token)[:240] if message else ""
+            raise StatusError(f"Trunk API {endpoint} failed (HTTP {exc.code}){suffix}")
+        finally:
+            exc.close()
+    except urllib.error.URLError as exc:
+        reason = safe_text(getattr(exc, "reason", "connection error"), token)
+        raise StatusError("network request to api.trunk.io failed: " + reason[:240])
+    except (TimeoutError, OSError, http.client.HTTPException) as exc:
+        reason = safe_text(exc, token)
+        raise StatusError("network request to api.trunk.io failed: " + reason[:240])
+    except ValueError:
+        raise StatusError(f"Trunk API {endpoint} returned invalid JSON")
+    if not isinstance(data, dict):
+        raise StatusError(f"Trunk API {endpoint} returned an unexpected response")
+    return data
+
+
+def pr_url(repo, number):
+    return f"https://{repo['host']}/{repo['owner']}/{repo['name']}/pull/{number}"
+
+
+def active_record(item):
+    submitted = item.get("isCurrentlySubmittedToQueue")
+    if submitted is not None:
+        return submitted
+    return str(item.get("state") or "").lower() in ACTIVE_STATES
+
+
+def list_all(repo, branch, token, max_pages=DEFAULT_MAX_PAGES):
+    cursor = None
+    seen_cursors = set()
+    pages = 0
+    while True:
+        if max_pages is not None and pages >= max_pages:
+            raise ScanLimitReached(pages)
+        payload = {"repo": repo, "targetBranch": branch, "take": PAGE_SIZE}
+        if cursor:
+            if cursor in seen_cursors:
+                raise StatusError("Trunk API repeated a pagination cursor; stopping to avoid looping")
+            seen_cursors.add(cursor)
+            payload["cursor"] = cursor
+        page = request_json("listPullRequests", payload, token, timeout=15)
+        pages += 1
+        records = page.get("pullRequests")
+        if not isinstance(records, list):
+            raise StatusError("Trunk API listPullRequests response did not contain a pullRequests list")
+        if not all(isinstance(item, dict) for item in records):
+            raise StatusError("Trunk API listPullRequests response contained a malformed pull request")
+        for item in records:
+            validate_optional_strings(
+                item, ("state", "prTitle", "prAuthor", "stateChangedAt"),
+                "Trunk API listPullRequests response contained invalid PR details",
+            )
+            submitted = item.get("isCurrentlySubmittedToQueue")
+            if submitted is not None and not isinstance(submitted, bool):
+                raise StatusError("Trunk API listPullRequests response contained an invalid queue status")
+            if "prNumber" not in item or (
+                not isinstance(item["prNumber"], int) or isinstance(item["prNumber"], bool) or item["prNumber"] < 1
+            ):
+                raise StatusError("Trunk API listPullRequests response contained an invalid PR number")
+            yield item
+        cursor = page.get("nextCursor")
+        if cursor is not None and (not isinstance(cursor, str) or not cursor):
+            raise StatusError("Trunk API listPullRequests response contained an invalid pagination cursor")
+        if not cursor:
+            return
+
+
+def print_queue(repo, branch, token, history_limit=20, max_pages=DEFAULT_MAX_PAGES):
+    queue_response = request_json("getQueue", {"repo": repo, "targetBranch": branch}, token)
+    queue = as_dict(
+        queue_response.get("queue", queue_response),
+        "Trunk API getQueue response did not contain a queue object",
+    )
+    validate_optional_strings(queue, ("state",), "Trunk API getQueue response contained an invalid queue state")
+    identity = f"{repo['host']}/{repo['owner']}/{repo['name']} @ {branch}"
+    print("Trunk Merge Queue — " + safe_text(identity, token))
+    state = queue.get("state") or "unknown"
+    details = ["state: " + safe_text(state, token)]
+    if queue.get("concurrency") is not None:
+        details.append("concurrency: " + safe_text(queue["concurrency"], token))
+    if queue.get("mode"):
+        details.append("mode: " + safe_text(queue["mode"], token))
+    print("Queue: " + ", ".join(details))
+    active = []
+    history = []
+    scan_limit = None
+    try:
+        for item in list_all(repo, branch, token, max_pages=max_pages):
+            if active_record(item):
+                active.append(item)
+            else:
+                history.append(item)
+    except ScanLimitReached as exc:
+        scan_limit = exc.pages
+    history.sort(key=lambda item: item.get("stateChangedAt") or "", reverse=True)
+    history_total = len(history)
+    if history_limit is not None:
+        history = history[:history_limit]
+    sections = (
+        ("Active (testing or waiting)", active, len(active)),
+        ("Recent and concluded history", history, history_total),
+    )
+    for title, records, total in sections:
+        shown = f"{len(records)}" if total == len(records) else f"{len(records)} shown of {total}"
+        print(f"{title} ({shown}):")
+        if not records:
+            print("  none")
+        for item in records:
+            number = item.get("prNumber", "?")
+            state = item.get("state") or "unknown"
+            changed = item.get("stateChangedAt")
+            name = safe_text(item.get("prTitle") or "(untitled)", token)
+            author = " — @" + safe_text(item["prAuthor"], token) if item.get("prAuthor") else ""
+            link = safe_text(pr_url(repo, number), token)
+            when = " — " + safe_text(changed, token) if changed else ""
+            print(f"  #{safe_text(number, token)} [{safe_text(state, token)}] {name}{author}{when} — {link}")
+    if history_total > len(history):
+        omitted = history_total - len(history)
+        print(f"  {omitted} history records omitted; pass --all to show all returned history")
+    if scan_limit is not None:
+        print(
+            f"INCOMPLETE: scanned {scan_limit} pages; pass --all or raise --max-pages "
+            "to include the remaining records; history ordering and selection cover only scanned pages"
+        )
+        return 3
+    return 0
+
+
+def print_pr(repo, branch, number, token):
+    data = request_json(
+        "getSubmittedPullRequest",
+        {"repo": repo, "targetBranch": branch, "pr": {"number": number}, "includeTimeline": True},
+        token,
+    )
+    item = as_dict(
+        data.get("submittedPullRequest", data),
+        "Trunk API getSubmittedPullRequest returned an unexpected response",
+    )
+    validate_optional_strings(
+        item, ("prTitle", "prAuthor", "prBaseBranch"),
+        "Trunk API getSubmittedPullRequest response contained invalid PR details",
+    )
+    actual_number = item.get("prNumber", number)
+    state = item.get("state") or "unknown"
+    current = item.get("isCurrentlySubmittedToQueue")
+    if not isinstance(actual_number, int) or isinstance(actual_number, bool) or actual_number < 1:
+        raise StatusError("Trunk API getSubmittedPullRequest response contained an invalid PR number")
+    validate_optional_strings(item, ("state",), "Trunk API getSubmittedPullRequest response contained an invalid PR state")
+    if current is not None and not isinstance(current, bool):
+        raise StatusError("Trunk API getSubmittedPullRequest response contained an invalid queue status")
+    timeline = as_list(
+        item.get("timeline"),
+        "Trunk API getSubmittedPullRequest response contained an invalid timeline",
+        optional=True,
+    )
+    if not all(isinstance(event, dict) for event in timeline):
+        raise StatusError("Trunk API getSubmittedPullRequest response contained an invalid timeline")
+    status = "currently in queue" if current is True else "history" if current is False else (
+        "currently in queue" if str(state).lower() in ACTIVE_STATES else "history"
+    )
+    print(f"PR #{safe_text(actual_number, token)} [{safe_text(state, token)}; {status}]")
+    if item.get("prTitle"):
+        print("Title: " + safe_text(item["prTitle"], token))
+    if item.get("prAuthor"):
+        print("Author: @" + safe_text(item["prAuthor"], token))
+    if item.get("prBaseBranch"):
+        print("Base branch: " + safe_text(item["prBaseBranch"], token))
+    print("PR: " + safe_text(pr_url(repo, actual_number), token))
+    print(f"Timeline ({len(timeline)} events):")
+    if not timeline:
+        print("  none returned")
+    for event in timeline:
+        for field in ("timestamp", "state"):
+            validate_optional_strings(
+                event, (field,), "Trunk API getSubmittedPullRequest response contained an invalid timeline event"
+            )
+        line = "  " + safe_text(event.get("timestamp") or "time unknown", token)
+        line += " — " + safe_text(event.get("state") or "unknown", token)
+        print(line)
+        test_run = as_dict(
+            event.get("testRun"),
+            "Trunk API getSubmittedPullRequest response contained an invalid test run",
+            optional=True,
+        )
+        validate_optional_strings(
+            test_run, ("status", "testBranch"),
+            "Trunk API getSubmittedPullRequest response contained an invalid test run",
+        )
+        if test_run.get("status"):
+            print("    Test run: " + safe_text(test_run["status"], token))
+        if test_run.get("testBranch"):
+            print("    Test branch: " + safe_text(test_run["testBranch"], token))
+        tests_passed = as_dict(
+            event.get("testsPassed"),
+            "Trunk API getSubmittedPullRequest response contained invalid passed-test details",
+            optional=True,
+        )
+        validate_optional_strings(
+            tests_passed, ("testBranchUrl",),
+            "Trunk API getSubmittedPullRequest response contained invalid passed-test details",
+        )
+        if tests_passed.get("testBranchUrl"):
+            print("    Tested branch: " + safe_text(tests_passed["testBranchUrl"], token))
+        failure = as_dict(
+            event.get("failure"),
+            "Trunk API getSubmittedPullRequest response contained invalid failure details",
+            optional=True,
+        )
+        statuses = as_list(
+            failure.get("failureCausingStatuses"),
+            "Trunk API getSubmittedPullRequest response contained invalid failed-check details",
+            optional=True,
+        )
+        if not all(isinstance(status_info, dict) for status_info in statuses):
+            raise StatusError("Trunk API getSubmittedPullRequest response contained invalid failed-check details")
+        for status_info in statuses:
+            validate_optional_strings(
+                status_info, ("name", "conclusion", "url"),
+                "Trunk API getSubmittedPullRequest response contained invalid failed-check details",
+            )
+            label = status_info.get("name") or status_info.get("conclusion") or "failed check"
+            link = " — " + safe_text(status_info["url"], token) if status_info.get("url") else ""
+            print("    Failed check: " + safe_text(label, token) + link)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Read Trunk Merge Queue and pull-request status with TRUNK_API_TOKEN."
+    )
+    parser.add_argument("pr", nargs="?", type=int, help="show one submitted PR and its timeline")
+    parser.add_argument(
+        "--repo",
+        help="override repo as owner/name, host/owner/name, or URL (use the real host for SSH aliases)",
+    )
+    parser.add_argument("--remote", help="Git remote to read (defaults to origin, then upstream)")
+    parser.add_argument("--target-branch", "--branch", help="queue target branch; default is read from the Git remote")
+    parser.add_argument(
+        "--limit", type=int, default=20,
+        help="maximum history records to display in queue listing (default: 20)",
+    )
+    parser.add_argument(
+        "--max-pages", type=int, default=DEFAULT_MAX_PAGES,
+        help=f"maximum PR-list pages to scan in queue listing (default: {DEFAULT_MAX_PAGES})",
+    )
+    parser.add_argument(
+        "--all", action="store_true", help="scan and display all returned history records in queue listing"
+    )
+    parser.add_argument("--version", action="version", version=f"trunk-queue-status {VERSION}")
+    args = parser.parse_args()
+    token = os.environ.get("TRUNK_API_TOKEN", "")
+    if not token:
+        raise StatusError("TRUNK_API_TOKEN is not set; add it to the workspace environment before running this command")
+    if args.pr is not None:
+        if args.pr < 1:
+            raise StatusError("PR number must be a positive integer")
+    else:
+        if args.limit < 0:
+            raise StatusError("--limit must be zero or greater")
+        if args.max_pages < 1:
+            raise StatusError("--max-pages must be greater than zero")
+    repo, branch = repository(args)
+    if args.pr is not None:
+        print_pr(repo, branch, args.pr, token)
+    else:
+        return print_queue(
+            repo, branch, token,
+            history_limit=None if args.all else args.limit,
+            max_pages=None if args.all else args.max_pages,
+        )
+    return 0
+
+
+def run():
+    try:
+        return main()
+    except StatusError as exc:
+        print("trunk-queue-status: error: " + str(exc), file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("trunk-queue-status: interrupted", file=sys.stderr)
+        return 130
+    except Exception as exc:
+        token = os.environ.get("TRUNK_API_TOKEN", "")
+        print("trunk-queue-status: error: " + safe_text(exc, token), file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(run())
+PYTHON
+  # END trunk-queue-status Python helper
+  chmod 755 "${helper}" || return 1
+  path="$(install_bin "${helper}" trunk-queue-status || true)"
+  if [[ -z "${path}" ]]; then
+    log "error: could not place trunk-queue-status in a bin directory"
+    return 1
+  fi
+  note_placement "${path}"
+  record PASS trunk-queue-status "installed read-only Trunk API helper at ${path}"
+}
+
+trunk_queue_status_stage() {
+  if trunk_queue_status_install; then
+    return 0
+  fi
+  if [[ -n "${TRUNK_API_TOKEN:-}" ]]; then
+    FAILED=1
+    record FAIL trunk-queue-status "requested helper provisioning failed — see messages above"
+  else
+    record WARN trunk-queue-status "helper provisioning failed and TRUNK_API_TOKEN is not set; skipping optional queue inspection"
+  fi
+}
+# END trunk-queue-status install functions
 
 # --- rwx --------------------------------------------------------------------
 # Pinned static release binary (RWX is not in nixpkgs/Flox; their docs
@@ -1028,6 +1626,7 @@ if roborev_install; then :; else record FAIL roborev "provisioning failed — se
 if trunk_stage; then :; else record FAIL trunk "provisioning failed — see messages above"; maybe_fail; fi
 if rwx_install; then :; else record FAIL rwx "provisioning failed — see messages above"; maybe_fail; fi
 if python311_stage; then :; else FAILED=1; record FAIL python3.11 "provisioning failed — see messages above"; fi
+trunk_queue_status_stage
 if pytools_stage; then :; else FAILED=1; record FAIL pytools "provisioning failed — see the rows above"; fi
 if rwx_auth; then :; else maybe_fail; fi
 if roborev_setup; then :; else maybe_fail; fi
@@ -1061,9 +1660,10 @@ echo "=== setup finished $(date -u +%FT%TZ) ==="
 # provisioning or auth failure in the tools this workspace exists for must
 # fail setup loudly, not pass silently — every stage still ran and reported
 # above, so this is loud-and-late, never an early abort. Under
-# STARTUP_BEST_EFFORT=1 only a target-class Python 3.11 failure or a
-# pytools-stage failure (the requested-tools requirement, issue #44)
-# reaches this exit; tool FAIL rows were recorded and the run exits 0 (the
+# STARTUP_BEST_EFFORT=1 only a target-class Python 3.11 failure, a
+# pytools-stage failure (the requested-tools requirement, issue #44), or
+# trunk-queue-status installation failure with TRUNK_API_TOKEN set (issue #64) reaches this exit;
+# other tool FAIL rows were recorded and the run exits 0 (the
 # gtm-sdk#702 idiom this repo's settings.toml contracts for). The error
 # goes to the original stderr (fd 4) as well as the log.
 if [[ "${FAILED}" != 0 ]]; then

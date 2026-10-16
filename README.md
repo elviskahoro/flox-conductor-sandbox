@@ -60,7 +60,7 @@ envs/floxhub-consume/ Phase D' prototype: [install] pkg-path = "elvis/conductor-
 envs/floxhub-provision/ Phase D MVP: [install] the 5 catalog tools + elvis/bd + elvis/roborev (opt-in stage 7, needs auth)
 scripts/sandbox-test.sh   the harness — runs all stages, never hard-fails
 scripts/floxhub-provision.sh  Phase D MVP setup-script recipe (token → FLOX_FLOXHUB_TOKEN env → `flox activate`; the activated manifest defaults to envs/floxhub-provision and is redirectable via FLOXHUB_ACTIVATE_DIR to any repo's committed .flox env)
-scripts/conductor-startup-script-cloud.sh  the single workspace startup script: pinned roborev/trunk/rwx + python3.11 for the AL2023 class + opt-in uv/pytest/reflex (issue #44) + rwx auth + roborev config/daemon (reviews on demand with --wait, never a background auto-review hook) — wired into this repo's setup, and paste-ready for other repos' workspaces
+scripts/conductor-startup-script-cloud.sh  the single workspace startup script: pinned roborev/trunk/rwx + read-only token-authenticated Trunk queue helper + python3.11 for the AL2023 class + opt-in uv/pytest/reflex (issue #44) + rwx auth + roborev config/daemon (reviews on demand with --wait, never a background auto-review hook) — wired into this repo's setup, and paste-ready for other repos' workspaces
 scripts/validate-pins.sh  pin-drift check: roborev/trunk pins vs the Flox manifests and the trunk preflight (CI)
 scripts/conductor-startup-script-cloud-test.sh  codified amazonlinux:2023 container verification of conductor-startup-script-cloud.sh (CI)
 prompts/conductor/   canonical cross-repo Conductor prompts (create-pr.md, fix-errors.md)
@@ -137,6 +137,42 @@ settings' environment variables, never inline in the script. (The rwx
 pin's former sibling copy in gtm-sdk's conductor-workspace-setup.sh went
 away when that repo retired the script — this repo's startup script is now
 the pin's only executable home.)
+
+The same startup script installs `trunk-queue-status`, a standard-library
+helper for **read-only** Trunk Merge Queue inspection. Set
+`TRUNK_API_TOKEN` in the workspace environment; the helper reads it when
+invoked and never saves it. With no arguments it resolves the repository
+and default target branch from the Git remote, shows the queue state, and
+lists all active testing/waiting items plus up to 20 returned history
+records by default, ordered by most recent state change. It scans at most
+five API pages; if results continue, it prints the records collected so far
+with an `INCOMPLETE` notice and exits with status 3. The notice explains that
+history selection covers only scanned pages. Pass `--max-pages 10` to raise
+the scan cap, or `--all` to scan every page and show all returned history.
+`--limit 50` changes the history display cap; active items are always shown.
+If a Git remote uses an SSH host alias, pass the actual API host with `--repo`,
+for example `--repo github.com/owner/name`.
+Pass a PR number to see its current state and timeline, including
+test branch and failed-check links. The queue-listing options `--limit`,
+`--max-pages`, and `--all` apply only when listing the queue. Use `--version` to
+identify the helper version embedded in a workspace's startup snapshot.
+
+```bash
+trunk-queue-status
+trunk-queue-status --all
+trunk-queue-status --limit 50
+trunk-queue-status --max-pages 10
+trunk-queue-status 1005
+trunk-queue-status --target-branch main
+```
+
+Outside a checkout, pass both `--repo owner/name` (or
+`--repo host/owner/name`) and `--target-branch main`. In a checkout, pass
+`--target-branch` if Git cannot resolve the remote's default branch. The
+helper calls Trunk's Merge Queue REST API directly; it needs no Infisical
+lookup or Trunk login session. Stock `trunk merge status` still requires a
+Trunk login session. Queue inspection is read-only. Continue using `gh`
+for merge operations as documented in issue #59.
 
 **Where provisioning fixes land: here, never in the consuming repo.**
 Cloud provisioning for every repo — gtm-sdk included — is this repo's

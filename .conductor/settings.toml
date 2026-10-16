@@ -24,7 +24,8 @@ if ! trunk check --ci --no-fix --all; then
   exit 1
 fi
 
-# The single workspace startup script — pinned roborev/trunk/rwx, Python
+# The single workspace startup script — pinned roborev/trunk/rwx plus the
+# token-authenticated, read-only trunk-queue-status helper, Python
 # 3.11 for this sandbox class (AL2023/Vercel sandboxes ship python3=3.9
 # while pyproject.toml requires >=3.11), rwx auth, roborev config/daemon
 # (reviews on demand with --wait — no background post-commit auto-review
@@ -41,9 +42,11 @@ fi
 # stage (roborev/trunk/rwx install, rwx auth, roborev config/daemon) is
 # recorded
 # and summarized but does not fail the workspace. Only a Python 3.11
-# failure on this sandbox class (the stated >=3.11 requirement) or a
+# failure on this sandbox class (the stated >=3.11 requirement), a
 # pytools-stage failure (a requested tool must not leave the workspace
-# looking ready without it, issue #44) exits non-zero, and setup
+# looking ready without it, issue #44), or failure to install
+# trunk-queue-status when TRUNK_API_TOKEN is set (issue #64) exits
+# non-zero, and setup
 # tolerates that exit here and fails at the very end instead (roborev
 # review finding: a provisioning failure must not block the harness
 # findings).
