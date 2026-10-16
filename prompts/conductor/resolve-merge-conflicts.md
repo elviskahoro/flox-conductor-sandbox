@@ -24,15 +24,7 @@ Concretely:
 
 Run these in a single batch of parallel `Bash` calls:
 
-```bash
-git status                                          # mid-merge/rebase already? uncommitted work?
-git branch --show-current                           # current branch?
-git rev-parse --abbrev-ref @{upstream} 2>/dev/null  # tracking ref?
-git log @{upstream}..HEAD --oneline 2>/dev/null     # unpushed commits?
-gh repo view --json defaultBranchRef --jq .defaultBranchRef.name  # confirm base
-gh pr view --json url,state,baseRefName,mergeable,mergeStateStatus 2>/dev/null  # PR + GitHub's view of the conflict
-git fetch origin
-```
+Run helper `conflict-context`: status, branch, upstream, unpushed commits, default base, PR and mergeability, then `git fetch origin`.
 
 Branch on what you find:
 
@@ -114,11 +106,7 @@ Mechanics:
 
 Before concluding the merge/rebase, mechanically check:
 
-```bash
-git diff --check                                          # leftover markers / whitespace errors
-grep -rnE '^(<<<<<<<|=======|>>>>>>>|\|\|\|\|\|\|\|)( |$)' $(git diff --name-only --cached) 2>/dev/null
-git diff --name-only --diff-filter=U                      # must be empty
-```
+Run helper `conflict-check`. It runs `git diff --check`, greps staged files for conflict markers, and lists unmerged files; it prints `clean` and exits 0 only when nothing is left.
 
 Any hit means a conflict is still open. Fix it before continuing.
 

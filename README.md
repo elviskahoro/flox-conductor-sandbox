@@ -63,9 +63,10 @@ scripts/floxhub-provision.sh  Phase D MVP setup-script recipe (token → FLOX_FL
 scripts/conductor-startup-script-cloud.sh  the single workspace startup script: pinned roborev/trunk/rwx + python3.11 for the AL2023 class + opt-in uv/pytest/reflex (issue #44) + rwx auth + roborev config/daemon (reviews on demand with --wait, never a background auto-review hook) — wired into this repo's setup, and paste-ready for other repos' workspaces
 scripts/validate-pins.sh  pin-drift check: roborev/trunk pins vs the Flox manifests and the trunk preflight (CI)
 scripts/conductor-startup-script-cloud-test.sh  codified amazonlinux:2023 container verification of conductor-startup-script-cloud.sh (CI)
-prompts/conductor/   canonical cross-repo Conductor prompts (create-pr.md, fix-errors.md)
+prompts/conductor/   canonical cross-repo Conductor prompts (general, create-pr, fix-errors, resolve-merge-conflicts)
                     — see prompts/README.md; installed into .conductor/settings.toml
                     by scripts/install-conductor-prompts.py, drift-checked in CI
+scripts/conductor-prompts/  helper scripts the prompts call instead of inlining shell (pr-preflight, push, pr-submit, pr-context, conflict-context, conflict-check); `self-test.sh` runs in CI
 findings/          harness output: report-*.md (summary + evidence) and full-log-*.txt
                    — see findings/README.md for a run-by-run index
 ```

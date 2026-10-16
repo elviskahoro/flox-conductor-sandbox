@@ -139,3 +139,7 @@ Everything else — the why-over-what principle, the squash → roborev →
 confirmation → push gate order, the description template, the closing-keyword
 grep gate (with the gtm-sdk#609/#628 war story), anti-patterns, examples,
 pitfalls — carries over unchanged.
+
+## Helper scripts
+
+Prompts contain no multi-line shell; they name helpers in `scripts/conductor-prompts/` (see General Preferences, "Prompt helpers"). Change logic there, not in the prompt, and run `scripts/conductor-prompts/self-test.sh` (also run in CI).

@@ -26,181 +26,13 @@ A reader who skims your description should walk away with the mental model neede
 
 ### Step 1: Pre-flight checks
 
-Before drafting, first refresh the remote refs:
-
-```bash
-git fetch origin || { echo "could not refresh origin refs; stop before classifying or updating this branch" >&2; exit 1; }
-```
+Helper `pr-preflight` first refreshes the remote refs and stops if that fails.
 
 This workflow expects `origin` to contain the PR base branch. In fork workflows, configure the base repository as `origin` and the branch's push repository as another remote. If the base is not available at `origin/<base>`, stop and surface which remote should serve as the base; do not guess.
 
-Then run these checks in a single batch of parallel `Bash` calls:
+If `pr-preflight` exits nonzero or prints a stop condition, stop the workflow even if the other parallel checks completed.
 
-The compound checks and push snippets below use Bash; run them in a Bash shell.
-
-If the compound publication/base check exits nonzero or prints a stop condition, stop the workflow even if the other parallel checks completed.
-
-```bash
-git status                                          # working tree clean?
-git branch --show-current                           # current branch?
-git rev-parse --abbrev-ref @{upstream} 2>/dev/null  # is there a remote tracking ref?
-# Run this compound check as one Bash call; its labeled output records values for later steps:
-(
-  branch="$(git branch --show-current)"
-  [ -n "$branch" ] || { echo "detached HEAD; cannot classify this branch" >&2; exit 1; }
-  upstream_remote="$(git config --get "branch.$branch.remote" || true)"
-  upstream_ref="$(git config --get "branch.$branch.merge" || true)"
-  published=no
-  matched_remotes=""
-  match_count=0
-  remote_count=0
-  lookup_failed=no
-  pr_url=""
-  pr_remote=none
-  pr_candidates=""
-  push_remote=""
-  push_ref=""
-  push_confirmation=no
-  export GIT_TERMINAL_PROMPT=0
-  for remote in $(git remote); do
-    remote_count=$((remote_count + 1))
-    matches="$(git ls-remote --heads "$remote" "refs/heads/$branch")" || { echo "warning: could not inspect candidate remote $remote" >&2; lookup_failed=yes; continue; }
-    if [ -n "$matches" ]; then
-      matched_remotes="${matched_remotes}${matched_remotes:+,}$remote"
-      match_count=$((match_count + 1))
-      published=yes
-    fi
-  done
-  error_file="$(mktemp)" || { echo "could not create a temporary error file" >&2; exit 1; }
-  trap 'rm -f "$error_file"' EXIT
-  if pr_info="$(gh pr view --json state,baseRefName,number,url,headRefName,headRepositoryOwner,headRepository --jq '[.state,.baseRefName,(.number|tostring),.url,.headRefName,.headRepositoryOwner.login,.headRepository.name] | map(if . == null then "" else tostring end) | join("\u001f")' 2>"$error_file")"; then
-    IFS=$'\x1f' read -r pr_state base pr_number pr_url pr_head_branch pr_head_owner pr_head_repo <<< "$pr_info"
-    if [ "$pr_state" != "OPEN" ]; then echo "PR is $pr_state; stop and offer a new branch name or ask for explicit confirmation to open a new PR from this head" >&2; exit 1; fi
-    pr_head="$pr_head_owner/$pr_head_repo"
-    published=yes
-  else
-    pr_error="$(cat "$error_file")"
-    : > "$error_file"
-    if pr_candidates="$(gh pr list --head "$branch" --state all --json number,url,state,headRefName,headRepositoryOwner,headRepository --jq '.[] | [.number,.url,.state,.headRefName,.headRepositoryOwner.login,.headRepository.name] | map(if . == null then "" else tostring end) | join("\u001f")' 2>"$error_file")"; then
-      base="$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)" || { echo "could not resolve the repository's default base" >&2; exit 1; }
-    else
-      echo "could not determine whether a PR already exists; gh pr view failed: $pr_error; gh pr list failed: $(cat "$error_file")" >&2
-      exit 1
-    fi
-    pr_state=none
-    pr_number=none
-    pr_url=none
-    pr_head=none
-  fi
-  [ -n "$base" ] || { echo "could not resolve a base branch" >&2; exit 1; }
-  [ "$branch" != "$base" ] || { echo "current branch is the base branch; stop before changing history or pushing" >&2; exit 1; }
-  git rev-parse --verify "refs/remotes/origin/$base" >/dev/null || { echo "origin/$base is unavailable after fetch" >&2; exit 1; }
-  if [ -n "$upstream_ref" ] && [ "$upstream_ref" != "refs/heads/$base" ] && [ -n "$upstream_remote" ] && [ "$upstream_remote" != "." ]; then
-    if [ "$pr_state" != "OPEN" ]; then
-      upstream_matches="$(git ls-remote --heads "$upstream_remote" "$upstream_ref")" || { echo "could not inspect upstream $upstream_remote:$upstream_ref" >&2; exit 1; }
-      if [ -n "$upstream_matches" ]; then
-        published=yes
-        push_remote="$upstream_remote"
-        push_ref="$upstream_ref"
-        [ "$upstream_ref" = "refs/heads/$branch" ] || push_confirmation=yes
-      else
-        echo "warning: configured upstream $upstream_remote:$upstream_ref no longer exists; treating this branch as unpublished"
-        upstream_remote=""
-        upstream_ref=""
-      fi
-    else
-      published=yes
-    fi
-  fi
-  if [ "$pr_state" = OPEN ] && [ -z "$push_remote" ]; then
-    [ -n "$pr_head_branch" ] && [ -n "$pr_head_owner" ] && [ -n "$pr_head_repo" ] || { echo "open PR has incomplete head details; surface the push-target ambiguity" >&2; exit 1; }
-    pr_remote_count=0
-    pr_seen_remote_urls=()
-    pr_head_lc="$(printf '%s' "$pr_head" | tr '[:upper:]' '[:lower:]')"
-    for remote in $(git remote); do
-      remote_url="$(git ls-remote --get-url "$remote")" || { echo "could not inspect URL for remote $remote" >&2; exit 1; }
-      remote_url_key="${remote_url%/}"
-      remote_url_key="${remote_url_key%.git}"
-      remote_url_lc="$(printf '%s' "$remote_url_key" | tr '[:upper:]' '[:lower:]')"
-      remote_seen=no
-      for seen_remote_url in "${pr_seen_remote_urls[@]}"; do
-        [ "$seen_remote_url" = "$remote_url_lc" ] && remote_seen=yes
-      done
-      [ "$remote_seen" = no ] || continue
-      pr_seen_remote_urls+=("$remote_url_lc")
-      case "$remote_url" in
-        *://*) remote_repo_path="${remote_url#*://}"; remote_repo_path="${remote_repo_path#*/}" ;;
-        *@*:* ) remote_repo_path="${remote_url#*:}" ;;
-        *) continue ;;
-      esac
-      remote_repo_path="${remote_repo_path%/}"
-      remote_repo_path="${remote_repo_path%.git}"
-      case "$remote_repo_path" in */*) remote_owner="${remote_repo_path%%/*}"; remote_repo_name="${remote_repo_path#*/}" ;; *) continue ;; esac
-      case "$remote_repo_name" in */*|"") continue ;; esac
-      remote_head_lc="$(printf '%s/%s' "$remote_owner" "$remote_repo_name" | tr '[:upper:]' '[:lower:]')"
-      if [ "$remote_head_lc" = "$pr_head_lc" ]; then
-        pr_remote="$remote"
-        pr_remote_count=$((pr_remote_count + 1))
-      fi
-    done
-    [ "$pr_remote_count" -eq 1 ] || { echo "could not uniquely map PR head $pr_head to a configured remote; ask the user which remote to push and confirm the <owner>:<branch> PR head" >&2; exit 1; }
-    push_remote="$pr_remote"
-    push_ref="refs/heads/$pr_head_branch"
-    pr_head_matches="$(git ls-remote --heads "$push_remote" "$push_ref")" || { echo "could not inspect open PR head $push_remote:$push_ref" >&2; exit 1; }
-    [ -n "$pr_head_matches" ] || { echo "open PR head $push_remote:$push_ref is missing; surface the push-target ambiguity" >&2; exit 1; }
-    [ "$pr_head_branch" = "$branch" ] || push_confirmation=yes
-  fi
-  if [ "$lookup_failed" = yes ]; then
-    if [ "$pr_state" != "OPEN" ] && [ "$match_count" -eq 0 ] && [ -z "$push_remote" ]; then
-      echo "could not classify the branch because at least one configured remote was unreachable; surface the ambiguity before changing history or pushing" >&2
-      exit 1
-    fi
-    echo "warning: one or more unrelated remote lookups failed; verify the exact push target before proceeding"
-    [ "$pr_state" = OPEN ] || [ -n "$push_remote" ] || push_confirmation=yes
-  fi
-  if [ "$published" = yes ]; then
-    if [ -z "$push_remote" ]; then
-      [ "$match_count" -le 1 ] || { echo "multiple push remotes match ($matched_remotes); stop and ask which one to use" >&2; exit 1; }
-      if [ "$match_count" -eq 1 ]; then
-        push_remote="$matched_remotes"
-        push_ref="refs/heads/$branch"
-        push_confirmation=yes
-      fi
-    fi
-  elif [ -z "$push_remote" ]; then
-    [ "$remote_count" -le 1 ] || { echo "new branch has multiple configured remotes and no existing push target; ask which remote to use" >&2; exit 1; }
-    git remote get-url origin >/dev/null 2>&1 || { echo "new branch has no origin remote; surface the push target" >&2; exit 1; }
-    push_remote=origin
-    push_ref="refs/heads/$branch"
-  fi
-  [ -n "$push_remote" ] && [ -n "$push_ref" ] || { echo "push target is ambiguous; surface it before continuing" >&2; exit 1; }
-  [ "$push_ref" != "refs/heads/$base" ] || { echo "push target is the base branch; stop before pushing" >&2; exit 1; }
-  push_remote_url="$(git ls-remote --get-url "$push_remote")" || { echo "could not inspect push remote URL" >&2; exit 1; }
-  case "$push_remote_url" in
-    *://*) push_repo="${push_remote_url#*://}"; push_repo="${push_repo#*/}" ;;
-    *@*:* ) push_repo="${push_remote_url#*:}" ;;
-    *) echo "could not map push remote to a GitHub owner/repository; ask the user to confirm the push remote and <owner>:<branch> PR head" >&2; exit 1 ;;
-  esac
-  push_repo="${push_repo%.git}"
-  case "$push_repo" in */*) push_owner="${push_repo%%/*}"; push_repo_name="${push_repo#*/}" ;; *) echo "could not map push remote to a GitHub owner/repository; ask the user to confirm the push remote and <owner>:<branch> PR head" >&2; exit 1 ;; esac
-  case "$push_owner:$push_repo_name" in :*|*:|*/*) echo "push remote URL has an unsupported path; ask the user to confirm the push remote and <owner>:<branch> PR head" >&2; exit 1 ;; esac
-  if [ "$pr_state" = none ] && [ -n "$pr_candidates" ]; then
-    while IFS=$'\x1f' read -r candidate_number candidate_url candidate_state candidate_branch candidate_owner candidate_repo; do
-      if [ "$candidate_branch" = "$branch" ] && [ "$(printf '%s' "$candidate_owner" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "$push_owner" | tr '[:upper:]' '[:lower:]')" ] && [ "$(printf '%s' "$candidate_repo" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "$push_repo_name" | tr '[:upper:]' '[:lower:]')" ]; then
-        echo "PR #$candidate_number ($candidate_url, $candidate_state) matches the resolved push head; inspect it by number. For a closed or merged PR, offer a new branch name or ask for explicit confirmation to open a new PR from this head" >&2
-        exit 1
-      fi
-    done <<< "$pr_candidates"
-  fi
-  push_branch="${push_ref#refs/heads/}"
-  push_head="$push_owner:$push_branch"
-  printf 'PR preflight: branch=%s published=%s base=%s matching_remotes=%s upstream_remote=%s upstream_ref=%s pr_state=%s pr_number=%s pr_url=%s pr_head=%s pr_remote=%s push_remote=%s push_ref=%s push_head=%s push_confirmation=%s\n' "$branch" "$published" "$base" "${matched_remotes:-none}" "${upstream_remote:-none}" "${upstream_ref:-none}" "$pr_state" "$pr_number" "$pr_url" "$pr_head" "$pr_remote" "$push_remote" "$push_ref" "$push_head" "$push_confirmation"
-  git remote -v | sed -E 's#(https?://)[^/@]+@#\1[redacted]@#'
-  git log "origin/$base"..HEAD --oneline
-  git diff "origin/$base"...HEAD --stat
-  git log @{upstream}..HEAD --oneline 2>/dev/null || true
-)
-```
+Run `git status`, `git branch --show-current`, and helper `pr-preflight` as one parallel batch. `pr-preflight` refreshes `origin`, resolves publication, base, open-PR head, and push target, prints a labeled `PR preflight:` line (record its values for later steps), then shows redacted remotes, commits beyond the base, and the diff stat. It exits nonzero with the reason on stderr for any stop condition.
 
 Stop and surface the problem to the user if any of these is true:
 
@@ -409,12 +241,7 @@ For an unpublished branch, rebase onto `origin/<confirmed-base>` so conflicts su
 
 Rebasing a branch that is already on a remote would rewrite published history and require a force-push, which is forbidden without explicit user approval.
 
-```bash
-git fetch origin || { echo "could not refresh origin refs; stop before updating the branch" >&2; exit 1; }
-git rebase origin/<confirmed-base>   # unpublished branch only
-# Published branch, only when a base update is needed:
-git merge origin/<confirmed-base>
-```
+Run `git fetch origin` (stop if it fails), then `git rebase origin/<confirmed-base>` for an unpublished branch, or `git merge origin/<confirmed-base>` for a published branch that needs a base update.
 
 - If the rebase or merge is clean, run the required checks and review, then proceed to Step 11 if the Step 8 preview remains accurate. If it hits conflicts, **stop and surface them to the user.** Resolve them (or have the user resolve them), then rerun the relevant checks and `roborev review --wait` so the review reflects the updated history. Never skip or abandon conflicting changes silently.
 - If no base update is needed, proceed to Step 11.
@@ -423,32 +250,7 @@ git merge origin/<confirmed-base>
 
 Once the rebase or merge is clean, rerun Step 1's compound target-resolution check. Copy its freshly printed `push_remote`, `push_ref`, and `push_head` values into the commands below; variables from Step 1's subshell do not persist. Confirm the values match the approved Step 8 preview. If `push_confirmation=yes`, the user's approval of that preview is the required explicit confirmation. Never push to the base branch. Set upstream tracking when no usable non-base upstream exists, including when the configured remote branch is stale.
 
-```bash
-upstream_remote="$(git config --get "branch.$(git branch --show-current).remote" || true)"
-upstream_ref="$(git config --get "branch.$(git branch --show-current).merge" || true)"
-base="<confirmed-base from the approved preview>"
-push_remote="<fresh push_remote from PR preflight>"
-push_ref="<fresh push_ref from PR preflight>"
-for value in "$base" "$push_remote"; do
-  case "$value" in
-    ''|*'<'*|*'>'*) echo "base and push_remote must be resolved from the approved preflight" >&2; exit 1 ;;
-  esac
-done
-[ -n "$push_ref" ] || { echo "push_ref must be resolved from the approved preflight" >&2; exit 1; }
-[ "$push_ref" != "refs/heads/$base" ] || { echo "push target is the base branch; stop before pushing" >&2; exit 1; }
-needs_upstream=no
-if [ -z "$upstream_remote" ] || [ "$upstream_remote" = "." ] || [ -z "$upstream_ref" ] || [ "$upstream_ref" = "refs/heads/$base" ]; then
-  needs_upstream=yes
-else
-  upstream_matches="$(git ls-remote --heads "$upstream_remote" "$upstream_ref")" || { echo "could not verify configured upstream; stop before pushing" >&2; exit 1; }
-  [ -n "$upstream_matches" ] || needs_upstream=yes
-fi
-if [ "$needs_upstream" = yes ]; then
-  git push -u "$push_remote" "HEAD:$push_ref"
-else
-  git push "$push_remote" "HEAD:$push_ref"
-fi
-```
+Run helper `push` with the confirmed base and the fresh `push_remote` and `push_ref`. It refuses placeholders and the base branch, verifies the configured upstream, and pushes to `HEAD:<push_ref>` (adding `-u` when no usable non-base upstream exists).
 
 Confirm the push succeeded before moving on. If it fails (auth, protected branch, non-fast-forward), surface the error and stop — do not force-push.
 
@@ -458,9 +260,6 @@ If Step 1 found an open PR for this branch, update it with `gh pr edit <number> 
 
 **Hard gate before running `gh pr create` or `gh pr edit`: for every same-repo GitHub issue Step 2 determined this PR fully resolves, mechanically verify the final body contains a `Closes #NNN` / `Fixes #NNN` / `Resolves #NNN` line for *that specific* issue number before shelling out — one PR can fully resolve more than one issue, and each needs its own closing reference, not just the first.** This is a real known failure mode, not a hypothetical: gtm-sdk#609 was fully fixed by gtm-sdk#628, but the drafted body only listed "gtm-sdk#609" under Links without a closing keyword, so GitHub never auto-closed it and it sat open until manually closed later. A "the plan said to add it" belief is not sufficient — grep the exact `PR_BODY` that will be sent by either command once per fully-resolved issue number:
 
-```bash
-grep -qiE "(closes|fixes|resolves) #${ISSUE_NUMBER}([^[:alnum:]_]|$)" <<< "$PR_BODY"
-```
 
 `\b` is not portable to the BSD `grep` on macOS — use the `([^[:alnum:]_]|$)` form above instead, which matches the same "word boundary or end of string" intent on both BSD and GNU grep.
 
@@ -468,43 +267,7 @@ If that grep fails for any fully-resolved issue number, **stop and fix the body*
 
 To make this checkable, assign the HEREDOC to `PR_BODY` first, grep that exact variable, then pass it to `--body` — don't construct the body inline in the `gh pr create` call, since there's nothing to grep before shelling out:
 
-```bash
-PR_BODY="$(cat <<'EOF'
-## Why
-... (real newlines, not \n)
-EOF
-)"
-
-for ISSUE_NUMBER in "${FULLY_RESOLVED_ISSUE_NUMBERS[@]}"; do  # every issue Step 2 flagged as fully resolved
-  grep -qiE "(closes|fixes|resolves) #${ISSUE_NUMBER}([^[:alnum:]_]|$)" <<< "$PR_BODY" || {
-    echo "missing closing keyword for #${ISSUE_NUMBER}" >&2
-    exit 1
-  }
-done
-
-base="<confirmed-base from the approved preview>"
-push_head="<owner>:<branch from the approved preview>"
-existing_pr_number="<open PR number from preflight, or none>"
-case "$base" in
-  ''|*'<'*|*'>'*) echo "base still contains a placeholder; resolve it from the approved preview" >&2; exit 1 ;;
-esac
-case "$existing_pr_number" in
-  none) ;;
-  ''|*[!0-9]*) echo "existing_pr_number must be a numeric PR number or none" >&2; exit 1 ;;
-esac
-case "$push_head" in
-  *:*) ;;
-  *) echo "push_head must be a confirmed <owner>:<branch> value from preflight" >&2; exit 1 ;;
-esac
-case "$push_head" in
-  *'<'*|*'>'*) echo "push_head still contains a placeholder; resolve it from preflight" >&2; exit 1 ;;
-esac
-if [ "$existing_pr_number" = none ]; then
-  gh pr create --base "$base" --head "$push_head" --title "Fix race in Apollo enrichment dedup that double-charged credits" --body "$PR_BODY"
-else
-  gh pr edit "$existing_pr_number" --title "Fix race in Apollo enrichment dedup that double-charged credits" --body "$PR_BODY"
-fi
-```
+Write the final body to a file (real newlines, not `\n`), then run helper `pr-submit` with: confirmed base, `push_head`, the open PR number from preflight (or `none`), the title, the body file, and every fully-resolved issue number. The helper rejects placeholders, fails if any listed issue lacks its closing keyword, and then runs `gh pr create` or `gh pr edit`.
 
 Return the PR URL to the user. Don't add follow-up commentary unless the user asks — the URL is the work product.
 
