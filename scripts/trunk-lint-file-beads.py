@@ -129,9 +129,10 @@ _ISSUE_ROW_RE = re.compile(r"^\s*\d+:\d+\s+(low|medium|high|critical)\s", re.IGN
 # messages) stays inside the block.
 _FOOTER_RE = re.compile(r"^Checked \d+\b")
 
-_LINTER_FAILURE_RE = re.compile(
-    r"(?im)^\s*(error|warning)?:?\s*(linter\b.*\bfailed|failed to (install|run)\b)",
-)
+# Loose on purpose: it only ever sees stderr and flush-left stdout, never
+# indented finding text, and a missed match would let --prune-resolved close
+# live beads.
+_LINTER_FAILURE_RE = re.compile(r"(?i)linter\b.*\bfailed|failed to (install|run)\b")
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
@@ -221,6 +222,7 @@ def parse_findings_by_file(raw_output: str) -> list[FileFindings]:
     order: list[str] = []
     current_path: str | None = None
     current_lines: list[str] = []
+    cut = False
 
     def flush() -> None:
         if current_path is None:
@@ -243,6 +245,8 @@ def parse_findings_by_file(raw_output: str) -> list[FileFindings]:
             flush()
             current_path = header.group("path")
             current_lines = [line]
+        elif current_path is None and cut and _ISSUE_ROW_RE.match(line):
+            typer.echo(f"warning: dropped orphan issue row after block cut: {line.strip()}", err=True)
         elif current_path is not None:
             # Flush-left, non-blank, non-header text ("Checked N files",
             # banners) is a footer, not part of the finding: end the block.
@@ -251,6 +255,7 @@ def parse_findings_by_file(raw_output: str) -> list[FileFindings]:
                 flush()
                 current_path = None
                 current_lines = []
+                cut = True
             else:
                 current_lines.append(line)
     flush()
@@ -639,7 +644,7 @@ def main(
 
         linter_failed = prune_resolved and bool(
             _LINTER_FAILURE_RE.search(
-                run_result.stderr + "\n" + _unindented_lines(run_result.output),
+                strip_ansi(run_result.stderr) + "\n" + _unindented_lines(run_result.output),
             ),
         )
         if linter_failed:
