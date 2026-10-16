@@ -2,6 +2,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from typer.testing import CliRunner
+
 _spec = importlib.util.spec_from_file_location(
     "trunk_lint_file_beads",
     Path(__file__).resolve().parent.parent / "scripts" / "trunk-lint-file-beads.py",
@@ -89,8 +91,6 @@ def test_dropped_rows_reported_after_footer():
 
 
 def _run_prune(monkeypatch, tmp_path, rep):
-    from typer.testing import CliRunner
-
     monkeypatch.setattr(
         mod,
         "run_trunk_check",
@@ -100,12 +100,14 @@ def _run_prune(monkeypatch, tmp_path, rep):
     monkeypatch.setattr(mod, "find_or_create_epic", lambda *, dry_run: "e-1")
     monkeypatch.setattr(mod, "upsert_bead", lambda *a, **k: "ok")
     closed = []
-    monkeypatch.setattr(
-        mod, "close_stale_beads", lambda *a, **k: closed.append(1) or [],
-    )
-    res = CliRunner().invoke(
-        mod.app, ["--prune-resolved", "--report", str(tmp_path / "report.txt")],
-    )
+
+    def fake_close(existing, **kwargs):
+        closed.append((existing, kwargs))
+        return []
+
+    monkeypatch.setattr(mod, "close_stale_beads", fake_close)
+    report = str(tmp_path / "report.txt")
+    res = CliRunner().invoke(mod.app, ["--prune-resolved", "--report", report])
     return res, closed
 
 
@@ -113,6 +115,7 @@ def test_prune_skipped_with_exit_3(monkeypatch, tmp_path):
     rep = "a.py:1:1\n 1:1  low  X  m\n\nChecked 1 file\n 2:1  low  Y  m2\n"
     res, closed = _run_prune(monkeypatch, tmp_path, rep)
     assert res.exit_code == 3
+    assert "dropped orphan issue row" in res.output
     assert not closed
 
 
@@ -120,4 +123,5 @@ def test_prune_runs_on_clean_parse(monkeypatch, tmp_path):
     rep = "a.py:1:1\n 1:1  low  X  m\n\nChecked 1 file\n"
     res, closed = _run_prune(monkeypatch, tmp_path, rep)
     assert res.exit_code == 0
-    assert closed
+    assert "dropped" not in res.output
+    assert closed[0][0] == {"gone.py": "b-1"}
