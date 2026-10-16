@@ -171,25 +171,190 @@ A reader who skims your description should walk away with the mental model neede
 
 ### Step 1: Pre-flight checks
 
-Before drafting, run these in a single batch of parallel `Bash` calls:
+Before drafting, first refresh the remote refs:
+
+```bash
+git fetch origin || { echo "could not refresh origin refs; stop before classifying or updating this branch" >&2; exit 1; }
+```
+
+This workflow expects `origin` to contain the PR base branch. In fork workflows, configure the base repository as `origin` and the branch's push repository as another remote. If the base is not available at `origin/<base>`, stop and surface which remote should serve as the base; do not guess.
+
+Then run these checks in a single batch of parallel `Bash` calls:
+
+The compound checks and push snippets below use Bash; run them in a Bash shell.
+
+If the compound publication/base check exits nonzero or prints a stop condition, stop the workflow even if the other parallel checks completed.
 
 ```bash
 git status                                          # working tree clean?
 git branch --show-current                           # current branch?
 git rev-parse --abbrev-ref @{upstream} 2>/dev/null  # is there a remote tracking ref?
-git log @{upstream}..HEAD --oneline 2>/dev/null     # any unpushed commits?
-git log main..HEAD --oneline                        # commits beyond main?
-git diff main...HEAD --stat                         # surface area?
-gh pr view --json url,state 2>/dev/null             # does a PR already exist?
-gh repo view --json defaultBranchRef --jq .defaultBranchRef.name  # confirm base
+# Run this compound check as one Bash call; its labeled output records values for later steps:
+(
+  branch="$(git branch --show-current)"
+  [ -n "$branch" ] || { echo "detached HEAD; cannot classify this branch" >&2; exit 1; }
+  upstream_remote="$(git config --get "branch.$branch.remote" || true)"
+  upstream_ref="$(git config --get "branch.$branch.merge" || true)"
+  published=no
+  matched_remotes=""
+  match_count=0
+  remote_count=0
+  lookup_failed=no
+  pr_url=""
+  pr_remote=none
+  pr_candidates=""
+  push_remote=""
+  push_ref=""
+  push_confirmation=no
+  export GIT_TERMINAL_PROMPT=0
+  for remote in $(git remote); do
+    remote_count=$((remote_count + 1))
+    matches="$(git ls-remote --heads "$remote" "refs/heads/$branch")" || { echo "warning: could not inspect candidate remote $remote" >&2; lookup_failed=yes; continue; }
+    if [ -n "$matches" ]; then
+      matched_remotes="${matched_remotes}${matched_remotes:+,}$remote"
+      match_count=$((match_count + 1))
+      published=yes
+    fi
+  done
+  error_file="$(mktemp)" || { echo "could not create a temporary error file" >&2; exit 1; }
+  trap 'rm -f "$error_file"' EXIT
+  if pr_info="$(gh pr view --json state,baseRefName,number,url,headRefName,headRepositoryOwner,headRepository --jq '[.state,.baseRefName,(.number|tostring),.url,.headRefName,.headRepositoryOwner.login,.headRepository.name] | map(if . == null then "" else tostring end) | join("\u001f")' 2>"$error_file")"; then
+    IFS=$'\x1f' read -r pr_state base pr_number pr_url pr_head_branch pr_head_owner pr_head_repo <<< "$pr_info"
+    if [ "$pr_state" != "OPEN" ]; then echo "PR is $pr_state; stop and offer a new branch name or ask for explicit confirmation to open a new PR from this head" >&2; exit 1; fi
+    pr_head="$pr_head_owner/$pr_head_repo"
+    published=yes
+  else
+    pr_error="$(cat "$error_file")"
+    : > "$error_file"
+    if pr_candidates="$(gh pr list --head "$branch" --state all --json number,url,state,headRefName,headRepositoryOwner,headRepository --jq '.[] | [.number,.url,.state,.headRefName,.headRepositoryOwner.login,.headRepository.name] | map(if . == null then "" else tostring end) | join("\u001f")' 2>"$error_file")"; then
+      base="$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)" || { echo "could not resolve the repository's default base" >&2; exit 1; }
+    else
+      echo "could not determine whether a PR already exists; gh pr view failed: $pr_error; gh pr list failed: $(cat "$error_file")" >&2
+      exit 1
+    fi
+    pr_state=none
+    pr_number=none
+    pr_url=none
+    pr_head=none
+  fi
+  [ -n "$base" ] || { echo "could not resolve a base branch" >&2; exit 1; }
+  [ "$branch" != "$base" ] || { echo "current branch is the base branch; stop before changing history or pushing" >&2; exit 1; }
+  git rev-parse --verify "refs/remotes/origin/$base" >/dev/null || { echo "origin/$base is unavailable after fetch" >&2; exit 1; }
+  if [ -n "$upstream_ref" ] && [ "$upstream_ref" != "refs/heads/$base" ] && [ -n "$upstream_remote" ] && [ "$upstream_remote" != "." ]; then
+    if [ "$pr_state" != "OPEN" ]; then
+      upstream_matches="$(git ls-remote --heads "$upstream_remote" "$upstream_ref")" || { echo "could not inspect upstream $upstream_remote:$upstream_ref" >&2; exit 1; }
+      if [ -n "$upstream_matches" ]; then
+        published=yes
+        push_remote="$upstream_remote"
+        push_ref="$upstream_ref"
+        [ "$upstream_ref" = "refs/heads/$branch" ] || push_confirmation=yes
+      else
+        echo "warning: configured upstream $upstream_remote:$upstream_ref no longer exists; treating this branch as unpublished"
+        upstream_remote=""
+        upstream_ref=""
+      fi
+    else
+      published=yes
+    fi
+  fi
+  if [ "$pr_state" = OPEN ] && [ -z "$push_remote" ]; then
+    [ -n "$pr_head_branch" ] && [ -n "$pr_head_owner" ] && [ -n "$pr_head_repo" ] || { echo "open PR has incomplete head details; surface the push-target ambiguity" >&2; exit 1; }
+    pr_remote_count=0
+    pr_seen_remote_urls=()
+    pr_head_lc="$(printf '%s' "$pr_head" | tr '[:upper:]' '[:lower:]')"
+    for remote in $(git remote); do
+      remote_url="$(git ls-remote --get-url "$remote")" || { echo "could not inspect URL for remote $remote" >&2; exit 1; }
+      remote_url_key="${remote_url%/}"
+      remote_url_key="${remote_url_key%.git}"
+      remote_url_lc="$(printf '%s' "$remote_url_key" | tr '[:upper:]' '[:lower:]')"
+      remote_seen=no
+      for seen_remote_url in "${pr_seen_remote_urls[@]}"; do
+        [ "$seen_remote_url" = "$remote_url_lc" ] && remote_seen=yes
+      done
+      [ "$remote_seen" = no ] || continue
+      pr_seen_remote_urls+=("$remote_url_lc")
+      case "$remote_url" in
+        *://*) remote_repo_path="${remote_url#*://}"; remote_repo_path="${remote_repo_path#*/}" ;;
+        *@*:* ) remote_repo_path="${remote_url#*:}" ;;
+        *) continue ;;
+      esac
+      remote_repo_path="${remote_repo_path%/}"
+      remote_repo_path="${remote_repo_path%.git}"
+      case "$remote_repo_path" in */*) remote_owner="${remote_repo_path%%/*}"; remote_repo_name="${remote_repo_path#*/}" ;; *) continue ;; esac
+      case "$remote_repo_name" in */*|"") continue ;; esac
+      remote_head_lc="$(printf '%s/%s' "$remote_owner" "$remote_repo_name" | tr '[:upper:]' '[:lower:]')"
+      if [ "$remote_head_lc" = "$pr_head_lc" ]; then
+        pr_remote="$remote"
+        pr_remote_count=$((pr_remote_count + 1))
+      fi
+    done
+    [ "$pr_remote_count" -eq 1 ] || { echo "could not uniquely map PR head $pr_head to a configured remote; ask the user which remote to push and confirm the <owner>:<branch> PR head" >&2; exit 1; }
+    push_remote="$pr_remote"
+    push_ref="refs/heads/$pr_head_branch"
+    pr_head_matches="$(git ls-remote --heads "$push_remote" "$push_ref")" || { echo "could not inspect open PR head $push_remote:$push_ref" >&2; exit 1; }
+    [ -n "$pr_head_matches" ] || { echo "open PR head $push_remote:$push_ref is missing; surface the push-target ambiguity" >&2; exit 1; }
+    [ "$pr_head_branch" = "$branch" ] || push_confirmation=yes
+  fi
+  if [ "$lookup_failed" = yes ]; then
+    if [ "$pr_state" != "OPEN" ] && [ "$match_count" -eq 0 ] && [ -z "$push_remote" ]; then
+      echo "could not classify the branch because at least one configured remote was unreachable; surface the ambiguity before changing history or pushing" >&2
+      exit 1
+    fi
+    echo "warning: one or more unrelated remote lookups failed; verify the exact push target before proceeding"
+    [ "$pr_state" = OPEN ] || [ -n "$push_remote" ] || push_confirmation=yes
+  fi
+  if [ "$published" = yes ]; then
+    if [ -z "$push_remote" ]; then
+      [ "$match_count" -le 1 ] || { echo "multiple push remotes match ($matched_remotes); stop and ask which one to use" >&2; exit 1; }
+      if [ "$match_count" -eq 1 ]; then
+        push_remote="$matched_remotes"
+        push_ref="refs/heads/$branch"
+        push_confirmation=yes
+      fi
+    fi
+  elif [ -z "$push_remote" ]; then
+    [ "$remote_count" -le 1 ] || { echo "new branch has multiple configured remotes and no existing push target; ask which remote to use" >&2; exit 1; }
+    git remote get-url origin >/dev/null 2>&1 || { echo "new branch has no origin remote; surface the push target" >&2; exit 1; }
+    push_remote=origin
+    push_ref="refs/heads/$branch"
+  fi
+  [ -n "$push_remote" ] && [ -n "$push_ref" ] || { echo "push target is ambiguous; surface it before continuing" >&2; exit 1; }
+  [ "$push_ref" != "refs/heads/$base" ] || { echo "push target is the base branch; stop before pushing" >&2; exit 1; }
+  push_remote_url="$(git ls-remote --get-url "$push_remote")" || { echo "could not inspect push remote URL" >&2; exit 1; }
+  case "$push_remote_url" in
+    *://*) push_repo="${push_remote_url#*://}"; push_repo="${push_repo#*/}" ;;
+    *@*:* ) push_repo="${push_remote_url#*:}" ;;
+    *) echo "could not map push remote to a GitHub owner/repository; ask the user to confirm the push remote and <owner>:<branch> PR head" >&2; exit 1 ;;
+  esac
+  push_repo="${push_repo%.git}"
+  case "$push_repo" in */*) push_owner="${push_repo%%/*}"; push_repo_name="${push_repo#*/}" ;; *) echo "could not map push remote to a GitHub owner/repository; ask the user to confirm the push remote and <owner>:<branch> PR head" >&2; exit 1 ;; esac
+  case "$push_owner:$push_repo_name" in :*|*:|*/*) echo "push remote URL has an unsupported path; ask the user to confirm the push remote and <owner>:<branch> PR head" >&2; exit 1 ;; esac
+  if [ "$pr_state" = none ] && [ -n "$pr_candidates" ]; then
+    while IFS=$'\x1f' read -r candidate_number candidate_url candidate_state candidate_branch candidate_owner candidate_repo; do
+      if [ "$candidate_branch" = "$branch" ] && [ "$(printf '%s' "$candidate_owner" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "$push_owner" | tr '[:upper:]' '[:lower:]')" ] && [ "$(printf '%s' "$candidate_repo" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "$push_repo_name" | tr '[:upper:]' '[:lower:]')" ]; then
+        echo "PR #$candidate_number ($candidate_url, $candidate_state) matches the resolved push head; inspect it by number. For a closed or merged PR, offer a new branch name or ask for explicit confirmation to open a new PR from this head" >&2
+        exit 1
+      fi
+    done <<< "$pr_candidates"
+  fi
+  push_branch="${push_ref#refs/heads/}"
+  push_head="$push_owner:$push_branch"
+  printf 'PR preflight: branch=%s published=%s base=%s matching_remotes=%s upstream_remote=%s upstream_ref=%s pr_state=%s pr_number=%s pr_url=%s pr_head=%s pr_remote=%s push_remote=%s push_ref=%s push_head=%s push_confirmation=%s\n' "$branch" "$published" "$base" "${matched_remotes:-none}" "${upstream_remote:-none}" "${upstream_ref:-none}" "$pr_state" "$pr_number" "$pr_url" "$pr_head" "$pr_remote" "$push_remote" "$push_ref" "$push_head" "$push_confirmation"
+  git remote -v | sed -E 's#(https?://)[^/@]+@#\1[redacted]@#'
+  git log "origin/$base"..HEAD --oneline
+  git diff "origin/$base"...HEAD --stat
+  git log @{upstream}..HEAD --oneline 2>/dev/null || true
+)
 ```
 
 Stop and surface the problem to the user if any of these is true:
 
 - The working tree has uncommitted changes — ask the user whether to commit, stash, or abandon.
-- The branch has no upstream / is not pushed — confirm with the user before pushing.
+- A selected-upstream or open-PR-head lookup fails — stop; do not treat it as absent. For other configured remotes, disable terminal prompts with `GIT_TERMINAL_PROMPT=0`. If a remote is unreachable but another lookup identifies the branch or the open PR identifies the push target, report the failed lookup as a warning and require explicit approval of any target not identified by the upstream or PR. If no lookup identifies a target, stop and surface the ambiguity before changing history or pushing. If `gh pr view` fails, list candidate PRs for the branch with their head repository and compare owner, repository, and branch to the resolved push target; do not stop for an unrelated fork with the same branch name. Do not parse human-readable error text. For a new branch with multiple remotes and no existing push target, ask which remote to use; do not default to the base repository. If a remote URL cannot be mapped (including GitHub Enterprise paths), ask the user to confirm the push remote and `<owner>:<branch>` PR head; do not guess. Resolve `insteadOf` rewrites with `git ls-remote --get-url` before mapping.
+- A branch that only tracks the base is unpublished unless an open PR or same-named remote branch proves otherwise; never push to the base. If its configured upstream points to a differently named remote branch, preserve history, show the exact destination in the preview, and wait for the user's explicit confirmation before pushing there.
+- A same-named remote branch found without a configured non-base upstream or matching open PR is evidence that history may already be published, but does not establish that remote as the intended push target. Preserve history, show the exact candidate remote/ref, and require the user's explicit approval of that target in the Step 8 preview before pushing.
 - The branch has zero commits beyond the base — there's nothing to PR.
-- A PR already exists for this branch — use `gh pr edit` to update it, not `gh pr create`.
+- An open PR already exists for this branch — use `gh pr edit` to update it, not `gh pr create`. If the branch has a closed or merged PR, stop and offer a new branch name or ask for explicit confirmation before opening a new PR from the same head.
 
 Don't paper over these by force-pushing, amending, or running `git push -f`. The repo's agent instructions (AGENTS.md/CLAUDE.md) apply: destructive operations need explicit user approval.
 
@@ -224,7 +389,7 @@ ls "$(git rev-parse --show-toplevel)/design/" 2>/dev/null | grep -iE "<topic-key
 
 **Git history**:
 
-- `git log main..HEAD --format='%s%n%b%n---'` — commit subjects and bodies often capture in-flight decisions better than the final diff.
+- `git log "origin/<confirmed-base>"..HEAD --format='%s%n%b%n---'` — commit subjects and bodies often capture in-flight decisions better than the final diff.
 
 **Current conversation**:
 
@@ -244,16 +409,16 @@ If the working tree is already clean, skip this step.
 
 ### Step 4: Squash to a coherent set of commits
 
-**Hard gate: squash before roborev, roborev before the user-confirmation gate, confirmation before push.** All three must happen before the branch hits `origin` so the review (and the merge) operate on the final history, not a noisy timeline.
+**Hard gate for unpublished branches: squash before roborev, roborev before the user-confirmation gate, confirmation before push.** A branch is published if an open PR exists, a same-named branch exists on any configured remote, or its configured upstream points to an existing non-base branch. A local branch that only tracks the base branch (for example, `origin/<confirmed-base>`) is still unpublished. Check these in Step 1; commits on `origin/<confirmed-base>` alone do not make this branch published. On a published branch, preserve history: commit fixes as follow-ups, review that exact history, and never rewrite or force-push it.
 
 ```bash
-git log main..HEAD --oneline
+git log "origin/<confirmed-base>"..HEAD --oneline
 ```
 
-- **Default to one commit per PR.** Multi-commit PRs are only OK when each commit is independently reviewable and the slices land in order.
-- Squash with `git rebase -i main` or `git reset --soft main && git commit`. Never use `--no-edit` flags that bypass message review.
+- **Default to one commit per new, unpublished PR branch.** Multi-commit PRs are only OK when each commit is independently reviewable and the slices land in order. This default does not authorize rewriting a published branch.
+- Squash an unpublished branch from its merge base with `git reset --soft "$(git merge-base origin/<confirmed-base> HEAD)"` followed by `git commit`. This keeps newer base-branch commits out of the squash; Step 10 rebases onto the latest base afterward. Do not suggest an interactive rebase in non-interactive workspaces. Never use `--no-edit` flags that bypass message review.
 - The squashed commit message mirrors the PR title's intent (sentence-cased, why-focused) and captures the motivation in the body. No Conventional Commits prefix.
-- If the branch already has a single commit (or each existing commit is independently reviewable and ordered), skip the rebase but still confirm the count before moving on.
+- If the branch already has a single commit (or each existing commit is independently reviewable and ordered), skip the rebase but still confirm the count before moving on. If the branch is already published, preserve its history and use follow-up commits for review fixes; note the multi-commit history in the Step 8 preview.
 - **Never force-push to a shared branch to squash after publication.** Squash *before* the first push.
 
 ### Step 5: Run relevant tests locally, then roborev review before drafting
@@ -274,10 +439,9 @@ roborev review --wait
 
 - `--wait` is **required**, not optional — it blocks until the review completes so findings are available before the draft is shown. Do not run `roborev review` without `--wait`.
 - A bare `roborev review` — or a leftover post-commit auto-review hook — only **enqueues a background daemon job and returns before a verdict exists**. An enqueue is not a pass: if HEAD already has a queued or running background review, block on it (`roborev review --wait`, or `roborev wait` for the already-enqueued job) so an actual verdict is in hand before drafting. Never report "review enqueued" or a missing verdict as clean.
-- Capture the outcome (clean, N findings fixed in M rounds, N findings unresolved, unavailable) — Step 8 surfaces it inside the draft preview so the user can see the gate was walked.
-- **Review loop (no permission prompts):** if roborev surfaces findings, fix them yourself without asking — **every severity counts**, including low and nit. Do not stop, summarize, or ask "fix these?" / "defer or proceed?" because findings are low severity. Fix as many as possible that are small in scope: a wording or error-message change, a missing test case, a missing guard, a rename, a local refactor inside the changed function. Do not fix findings that would reshape the surrounding design, change public interfaces, or touch files outside this PR's scope; for those only, report them to the user with the reason they were not fixed. Put the fixes in a follow-up commit, re-squash (Step 4), and re-run `roborev review --wait` (this step). Repeat until a run comes back clean or only out-of-scope findings remain. Do not ask "fix and rerun?" — that is the default action.
-- **Loop cap:** stop after 3 fix rounds. If findings remain, or a finding would need a product or design decision rather than a code fix, stop looping and list the unresolved findings in the Step 8 draft preview, so the user decides at the single approval gate. Never amend or force-push past findings silently.
-- If roborev is unavailable (command not installed, no network), say so explicitly to the user and ask whether to proceed without review. Do not silently skip.
+- Capture the outcome as `clean after M fix rounds`, `findings remain (N)`, or `unavailable (reason)`. Parked findings count as findings that remain. Step 8 uses the same status vocabulary and lists unresolved, parked, and out-of-scope findings in its separate findings section.
+- **Review loop:** follow the shared Roborev policy in General Preferences, which Conductor appends to every agent session. After each finding batch, commit fixes and re-squash an unpublished branch per Step 4 before rerunning review. If the branch is already published, keep follow-up commits, preserve their history, and squash at merge instead of rewriting or force-pushing. For a published branch, note the extra commits in the Step 8 preview. Ask the user as soon as a finding requires a major architecture/refactor, public-interface change, product/design decision, or scope expansion. Continue with independent findings while waiting, but do not draft or seek publication approval while a required decision is pending. If the user declines the change, record that finding as parked or out of scope and include it in the Step 8 preview; if they approve, make the change and review it. Show every remaining, parked, and out-of-scope finding in the preview; parked and out-of-scope findings do not count as clean. The user's approval of that preview acknowledges the listed findings, so do not ask twice. Push only after a clean review or that explicit preview approval.
+- If General Preferences is absent, keep fixing actionable findings with no round or per-finding cap until resolved or blocked by a major architecture/refactor, interface/product decision, or scope boundary. Report progress after each pass; ask about blockers and continue with other findings. If Roborev is unavailable, say so and ask whether to proceed.
 - For deeper fix/refine loops, consult the repo's roborev guide skill if it ships one.
 
 ### Step 6: Draft the title
@@ -339,13 +503,13 @@ Section guidance:
 | Test plan | When testing required judgment calls | Small changes with full unit coverage |
 | Links | If any upstream artifact exists | True greenfield work with no ticket, spec, or predecessor PR |
 
-### Step 8: Show the draft. Wait for confirmation. (Single approval gate before push.)
+### Step 8: Show the draft. Wait for confirmation. (Single publication approval gate before push.)
 
-**This is the only user-approval gate in the workflow, and it sits immediately before `git push`.** Steps 3–5 (commit, squash, roborev) must already be complete by the time you reach it — by construction the agent cannot honor a "yes" without having walked the roborev gate first.
+**This is the only user-approval gate for publishing the PR, and it sits immediately before `git push`.** If a later base-update review changes the findings, show the updated preview and obtain approval here again before pushing. Any major architecture, interface, product/design, or scope decision raised by Roborev must already be resolved before drafting; the publication preview is not a substitute for that decision. Steps 3–5 (commit, squash, roborev) must already be complete by the time you reach it — by construction the agent cannot honor a "yes" without having walked the roborev gate first.
 
-Show the draft title, the draft body, **and the roborev outcome** so the user can see the gate was walked. Even if the user said "create a PR", they agreed to the action, not blind-trusted your draft.
+Show the draft title, the draft body, the roborev outcome, the exact push remote/ref, whether that destination needs explicit confirmation, and all unresolved, parked, and out-of-scope findings so the user can see the gate was walked. Parked and out-of-scope findings do not count as clean. The user's approval of this complete preview acknowledges every listed finding and confirms any push target marked as requiring explicit confirmation; do not ask for a second acknowledgment. Even if the user said "create a PR", they agreed to the action, not blind-trusted your draft.
 
-**Shortcut:** If the user re-sends this *exact* create_pr prompt verbatim, or an explicit approval phrase like "create/open the PR now," immediately after the agent has already shown a draft under this step, treat that as the Step 8 approval — proceed exactly as a "yes" would (Steps 9–13), don't re-run Steps 1–7 to produce a fresh draft. Anything else — a revision request, a question about the draft, or a paraphrase — is not the shortcut; treat it as normal feedback and re-show the draft.
+**Shortcut:** If the user re-sends this *exact* create_pr prompt verbatim, or an explicit approval phrase like "create/open the PR now," immediately after the agent has already shown a draft under this step, treat that as the Step 8 approval only when the preview lists no unresolved, parked, or out-of-scope findings. When findings are listed, the reply must explicitly accept the listed findings and request that the PR proceed; a verbatim prompt resend or "create the PR now" alone is not enough. A revision request or question is not approval; treat it as normal feedback and re-show the draft.
 
 Format the preview as:
 
@@ -357,53 +521,87 @@ Body:
 <draft body>
 ---
 
-Roborev: <clean (after M fix rounds) | N findings unresolved (list them) | unavailable (reason)>
+Roborev: <clean after M fix rounds | findings remain (N, including parked findings) | unavailable (reason)>
 
-Push and create this PR? (or edit before I submit)
+Push target: <remote>:<ref> (PR head: <owner>:<branch>; confirmation required: yes/no)
+
+Unresolved / parked / out-of-scope review findings: <none | list every finding and any user decision>
+
+Published branch history: <unpublished | published; preserved follow-up commits; open PR: <none | URL>>
+
+Next action: <push and create PR | push follow-up commits and create PR | push follow-up commits and update existing PR>
+
+Proceed with this action? (or edit before I submit)
 ```
 
 The roborev line is mandatory — never omit it. If it shows "unavailable", the user is implicitly being asked to proceed without review.
 
-If the user requests edits, revise and re-show. Don't auto-submit. A "yes" here authorizes closing or linking the GitHub issue (Step 9), the rebase (Step 10), the push (Step 11), and the PR creation (Step 12) — proceed through all of them without re-prompting (pausing only if the rebase hits conflicts).
+If the user requests edits, revise and re-show. Don't auto-submit. A "yes" here authorizes closing or linking the GitHub issue (Step 9), the appropriate base update (Step 10), the push (Step 11), and either PR creation or update (Step 12) — proceed through all of them without re-prompting (pausing only if the rebase or merge hits conflicts).
 
 ### Step 9: Note the GitHub issue disposition
 
 If Step 2 identified a GitHub issue this PR addresses, carry its disposition forward — the actual action happens in Step 12b, once a PR URL exists:
 
-- **Same-repo issue, fully resolved by this PR** — the `Closes #NNN` line already lives in the PR body (Step 7's Links section). Nothing further is needed here: GitHub auto-closes the issue when the PR merges into `main`. Don't `gh issue close` it now — the fix isn't on `main` yet.
+- **Same-repo issue, fully resolved by this PR** — the `Closes #NNN` line already lives in the PR body (Step 7's Links section). Nothing further is needed here: GitHub auto-closes the issue when the PR merges into `<confirmed-base>`. Don't `gh issue close` it now — the fix isn't on the base branch yet.
 - **Cross-repo issue, or only partially resolved** — GitHub's closing keywords don't work across repos and shouldn't be used for partial work. Remember to leave a linking comment in Step 12b instead of closing it.
 - **Ambiguous whether this PR fully resolves it** — this should already have been resolved in Step 2; if it wasn't, ask the user now rather than guessing at merge-closing behavior.
 - Skip silently if no GitHub issue was identified in Step 2.
 - Already authorized by the Step 8 "yes" — don't re-prompt.
 
-### Step 10: Rebase onto the latest base (last step before opening the PR)
+### Step 10: Update against the latest base without rewriting published history
 
-**This is the final step before the PR is opened.** Immediately before pushing, rebase the branch onto the freshest base so the PR opens against current `main` and merge conflicts surface here — locally, where they're cheap to resolve — instead of in GitHub's merge UI.
+For an unpublished branch, rebase onto `origin/<confirmed-base>` so conflicts surface locally before the first push. For a published branch, preserve its history: do not rebase. If it needs the latest base, merge `origin/<confirmed-base>` into the branch; otherwise skip this step. After any rebase or merge, run the relevant checks and `roborev review --wait` on the updated history before pushing. If that review finds issues, follow the Step 4–5 fix, squash, and review loop for unpublished branches or preserve follow-up commits for published branches. If the review changes the findings or push destination shown in Step 8, re-show that preview and wait for approval before pushing. This is the final step before pushing.
 
-This must happen **before** the first push (Step 11), not after. Rebasing a branch that's already on `origin` would require a force-push, which is forbidden without explicit user approval.
+Rebasing a branch that is already on a remote would rewrite published history and require a force-push, which is forbidden without explicit user approval.
 
 ```bash
-git fetch origin
-git rebase origin/main   # or the confirmed base branch from pre-flight
+git fetch origin || { echo "could not refresh origin refs; stop before updating the branch" >&2; exit 1; }
+git rebase origin/<confirmed-base>   # unpublished branch only
+# Published branch, only when a base update is needed:
+git merge origin/<confirmed-base>
 ```
 
-- If the rebase is clean, proceed to Step 11.
-- If the rebase hits conflicts, **stop and surface them to the user.** Resolve them (or have the user resolve them), then re-run Steps 4–5 (re-squash if needed, re-run `roborev review --wait`) so the review reflects the rebased history. Never `git rebase --skip` or abandon conflicting hunks silently.
-- If the branch is already up to date with the base, the rebase is a no-op — proceed.
+- If the rebase or merge is clean, run the required checks and review, then proceed to Step 11 if the Step 8 preview remains accurate. If it hits conflicts, **stop and surface them to the user.** Resolve them (or have the user resolve them), then rerun the relevant checks and `roborev review --wait` so the review reflects the updated history. Never skip or abandon conflicting changes silently.
+- If no base update is needed, proceed to Step 11.
 
 ### Step 11: Push the branch
 
-Once the rebase is clean, push the branch to `origin` with upstream tracking.
+Once the rebase or merge is clean, rerun Step 1's compound target-resolution check. Copy its freshly printed `push_remote`, `push_ref`, and `push_head` values into the commands below; variables from Step 1's subshell do not persist. Confirm the values match the approved Step 8 preview. If `push_confirmation=yes`, the user's approval of that preview is the required explicit confirmation. Never push to the base branch. Set upstream tracking when no usable non-base upstream exists, including when the configured remote branch is stale.
 
 ```bash
-git push -u origin "$(git branch --show-current)"
+upstream_remote="$(git config --get "branch.$(git branch --show-current).remote" || true)"
+upstream_ref="$(git config --get "branch.$(git branch --show-current).merge" || true)"
+base="<confirmed-base from the approved preview>"
+push_remote="<fresh push_remote from PR preflight>"
+push_ref="<fresh push_ref from PR preflight>"
+for value in "$base" "$push_remote"; do
+  case "$value" in
+    ''|*'<'*|*'>'*) echo "base and push_remote must be resolved from the approved preflight" >&2; exit 1 ;;
+  esac
+done
+[ -n "$push_ref" ] || { echo "push_ref must be resolved from the approved preflight" >&2; exit 1; }
+[ "$push_ref" != "refs/heads/$base" ] || { echo "push target is the base branch; stop before pushing" >&2; exit 1; }
+needs_upstream=no
+if [ -z "$upstream_remote" ] || [ "$upstream_remote" = "." ] || [ -z "$upstream_ref" ] || [ "$upstream_ref" = "refs/heads/$base" ]; then
+  needs_upstream=yes
+else
+  upstream_matches="$(git ls-remote --heads "$upstream_remote" "$upstream_ref")" || { echo "could not verify configured upstream; stop before pushing" >&2; exit 1; }
+  [ -n "$upstream_matches" ] || needs_upstream=yes
+fi
+if [ "$needs_upstream" = yes ]; then
+  git push -u "$push_remote" "HEAD:$push_ref"
+else
+  git push "$push_remote" "HEAD:$push_ref"
+fi
 ```
 
 Confirm the push succeeded before moving on. If it fails (auth, protected branch, non-fast-forward), surface the error and stop — do not force-push.
 
-### Step 12: Create the PR
+### Step 12: Create or update the PR
 
-**Hard gate before running `gh pr create`: for every same-repo GitHub issue Step 2 determined this PR fully resolves, mechanically verify the drafted body contains a `Closes #NNN` / `Fixes #NNN` / `Resolves #NNN` line for *that specific* issue number before shelling out — one PR can fully resolve more than one issue, and each needs its own closing reference, not just the first.** This is a real known failure mode, not a hypothetical: gtm-sdk#609 was fully fixed by gtm-sdk#628, but the drafted body only listed "gtm-sdk#609" under Links without a closing keyword, so GitHub never auto-closed it and it sat open until manually closed later. A "the plan said to add it" belief is not sufficient — grep the actual string you're about to pass to `--body` for the pattern before running the command, once per fully-resolved issue number:
+If Step 1 found an open PR for this branch, update it with `gh pr edit <number> --title ... --body ...`; do not run `gh pr create`. If no open PR exists, create one with `gh pr create --base <confirmed-base> --head <push_head>`. Draft the final body and verify its issue-closing keywords before either command. `push_head` is derived from the exact push remote and ref in Step 1; passing it explicitly avoids GitHub CLI guessing the head when multiple remotes are configured. This includes a published branch that has no open PR.
+
+**Hard gate before running `gh pr create` or `gh pr edit`: for every same-repo GitHub issue Step 2 determined this PR fully resolves, mechanically verify the final body contains a `Closes #NNN` / `Fixes #NNN` / `Resolves #NNN` line for *that specific* issue number before shelling out — one PR can fully resolve more than one issue, and each needs its own closing reference, not just the first.** This is a real known failure mode, not a hypothetical: gtm-sdk#609 was fully fixed by gtm-sdk#628, but the drafted body only listed "gtm-sdk#609" under Links without a closing keyword, so GitHub never auto-closed it and it sat open until manually closed later. A "the plan said to add it" belief is not sufficient — grep the exact `PR_BODY` that will be sent by either command once per fully-resolved issue number:
 
 ```bash
 grep -qiE "(closes|fixes|resolves) #${ISSUE_NUMBER}([^[:alnum:]_]|$)" <<< "$PR_BODY"
@@ -411,7 +609,7 @@ grep -qiE "(closes|fixes|resolves) #${ISSUE_NUMBER}([^[:alnum:]_]|$)" <<< "$PR_B
 
 `\b` is not portable to the BSD `grep` on macOS — use the `([^[:alnum:]_]|$)` form above instead, which matches the same "word boundary or end of string" intent on both BSD and GNU grep.
 
-If that grep fails for any fully-resolved issue number, **stop and fix the body** — don't proceed to `gh pr create` with a body that silently downgraded to a bare reference. If Step 2 flagged partial/cross-repo instead, the grep is expected to fail and that's correct — don't add the keyword in that case.
+If that grep fails for any fully-resolved issue number, **stop and fix the body** — don't proceed to create or edit a PR with a body that silently downgraded to a bare reference. If Step 2 flagged partial/cross-repo instead, the grep is expected to fail and that's correct — don't add the keyword in that case.
 
 To make this checkable, assign the HEREDOC to `PR_BODY` first, grep that exact variable, then pass it to `--body` — don't construct the body inline in the `gh pr create` call, since there's nothing to grep before shelling out:
 
@@ -429,7 +627,28 @@ for ISSUE_NUMBER in "${FULLY_RESOLVED_ISSUE_NUMBERS[@]}"; do  # every issue Step
   }
 done
 
-gh pr create --title "Fix race in Apollo enrichment dedup that double-charged credits" --body "$PR_BODY"
+base="<confirmed-base from the approved preview>"
+push_head="<owner>:<branch from the approved preview>"
+existing_pr_number="<open PR number from preflight, or none>"
+case "$base" in
+  ''|*'<'*|*'>'*) echo "base still contains a placeholder; resolve it from the approved preview" >&2; exit 1 ;;
+esac
+case "$existing_pr_number" in
+  none) ;;
+  ''|*[!0-9]*) echo "existing_pr_number must be a numeric PR number or none" >&2; exit 1 ;;
+esac
+case "$push_head" in
+  *:*) ;;
+  *) echo "push_head must be a confirmed <owner>:<branch> value from preflight" >&2; exit 1 ;;
+esac
+case "$push_head" in
+  *'<'*|*'>'*) echo "push_head still contains a placeholder; resolve it from preflight" >&2; exit 1 ;;
+esac
+if [ "$existing_pr_number" = none ]; then
+  gh pr create --base "$base" --head "$push_head" --title "Fix race in Apollo enrichment dedup that double-charged credits" --body "$PR_BODY"
+else
+  gh pr edit "$existing_pr_number" --title "Fix race in Apollo enrichment dedup that double-charged credits" --body "$PR_BODY"
+fi
 ```
 
 Return the PR URL to the user. Don't add follow-up commentary unless the user asks — the URL is the work product.
@@ -659,15 +878,73 @@ The "Fix errors" button fires when something is red: failing CI checks, a failin
 
 ### Step 1: Pre-flight and scope
 
-Run in a single batch of parallel `Bash` calls:
+First refresh the remote refs:
+
+```bash
+git fetch origin || echo "warning: could not refresh origin; continue with local and user-provided errors"
+```
+
+Then run these checks in a single batch of parallel `Bash` calls:
+
+PR and base metadata are context, not prerequisites for fixing local or user-provided errors. Report unavailable metadata and continue. A closed or merged PR does not block this workflow; use its base only for context and do not treat its checks as active failures.
 
 ```bash
 git status                                          # working tree clean?
 git branch --show-current                           # current branch?
 git rev-parse --abbrev-ref @{upstream} 2>/dev/null  # tracking ref?
-git log main..HEAD --oneline                        # what is this branch?
-gh pr view --json url,number,state,headRefOid 2>/dev/null   # is there a PR?
-gh pr checks 2>/dev/null                            # which checks are red?
+(
+  pr_state=unknown
+  base=""
+  pr_url=none
+  pr_number=none
+  pr_head_sha=none
+  error_file="$(mktemp 2>/dev/null || true)"
+  if [ -z "$error_file" ]; then
+    echo "warning: could not create a temporary error file; skipping PR metadata"
+  else
+    trap 'rm -f "$error_file"' EXIT
+    if pr_info="$(gh pr view --json state,baseRefName,url,number,headRefOid --jq '[.state,.baseRefName,.url,(.number|tostring),.headRefOid] | map(if . == null then "" else tostring end) | join("\u001f")' 2>"$error_file")"; then
+      IFS=$'\x1f' read -r pr_state base pr_url pr_number pr_head_sha <<< "$pr_info"
+      if [ "$pr_state" != "OPEN" ]; then echo "PR is $pr_state; use local or user-provided errors, not active PR checks"; fi
+    else
+      pr_error="$(cat "$error_file")"
+      echo "warning: PR metadata unavailable: $pr_error"
+    fi
+  fi
+  if [ -z "$base" ] && command -v gh >/dev/null 2>&1; then
+    base="$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name 2>/dev/null || true)"
+  fi
+  if [ -z "$base" ]; then
+    base="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')"
+  fi
+  if [ -z "$base" ]; then
+    for candidate in main master; do
+      if git rev-parse --verify "refs/remotes/origin/$candidate" >/dev/null 2>&1 || git rev-parse --verify "refs/heads/$candidate" >/dev/null 2>&1; then base="$candidate"; break; fi
+    done
+  fi
+  if [ -n "$base" ]; then
+    printf 'Base for context: %s\n' "$base"
+    if git rev-parse --verify "refs/remotes/origin/$base" >/dev/null 2>&1; then
+      git log "origin/$base"..HEAD --oneline
+    elif git rev-parse --verify "refs/heads/$base" >/dev/null 2>&1; then
+      git log "$base"..HEAD --oneline
+    else
+      echo "warning: base $base is not available locally; skipping branch log"
+    fi
+  else
+    echo "warning: no base could be determined; continuing without branch context"
+  fi
+  printf 'PR context: state=%s url=%s number=%s head_sha=%s\n' "$pr_state" "$pr_url" "$pr_number" "$pr_head_sha"
+  if [ "$pr_state" = "OPEN" ]; then
+    gh pr checks
+    checks_status=$?
+    if [ "$checks_status" -ne 0 ] && [ "$checks_status" -ne 1 ] && [ "$checks_status" -ne 8 ]; then
+      echo "gh pr checks could not complete (exit $checks_status); inspect the output above"
+    fi
+  else
+    echo "No open PR; skip active PR checks."
+  fi
+) # collect PR and branch context without blocking local fixes
 ```
 
 - Uncommitted changes you didn't make: leave them alone. Don't stash, reset, or discard them. Fold them in only if they are clearly part of the failure.
@@ -737,9 +1014,8 @@ roborev review --wait
 ```
 
 - `--wait` is required — a bare `roborev review` only enqueues a background job and is not a verdict. Never report an enqueue as clean.
-- Fix findings yourself without asking — **every severity counts**, low and nit included — when they are small in scope (wording, a missing guard, a rename, a missing test case, a local refactor inside the changed function). Report, with reasons, only findings that would reshape the design, change public interfaces, or touch files outside this fix's scope.
-- Put fixes in a follow-up commit and re-run `roborev review --wait`. Stop after 3 fix rounds and list what remains.
-- If roborev is unavailable, say so explicitly; don't silently skip.
+- **Review loop:** follow the shared Roborev policy in General Preferences after committing the fix. Routine scope includes wording, missing guards or test cases, renames, and local refactors contained within the originally changed function(s) and their tests. Direct reference updates needed for a rename or call-site edits needed to fix the same finding are also in scope. Unrelated caller changes or a new shared helper are outside scope; if needed to resolve a valid finding, ask the user before a major design/refactor change or report it unresolved with reasons. Correct a direct regression from a follow-up fix batch only in files or tests changed by that batch. Do not silently expand scope.
+- If General Preferences is absent, keep fixing actionable findings with no round or per-finding cap until resolved or blocked by a major architecture/refactor, interface/product decision, or scope boundary. Report progress after each pass; ask about blockers and continue with other findings. If Roborev is unavailable, say so and ask whether to proceed.
 
 ### Step 9: Commit
 
@@ -784,7 +1060,7 @@ Be factual. If a check is still red or unverified, say so; do not round up to "s
 - **Scope creep:** refactors, dependency upgrades, or formatting sweeps unrelated to the failure.
 - **Fixing pre-existing or flaky failures** as if the branch caused them.
 - **Destructive shortcuts:** `git reset --hard`, `git push -f`, `git checkout .`, deleting lockfiles or caches to "clean up", `--no-verify`.
-- **Endless loops:** more than 3 rounds without progress — stop and report instead.
+- **Repeating without progress:** don't repeat an unchanged fix or stop solely because a round count was reached. Re-examine the finding and evidence, try a different safe in-scope correction, and report the concrete blocker if no actionable safe change remains. Ask the user when resolving it requires a major refactor, architectural/interface change, or product decision.
 - **Generated-file hand edits:** regenerate with the repo's tooling.
 
 ## Quick reference
@@ -848,7 +1124,11 @@ Baseline working agreements for every session in this workspace. Task-specific p
 
 - **Run the narrowest check that proves the change**: the mirrored test file, the affected package's tests, the type checker or linter on touched files. Run broader suites when the change is wide.
 - **Reproduce before you fix** when debugging; re-run the same command after to show it now passes.
-- **Review before handoff.** Run `roborev review --wait` on committed work when finishing a unit of change (the create-pr prompt makes this a hard gate). Fix small in-scope findings of every severity without asking; report out-of-scope ones. A bare `roborev review` only enqueues; it is not a pass.
+- **Review before handoff.** Run `roborev review --wait` on committed work when finishing a unit of change; task-specific prompts may make this a hard gate. A bare `roborev review` only enqueues; it is not a verdict.
+  - There is intentionally no global round or time limit; the cost of this open-ended loop is accepted so actionable findings are not abandoned because of a round count. Fix every actionable in-scope finding, including low and nit findings, and rerun review until clean or only parked/out-of-scope findings remain. Do not stop because many rounds have passed or because a review reports new distinct findings. After each review pass, send a concise progress update with findings fixed, new, and remaining, plus the next actions; continue without waiting for approval unless a finding meets the decision criteria below. Commit each fix batch before rerunning `roborev review --wait`.
+  - Track findings by repo-relative file and behavior so rewording does not make the same finding appear new. Keep working on each actionable in-scope finding through as many review rounds as needed; there is no per-finding attempt cap. Stop only when the finding is resolved, cannot be reproduced or shown to be actionable, or the next safe fix requires a major architectural change or refactor, a public-interface change, a product/design decision, or scope expansion. When a finding recurs, verify the behavior and try a different safe correction; do not repeat an unchanged fix or stop just because it recurred. When findings prescribe conflicting behavior, use tests or documented requirements to determine intent; if they do not resolve the conflict, ask the user instead of oscillating between fixes. If no actionable in-scope correction remains, report the evidence and ask for the needed decision. Continue with other findings while waiting, and never describe a non-clean review as clean.
+  - Ask the user only before a fix that requires a major architectural change or refactor, a public-interface change, or a product/design decision. Report parked and out-of-scope findings with reasons at handoff. Do not ask whether to fix routine findings or silently expand scope.
+  - If roborev is unavailable, tell the user explicitly and ask whether to proceed without review. Do not silently skip.
 - If the repo has a pre-flight or setup script (e.g. `scripts/conductor-*-preflight.sh`), run it rather than reinventing it.
 - State what you did **not** verify (e.g. couldn't run integration tests without credentials).
 
@@ -1084,10 +1364,8 @@ roborev review --wait
 ```
 
 - `--wait` is **required** — a bare `roborev review` only enqueues a background job and returns before a verdict exists. An enqueue is not a pass.
-- **Review loop (no permission prompts):** fix findings yourself — every severity counts, including low and nit. Fix what's small and local; report (don't fix) anything that would reshape design, change public interfaces, or touch files outside this PR's scope. Put fixes in a follow-up commit and re-run `roborev review --wait`. Repeat until clean or only out-of-scope findings remain.
-- **Loop cap:** stop after 3 fix rounds. List unresolved findings to the user and let them decide.
-- If roborev is unavailable, say so and ask whether to proceed without review. Don't silently skip.
-- Scope of review: findings in code that *came from the base branch* are not this branch's responsibility. Note them and move on.
+- **Review loop:** follow the shared Roborev policy in General Preferences. Scope includes any incorrectness in lines changed to resolve the conflict (such as a dropped hunk, choosing the wrong side, or a typo), any finding where the merged result is incorrect because of the interaction between base and branch changes—including semantic conflicts in lines Git merged automatically—and tests that exercise those changed or interacting behaviors, plus direct regressions from follow-up fix batches. Findings that already existed in the base branch are out of scope unless this branch's resolution changed or regressed them. Report other unrelated findings with reasons and do not silently expand scope.
+- If General Preferences is absent, keep fixing actionable findings with no round or per-finding cap until resolved or blocked by a major architecture/refactor, interface/product decision, or scope boundary. Report progress after each pass; ask about blockers and continue with other findings. If Roborev is unavailable, say so and ask whether to proceed.
 
 ### Step 9: Push
 
