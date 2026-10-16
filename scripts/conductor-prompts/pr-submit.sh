@@ -14,7 +14,7 @@ for ISSUE_NUMBER in "$@"; do
   }
 done
 case "$base" in
-  ''|*'<'*|*'>'*) echo "base still contains a placeholder; resolve it from the approved preview" >&2; exit 1 ;;
+  ''|*'<'*|*'>'*) echo "base still contains a placeholder; resolve it from pr-preflight" >&2; exit 1 ;;
 esac
 case "$existing_pr_number" in
   none) ;;
