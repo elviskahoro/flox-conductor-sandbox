@@ -252,7 +252,6 @@ def parse_findings_by_file(raw_output: str) -> ParseResult:
         if is_header:
             assert header is not None  # noqa: S101 -- is_header implies a match above
             flush()
-            cut = False
             current_path = header.group("path")
             current_lines = [line]
         elif current_path is None and cut and _ISSUE_ROW_RE.match(line):
