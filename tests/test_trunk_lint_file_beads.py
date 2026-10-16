@@ -134,7 +134,7 @@ def test_prune_runs_on_clean_parse(monkeypatch, tmp_path):
 def test_prune_skipped_on_ansi_linter_failure(monkeypatch, tmp_path):
     rep = "a.py:1:1\n 1:1  low  X  m\n\nChecked 1 file\n"
     res, closed = _run_prune(
-        monkeypatch, tmp_path, rep, stderr="\x1b[31mLinter foo failed to run\x1b[0m"
+        monkeypatch, tmp_path, rep, stderr="foo: \x1b[31mfailed\x1b[0m to \x1b[1mrun\x1b[0m"
     )
     assert res.exit_code == 3
     assert "skipping --prune-resolved" in res.output
