@@ -141,16 +141,19 @@ class TrunkCommandError(RuntimeError):
     """`trunk check` could not be run at all (missing binary, transport failure)."""
 
 
-# Issue rows discarded after a mid-report block cut; any entry makes
-# --prune-resolved unsafe because the parsed state is incomplete.
-DROPPED_ROWS: list[str] = []
-
-
 @dataclass
 class FileFindings:
     path: str
     block: str
     issue_count: int
+
+
+@dataclass
+class ParseResult:
+    findings: list[FileFindings]
+    # Issue rows discarded after a mid-report block cut; any entry makes
+    # --prune-resolved unsafe because the parsed state is incomplete.
+    dropped_rows: list[str]
 
 
 def strip_ansi(text: str) -> str:
@@ -206,7 +209,7 @@ def _next_nonblank(lines: list[str], start: int) -> str | None:
     return None
 
 
-def parse_findings_by_file(raw_output: str) -> list[FileFindings]:
+def parse_findings_by_file(raw_output: str) -> ParseResult:
     """Group trunk's report into one block of text per distinct file path.
 
     A header line ("<path>:<line>:<col>" or bare "<path>", flush left) can
@@ -221,7 +224,7 @@ def parse_findings_by_file(raw_output: str) -> list[FileFindings]:
     non-blank line looks like an issue row, so a flush-left summary/banner
     line (e.g. "Checked 1 file") is never mistaken for a new file.
     """
-    DROPPED_ROWS.clear()
+    dropped_rows: list[str] = []
     text = strip_ansi(raw_output)
     lines = text.splitlines()
     blocks: dict[str, list[str]] = {}
@@ -252,7 +255,7 @@ def parse_findings_by_file(raw_output: str) -> list[FileFindings]:
             current_path = header.group("path")
             current_lines = [line]
         elif current_path is None and cut and _ISSUE_ROW_RE.match(line):
-            DROPPED_ROWS.append(line.strip())
+            dropped_rows.append(line.strip())
             typer.echo(
                 f"warning: dropped orphan issue row after block cut: {line.strip()}",
                 err=True,
@@ -277,7 +280,7 @@ def parse_findings_by_file(raw_output: str) -> list[FileFindings]:
         findings.append(
             FileFindings(path=path, block=block, issue_count=max(issue_count, 1)),
         )
-    return findings
+    return ParseResult(findings=findings, dropped_rows=dropped_rows)
 
 
 class BdListParseError(RuntimeError):
@@ -612,7 +615,8 @@ def main(
         )
         raise typer.Exit(run_result.return_code or 1)
 
-    findings = parse_findings_by_file(run_result.output)
+    parsed = parse_findings_by_file(run_result.output)
+    findings = parsed.findings
 
     if run_result.return_code == 1 and not findings:
         # Exit 1 means trunk itself says there are unresolved issues, so a
@@ -653,7 +657,7 @@ def main(
                 typer.echo(f"  {summary}")
 
         linter_failed = prune_resolved and bool(
-            DROPPED_ROWS or
+            parsed.dropped_rows or
             _LINTER_FAILURE_RE.search(
                 strip_ansi(run_result.stderr) + "\n" + _unindented_lines(run_result.output),
             ),
