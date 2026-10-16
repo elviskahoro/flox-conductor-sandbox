@@ -25,7 +25,7 @@ Checked 3 files
 
 
 def test_groups_by_file_and_merges_repeats():
-    found = {f.path: f for f in mod.parse_findings_by_file(REPORT)}
+    found = {f.path: f for f in mod.parse_findings_by_file(REPORT).findings}
     assert list(found) == ["foo/a.py", "foo/b.md"]
     assert found["foo/a.py"].issue_count == 3
     assert found["foo/b.md"].issue_count == 1
@@ -33,7 +33,7 @@ def test_groups_by_file_and_merges_repeats():
 
 
 def test_bare_banner_is_not_a_header():
-    assert "Checked 3 files" not in {f.path for f in mod.parse_findings_by_file(REPORT)}
+    assert "Checked 3 files" not in {f.path for f in mod.parse_findings_by_file(REPORT).findings}
 
 
 def test_title_pluralises():
@@ -51,7 +51,7 @@ def test_parse_created_id_rejects_garbage():
 
 def test_flush_left_continuation_stays_in_block():
     rep = "a.py:1:1\n 1:1  low  X  msg\n@@ -1 +1 @@\n 2:1  low  Y  msg2\n\nChecked 1 file\n"
-    (f,) = mod.parse_findings_by_file(rep)
+    (f,) = mod.parse_findings_by_file(rep).findings
     assert f.issue_count == 2
     assert "@@ -1 +1 @@" in f.block
     assert "Checked" not in f.block
@@ -59,7 +59,7 @@ def test_flush_left_continuation_stays_in_block():
 
 def test_footer_after_bare_path_block():
     rep = "b.md\n 0:0  low  fmt  Incorrect formatting\n\nChecked 1 file\n"
-    (f,) = mod.parse_findings_by_file(rep)
+    (f,) = mod.parse_findings_by_file(rep).findings
     assert "Checked" not in f.block
 
 
@@ -69,10 +69,10 @@ def test_linter_failure_regex():
 
 def test_bare_count_footer_and_blank_then_flush_left():
     rep = "a.py:1:1\n 1:1  low  X  msg\n\n3 issues\n"
-    (f,) = mod.parse_findings_by_file(rep)
+    (f,) = mod.parse_findings_by_file(rep).findings
     assert "3 issues" not in f.block
     rep2 = "a.py:1:1\n 1:1  low  X  msg\n\nsome trailer\n"
-    (g,) = mod.parse_findings_by_file(rep2)
+    (g,) = mod.parse_findings_by_file(rep2).findings
     assert "trailer" not in g.block
 
 
