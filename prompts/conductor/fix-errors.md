@@ -20,15 +20,73 @@ The "Fix errors" button fires when something is red: failing CI checks, a failin
 
 ### Step 1: Pre-flight and scope
 
-Run in a single batch of parallel `Bash` calls:
+First refresh the remote refs:
+
+```bash
+git fetch origin || echo "warning: could not refresh origin; continue with local and user-provided errors"
+```
+
+Then run these checks in a single batch of parallel `Bash` calls:
+
+PR and base metadata are context, not prerequisites for fixing local or user-provided errors. Report unavailable metadata and continue. A closed or merged PR does not block this workflow; use its base only for context and do not treat its checks as active failures.
 
 ```bash
 git status                                          # working tree clean?
 git branch --show-current                           # current branch?
 git rev-parse --abbrev-ref @{upstream} 2>/dev/null  # tracking ref?
-git log main..HEAD --oneline                        # what is this branch?
-gh pr view --json url,number,state,headRefOid 2>/dev/null   # is there a PR?
-gh pr checks 2>/dev/null                            # which checks are red?
+(
+  pr_state=unknown
+  base=""
+  pr_url=none
+  pr_number=none
+  pr_head_sha=none
+  error_file="$(mktemp 2>/dev/null || true)"
+  if [ -z "$error_file" ]; then
+    echo "warning: could not create a temporary error file; skipping PR metadata"
+  else
+    trap 'rm -f "$error_file"' EXIT
+    if pr_info="$(gh pr view --json state,baseRefName,url,number,headRefOid --jq '[.state,.baseRefName,.url,(.number|tostring),.headRefOid] | map(if . == null then "" else tostring end) | join("\u001f")' 2>"$error_file")"; then
+      IFS=$'\x1f' read -r pr_state base pr_url pr_number pr_head_sha <<< "$pr_info"
+      if [ "$pr_state" != "OPEN" ]; then echo "PR is $pr_state; use local or user-provided errors, not active PR checks"; fi
+    else
+      pr_error="$(cat "$error_file")"
+      echo "warning: PR metadata unavailable: $pr_error"
+    fi
+  fi
+  if [ -z "$base" ] && command -v gh >/dev/null 2>&1; then
+    base="$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name 2>/dev/null || true)"
+  fi
+  if [ -z "$base" ]; then
+    base="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')"
+  fi
+  if [ -z "$base" ]; then
+    for candidate in main master; do
+      if git rev-parse --verify "refs/remotes/origin/$candidate" >/dev/null 2>&1 || git rev-parse --verify "refs/heads/$candidate" >/dev/null 2>&1; then base="$candidate"; break; fi
+    done
+  fi
+  if [ -n "$base" ]; then
+    printf 'Base for context: %s\n' "$base"
+    if git rev-parse --verify "refs/remotes/origin/$base" >/dev/null 2>&1; then
+      git log "origin/$base"..HEAD --oneline
+    elif git rev-parse --verify "refs/heads/$base" >/dev/null 2>&1; then
+      git log "$base"..HEAD --oneline
+    else
+      echo "warning: base $base is not available locally; skipping branch log"
+    fi
+  else
+    echo "warning: no base could be determined; continuing without branch context"
+  fi
+  printf 'PR context: state=%s url=%s number=%s head_sha=%s\n' "$pr_state" "$pr_url" "$pr_number" "$pr_head_sha"
+  if [ "$pr_state" = "OPEN" ]; then
+    gh pr checks
+    checks_status=$?
+    if [ "$checks_status" -ne 0 ] && [ "$checks_status" -ne 1 ] && [ "$checks_status" -ne 8 ]; then
+      echo "gh pr checks could not complete (exit $checks_status); inspect the output above"
+    fi
+  else
+    echo "No open PR; skip active PR checks."
+  fi
+) # collect PR and branch context without blocking local fixes
 ```
 
 - Uncommitted changes you didn't make: leave them alone. Don't stash, reset, or discard them. Fold them in only if they are clearly part of the failure.
@@ -98,9 +156,8 @@ roborev review --wait
 ```
 
 - `--wait` is required — a bare `roborev review` only enqueues a background job and is not a verdict. Never report an enqueue as clean.
-- Fix findings yourself without asking — **every severity counts**, low and nit included — when they are small in scope (wording, a missing guard, a rename, a missing test case, a local refactor inside the changed function). Report, with reasons, only findings that would reshape the design, change public interfaces, or touch files outside this fix's scope.
-- Put fixes in a follow-up commit and re-run `roborev review --wait`. Stop after 3 fix rounds and list what remains.
-- If roborev is unavailable, say so explicitly; don't silently skip.
+- **Review loop:** follow the shared Roborev policy in General Preferences after committing the fix. Routine scope includes wording, missing guards or test cases, renames, and local refactors contained within the originally changed function(s) and their tests. Direct reference updates needed for a rename or call-site edits needed to fix the same finding are also in scope. Unrelated caller changes or a new shared helper are outside scope; if needed to resolve a valid finding, ask the user before a major design/refactor change or report it unresolved with reasons. Correct a direct regression from a follow-up fix batch only in files or tests changed by that batch. Do not silently expand scope.
+- If General Preferences is absent, keep fixing actionable findings with no round or per-finding cap until resolved or blocked by a major architecture/refactor, interface/product decision, or scope boundary. Report progress after each pass; ask about blockers and continue with other findings. If Roborev is unavailable, say so and ask whether to proceed.
 
 ### Step 9: Commit
 
@@ -145,7 +202,7 @@ Be factual. If a check is still red or unverified, say so; do not round up to "s
 - **Scope creep:** refactors, dependency upgrades, or formatting sweeps unrelated to the failure.
 - **Fixing pre-existing or flaky failures** as if the branch caused them.
 - **Destructive shortcuts:** `git reset --hard`, `git push -f`, `git checkout .`, deleting lockfiles or caches to "clean up", `--no-verify`.
-- **Endless loops:** more than 3 rounds without progress — stop and report instead.
+- **Repeating without progress:** don't repeat an unchanged fix or stop solely because a round count was reached. Re-examine the finding and evidence, try a different safe in-scope correction, and report the concrete blocker if no actionable safe change remains. Ask the user when resolving it requires a major refactor, architectural/interface change, or product decision.
 - **Generated-file hand edits:** regenerate with the repo's tooling.
 
 ## Quick reference

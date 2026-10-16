@@ -165,10 +165,8 @@ roborev review --wait
 ```
 
 - `--wait` is **required** — a bare `roborev review` only enqueues a background job and returns before a verdict exists. An enqueue is not a pass.
-- **Review loop (no permission prompts):** fix findings yourself — every severity counts, including low and nit. Fix what's small and local; report (don't fix) anything that would reshape design, change public interfaces, or touch files outside this PR's scope. Put fixes in a follow-up commit and re-run `roborev review --wait`. Repeat until clean or only out-of-scope findings remain.
-- **Loop cap:** stop after 3 fix rounds. List unresolved findings to the user and let them decide.
-- If roborev is unavailable, say so and ask whether to proceed without review. Don't silently skip.
-- Scope of review: findings in code that *came from the base branch* are not this branch's responsibility. Note them and move on.
+- **Review loop:** follow the shared Roborev policy in General Preferences. Scope includes any incorrectness in lines changed to resolve the conflict (such as a dropped hunk, choosing the wrong side, or a typo), any finding where the merged result is incorrect because of the interaction between base and branch changes—including semantic conflicts in lines Git merged automatically—and tests that exercise those changed or interacting behaviors, plus direct regressions from follow-up fix batches. Findings that already existed in the base branch are out of scope unless this branch's resolution changed or regressed them. Report other unrelated findings with reasons and do not silently expand scope.
+- If General Preferences is absent, keep fixing actionable findings with no round or per-finding cap until resolved or blocked by a major architecture/refactor, interface/product decision, or scope boundary. Report progress after each pass; ask about blockers and continue with other findings. If Roborev is unavailable, say so and ask whether to proceed.
 
 ### Step 9: Push
 
