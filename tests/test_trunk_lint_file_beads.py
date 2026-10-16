@@ -65,3 +65,12 @@ def test_footer_after_bare_path_block():
 
 def test_linter_failure_regex():
     assert mod._LINTER_FAILURE_RE.search("Linter foo failed to install")
+
+
+def test_bare_count_footer_and_blank_then_flush_left():
+    rep = "a.py:1:1\n 1:1  low  X  msg\n\n3 issues\n"
+    (f,) = mod.parse_findings_by_file(rep)
+    assert "3 issues" not in f.block
+    rep2 = "a.py:1:1\n 1:1  low  X  msg\n\nsome trailer\n"
+    (g,) = mod.parse_findings_by_file(rep2)
+    assert "trailer" not in g.block
