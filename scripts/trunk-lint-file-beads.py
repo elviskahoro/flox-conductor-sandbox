@@ -129,9 +129,9 @@ _ISSUE_ROW_RE = re.compile(r"^\s*\d+:\d+\s+(low|medium|high|critical)\s", re.IGN
 # messages) stays inside the block.
 _FOOTER_RE = re.compile(r"^Checked \d+\b")
 
-# Loose on purpose: it only ever sees stderr and flush-left stdout, never
-# indented finding text, and a missed match would let --prune-resolved close
-# live beads.
+# Loose on purpose: a missed match would let --prune-resolved close live
+# beads. Trade-off: a flush-left diff line that happens to contain this text
+# causes a spurious exit 3 (pruning skipped). That fails safe.
 _LINTER_FAILURE_RE = re.compile(r"(?i)linter\b.*\bfailed|failed to (install|run)\b")
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -139,6 +139,11 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 class TrunkCommandError(RuntimeError):
     """`trunk check` could not be run at all (missing binary, transport failure)."""
+
+
+# Issue rows discarded after a mid-report block cut; any entry makes
+# --prune-resolved unsafe because the parsed state is incomplete.
+DROPPED_ROWS: list[str] = []
 
 
 @dataclass
@@ -216,6 +221,7 @@ def parse_findings_by_file(raw_output: str) -> list[FileFindings]:
     non-blank line looks like an issue row, so a flush-left summary/banner
     line (e.g. "Checked 1 file") is never mistaken for a new file.
     """
+    DROPPED_ROWS.clear()
     text = strip_ansi(raw_output)
     lines = text.splitlines()
     blocks: dict[str, list[str]] = {}
@@ -246,7 +252,11 @@ def parse_findings_by_file(raw_output: str) -> list[FileFindings]:
             current_path = header.group("path")
             current_lines = [line]
         elif current_path is None and cut and _ISSUE_ROW_RE.match(line):
-            typer.echo(f"warning: dropped orphan issue row after block cut: {line.strip()}", err=True)
+            DROPPED_ROWS.append(line.strip())
+            typer.echo(
+                f"warning: dropped orphan issue row after block cut: {line.strip()}",
+                err=True,
+            )
         elif current_path is not None:
             # Flush-left, non-blank, non-header text ("Checked N files",
             # banners) is a footer, not part of the finding: end the block.
@@ -643,13 +653,14 @@ def main(
                 typer.echo(f"  {summary}")
 
         linter_failed = prune_resolved and bool(
+            DROPPED_ROWS or
             _LINTER_FAILURE_RE.search(
                 strip_ansi(run_result.stderr) + "\n" + _unindented_lines(run_result.output),
             ),
         )
         if linter_failed:
             typer.echo(
-                "warning: trunk reported linter failures; report may be partial, "
+                "warning: trunk reported linter failures or rows were dropped; report may be partial, "
                 "skipping --prune-resolved (exit 3)",
                 err=True,
             )
