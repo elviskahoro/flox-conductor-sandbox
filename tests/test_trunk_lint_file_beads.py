@@ -47,3 +47,21 @@ def test_parse_created_id_rejects_garbage():
     with pytest.raises(mod.BdListParseError):
         mod.parse_created_id("nope")
     assert mod.parse_created_id('{"id": "b-1"}') == "b-1"
+
+
+def test_flush_left_continuation_stays_in_block():
+    rep = "a.py:1:1\n 1:1  low  X  msg\n@@ -1 +1 @@\n 2:1  low  Y  msg2\n\nChecked 1 file\n"
+    (f,) = mod.parse_findings_by_file(rep)
+    assert f.issue_count == 2
+    assert "@@ -1 +1 @@" in f.block
+    assert "Checked" not in f.block
+
+
+def test_footer_after_bare_path_block():
+    rep = "b.md\n 0:0  low  fmt  Incorrect formatting\n\nChecked 1 file\n"
+    (f,) = mod.parse_findings_by_file(rep)
+    assert "Checked" not in f.block
+
+
+def test_linter_failure_regex():
+    assert mod._LINTER_FAILURE_RE.search("Linter foo failed to install")

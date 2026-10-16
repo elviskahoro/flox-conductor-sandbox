@@ -120,6 +120,12 @@ _FILE_HEADER_RE = re.compile(r"^(?P<path>\S+?)(?::(?P<line>\d+):(?P<col>\d+))?\s
 # human-friendly count in the bead title.
 _ISSUE_ROW_RE = re.compile(r"^\s*\d+:\d+\s+(low|medium|high|critical)\s", re.IGNORECASE)
 
+# Known report footers only; any other flush-left text stays in the block so
+# diff hunks / wrapped messages are never cut off.
+_FOOTER_RE = re.compile(r"^(Checked \d+ |✔|✖|\d+ (issues?|files?) )")
+
+_LINTER_FAILURE_RE = re.compile(r"(?i)failed to (install|run)|linter .* failed")
+
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
@@ -233,7 +239,7 @@ def parse_findings_by_file(raw_output: str) -> list[FileFindings]:
         elif current_path is not None:
             # Flush-left, non-blank, non-header text ("Checked N files",
             # banners) is a footer, not part of the finding: end the block.
-            if line.strip() and not line[0].isspace():
+            if _FOOTER_RE.match(line):
                 flush()
                 current_path = None
                 current_lines = []
@@ -614,8 +620,9 @@ def main(
                 )
                 typer.echo(f"  {summary}")
 
-        if prune_resolved and re.search(r"(?i)failed to (install|run)|linter .* failed", run_result.stderr):
+        if prune_resolved and _LINTER_FAILURE_RE.search(run_result.stderr):
             typer.echo("warning: trunk reported linter failures; report may be partial, skipping --prune-resolved", err=True)
+            raise typer.Exit(3)
         elif prune_resolved:
             stale_summaries = close_stale_beads(
                 existing_beads,
