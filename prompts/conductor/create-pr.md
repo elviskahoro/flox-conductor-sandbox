@@ -278,6 +278,14 @@ gh issue comment <number> --repo <owner/repo> --body "Addressed in <PR URL from 
 - Do not close the issue yourself; partial or cross-repo work isn't the maintainer's signal to close it.
 - Skip silently if Step 9 found nothing to do here.
 
+### Resolve review comments you have addressed
+
+Review threads (especially from `pullfrog`, also roborev and humans) must not be left open once the issue they raise is fixed. Whenever you push fixes to an existing PR (including updating one in this workflow):
+
+- List unresolved threads: `gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{author{login} body path}}}}}}}' -f o=<owner> -f r=<repo> -F n=<pr-number>`
+- For each thread whose concern is actually resolved by a pushed commit, reply briefly with the commit SHA, then resolve it: `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<thread-id>`
+- Leave a thread open, with a reply explaining why, if the concern was declined, deferred, or only partly fixed. Never resolve a thread whose issue is still present.
+
 ### Step 13: Suggest the merge once tests and checks pass
 
 Merging is never automatic. Once the PR is open, check its status with a single call (`gh pr checks <pr-number>`). When tests and required checks have passed, suggest merging with the GitHub CLI and wait for the user to say yes:

@@ -127,6 +127,14 @@ git push
 - If the branch has no upstream and no PR, don't create one; report the fix is committed locally and let the user decide on create-pr.
 - After pushing, check status once with `gh pr checks`. Don't poll in a loop: if checks are still running, say so and stop; the user can press the button again.
 
+### Resolve review comments you have addressed
+
+Review threads (especially from `pullfrog`, also roborev and humans) must not be left open once the issue they raise is fixed. After the fix is pushed:
+
+- List unresolved threads: `gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{author{login} body path}}}}}}}' -f o=<owner> -f r=<repo> -F n=<pr-number>`
+- For each thread whose concern is actually resolved by a pushed commit, reply briefly with the commit SHA, then resolve it: `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<thread-id>`
+- Leave a thread open, with a reply explaining why, if the concern was declined, deferred, or only partly fixed. Never resolve a thread whose issue is still present.
+
 ### Step 11: Report
 
 Finish with a short summary the user can act on:
@@ -135,6 +143,7 @@ Finish with a short summary the user can act on:
 - **Verified by:** the commands re-run and their result.
 - **Roborev:** clean / findings fixed / unresolved (listed) / unavailable.
 - **Not fixed:** pre-existing, flaky, needs-decision, or needs-access items, each with the reason and a suggested next step. Pre-existing bugs include the GitHub issue URL you filed or linked.
+- Review threads resolved / left open (with reason).
 - Commit SHA(s) and whether they were pushed.
 
 Be factual. If a check is still red or unverified, say so; do not round up to "should be fixed".
