@@ -45,10 +45,21 @@ Classify each error before touching code:
 | Class | Signal | Action |
 | --- | --- | --- |
 | **Caused by this branch** | Fails on the branch, passes on `main` | Fix it. |
-| **Pre-existing on base** | Also fails on `main` / unrelated files | Report it; don't fix unless the user asks. |
+| **Pre-existing on base** | Also fails on `main` / unrelated files, or a reviewer (e.g. Pullfrog) flags it as pre-existing | Don't fix unless the user asks. File a GitHub issue (see below), then report it. |
 | **Flaky / infra** | Timeout, network error, runner crash, passes on rerun | Rerun once (`gh run rerun <run-id> --failed`); if it passes, report it as flaky. Don't "fix" code for a flake. |
 | **Needs a decision** | Fix requires changing a public interface, a product behavior, or a test's intended expectation | Stop and ask. |
 | **Needs access you lack** | Missing secret, permission, or external service | Say exactly what's missing; don't work around it. |
+
+#### Filing issues for pre-existing bugs
+
+Reviewers such as Pullfrog often note a "pre-existing issue surfaced (not addressed here)" in a PR comment. Don't let these evaporate in the thread. For each pre-existing bug found in review comments or triage:
+
+1. Search first: `gh issue list --state open --search "<key terms>"`. If an issue already exists, link it instead of filing a duplicate.
+2. Otherwise create one: `gh issue create --title "<what is broken>" --body-file <file>`. The body states the symptom, evidence (file paths, counts, failing command), that it reproduces on `main`, the PR where it was surfaced, and any decision needed (e.g. change the test or the manifest).
+3. Don't include secrets or log dumps beyond the relevant lines. Don't assign or label beyond what the repo's conventions require.
+4. List each issue URL under "Not fixed" in the report.
+
+If `gh issue create` is unavailable (permissions, issues disabled), say so and include the drafted title and body in the report instead.
 
 To check whether an error pre-exists, look at the latest `main` run of the same check (`gh run list --branch main --workflow <name> --limit 3`) or run the command on a clean checkout of the base.
 
@@ -123,7 +134,7 @@ Finish with a short summary the user can act on:
 - **Fixed:** each error and its one-sentence root cause.
 - **Verified by:** the commands re-run and their result.
 - **Roborev:** clean / findings fixed / unresolved (listed) / unavailable.
-- **Not fixed:** pre-existing, flaky, needs-decision, or needs-access items, each with the reason and a suggested next step.
+- **Not fixed:** pre-existing, flaky, needs-decision, or needs-access items, each with the reason and a suggested next step. Pre-existing bugs include the GitHub issue URL you filed or linked.
 - Commit SHA(s) and whether they were pushed.
 
 Be factual. If a check is still red or unverified, say so; do not round up to "should be fixed".
