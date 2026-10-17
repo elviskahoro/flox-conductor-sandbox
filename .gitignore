@@ -7,3 +7,4 @@ tmp/
 
 # Local-only Linear intake database; never commit Beads state from this pilot.
 .beads/
+__pycache__/

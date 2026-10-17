@@ -1,0 +1,21 @@
+name: Prompt and script tests
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Run pytest
+        run: uv run --no-project --with pytest --with typer pytest tests/
+
+      - name: Check installed prompts match .md sources
+        run: uv run --no-project --with "tomlkit>=0.15.1" scripts/install-conductor-prompts.py --check
