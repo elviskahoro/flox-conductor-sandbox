@@ -83,6 +83,7 @@ Read the failing code and the code around it. State the cause in one sentence be
 
 - Smallest change that addresses the root cause.
 - Follow surrounding code style; don't reformat unrelated lines.
+- **Trunk autofix:** in a repo with Trunk, `trunk check` has an autofix flag. Use `trunk check --fix` (`-y`; verified on 1.25.0 — `--no-fix` opts out) (or `trunk fmt` for formatting only) to apply linter/formatter fixes instead of hand-editing them. For formatting failures, run `trunk fmt <files>`: it fixes in place by default, so never hand-format. Do not assume the flag is missing or invent others; confirm with `trunk check --help`. Scope it to the touched files (`trunk check --fix <files>`), then review the resulting diff and revert unrelated changes.
 - Do **not**: disable or skip tests, weaken assertions, add blanket lint/type suppressions, bump timeouts to hide slowness, pin around a real incompatibility, or `--no-verify` past hooks.
 - A suppression is acceptable only when the diagnostic is demonstrably a false positive; scope it to one line with a comment saying why.
 - Don't touch files outside the failure's blast radius. If the real fix needs a larger change, stop and tell the user what and why.
