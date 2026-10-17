@@ -22,8 +22,6 @@ Concretely:
 
 ### Step 1: Pre-flight checks
 
-Run these in a single batch of parallel `Bash` calls:
-
 Run helper `conflict-context`: status, branch, upstream, unpushed commits, default base, PR and mergeability, then `git fetch origin`.
 
 Branch on what you find:
@@ -104,9 +102,7 @@ Mechanics:
 
 ### Step 5: Verify nothing was left behind
 
-Before concluding the merge/rebase, mechanically check:
-
-Run helper `conflict-check`. It runs `git diff --check`, greps staged files for conflict markers, and lists unmerged files; it prints `clean` and exits 0 only when nothing is left.
+Before concluding the merge/rebase, mechanically check by running helper `conflict-check`. It runs `git diff --check`, greps staged files for conflict markers, and lists unmerged files; it prints `clean` and exits 0 only when nothing is left.
 
 Any hit means a conflict is still open. Fix it before continuing.
 
