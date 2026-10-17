@@ -58,7 +58,7 @@ Baseline working agreements for every session in this workspace. Task-specific p
 ## Code quality
 
 - Follow the repo's formatter, linter, and type-checking config. Don't change those configs to make code pass.
-- **Trunk autofix exists:** `trunk check --fix <files>` (`-y`; `--no-fix` opts out, verified on 1.25.0) applies linter autofixes and `trunk fmt <files>` formats. Run `trunk fmt` on touched files before committing; it fixes in place. Prefer them over hand-editing lint or format errors, then review the diff. Confirm flags with `trunk check --help` rather than assuming.
+- **Trunk autofix and format (run both):** in a repo with Trunk, run `trunk check --fix <touched files>` (`-y`; `--no-fix` opts out; verified on 1.25.0) **and** `trunk fmt <touched files>` (fixes in place) before committing, rather than hand-editing lint or format errors. Run both: neither covers everything the other does. Then review the diff and revert unrelated changes. Confirm flags with `trunk check --help` rather than assuming.
 - Write comments only for non-obvious *why*, never to narrate the *what*. Match the surrounding comment density.
 - Keep functions and diffs reviewable. Prefer clear names over clever code.
 - Add or update tests alongside behavior changes. A bug fix gets a regression test where the repo has a test layout for it.
