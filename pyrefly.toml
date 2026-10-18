@@ -1,0 +1,6 @@
+# An explicit preset avoids Pyrefly's minimal fallback for unconfigured projects.
+preset = "strict"
+python-version = "3.11"
+python-interpreter-path = ".venv/bin/python"
+search-path = ["."]
+project-includes = ["scripts/**/*.py", "tests/**/*.py"]

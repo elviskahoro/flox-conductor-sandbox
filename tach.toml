@@ -1,0 +1,62 @@
+# Check Python imports, including tests, against explicit module boundaries.
+source_roots = ["."]
+root_module = "forbid"
+exact = true
+forbid_circular_dependencies = true
+layers_explicit_depends_on = true
+ignore_type_checking_imports = false
+include_string_imports = true
+
+# Do not let a broad .gitignore rule silently remove source from checking.
+respect_gitignore = false
+exclude = [
+  ".git/**",
+  ".context/**",
+  ".trunk/**",
+  ".venv/**",
+  "tmp/**",
+  "worktrees/**",
+  "**/__pycache__/**",
+]
+
+[rules]
+unused_ignore_directives = "error"
+require_ignore_directive_reasons = "error"
+unused_external_dependencies = "error"
+local_imports = "error"
+
+[external]
+# Trunk runs Tach in its own tool environment, without project distributions.
+rename = ["dagger:dagger-io"]
+
+# These are independent command-line scripts, with no shared Python API.
+# Empty lists deny dependencies; omitting depends_on would allow everything.
+[[modules]]
+path = "scripts.dagger_provision_test"
+depends_on = []
+depends_on_external = ["anyio", "dagger"]
+visibility = []
+
+[[modules]]
+path = "scripts.install-conductor-prompts"
+depends_on = []
+depends_on_external = ["tomlkit"]
+visibility = []
+
+[[modules]]
+path = "scripts.trunk-lint-file-beads"
+depends_on = []
+depends_on_external = ["typer"]
+visibility = []
+
+[[modules]]
+path = "tests.test_conductor_prompts_lint"
+depends_on = []
+depends_on_external = ["pytest"]
+visibility = []
+
+[[modules]]
+path = "tests.test_trunk_lint_file_beads"
+depends_on = []
+depends_on_external = ["pytest", "typer"]
+visibility = []
