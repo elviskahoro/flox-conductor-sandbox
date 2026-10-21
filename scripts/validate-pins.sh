@@ -167,6 +167,47 @@ for pin_name in PYTEST_PIN REFLEX_PIN; do
   fi
 done
 
+# 7. Paper Compute pin (issue #86): single-home pin (no Flox counterpart),
+# exact vX.Y.Z shape — the same drift-prevention grammar as pytest/reflex,
+# but with a leading `v` so paper's release-tagging convention is enforced
+# (a bumped release that lands without `v` would silently download the
+# `latest` URL wrong).
+PAPER_PIN_V="$(sed -n 's/^PAPER_PIN="\([^"]*\)".*/\1/p' "${STARTUP}")"
+if [[ "${PAPER_PIN_V}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  pass PAPER_PIN "exact pin ${PAPER_PIN_V}"
+else
+  fail PAPER_PIN "missing or not an exact vX.Y.Z pin: ${PAPER_PIN_V:-<missing>}"
+fi
+
+# 8. Paper Compute per-platform sha256 pins (issue #86): same drift
+# grammar as the roborev platform/sha256 pairs checked above, but these
+# have no cross-targets (no Flox manifest archives paper), so the check
+# is just presence + 64-hex against the four platforms the startup
+# script's case block covers. A missing or malformed hash here means a
+# download would proceed without checksum verification — silent supply-chain
+# regression.
+# Anchor on paperctl_install's body — the startup script's case block
+# for each `(platform)` line matches BOTH rwx_install (uses the same
+# four platform names) and paperctl_install; scanning the whole file
+# would always pair the FIRST match, i.e. rwx's hash against paper's
+# case label. Follow the roborev_install extraction idiom above.
+awk '/^paperctl_install\(\)/,/^}$/' "${STARTUP}" >"${WORK}/paperctl_install"
+expected_platforms="linux-x86_64 linux-aarch64 darwin-x86_64 darwin-aarch64"
+pairs_ok=1
+pairs_detail=""
+for platform in ${expected_platforms}; do
+  sha="$(sed -n "/^  ${platform})/,/;;/p" "${WORK}/paperctl_install" | sed -n 's/.*sha256="\([0-9a-f]\{64\}\)".*/\1/p' | head -1)"
+  if [[ "${sha}" =~ ^[0-9a-f]{64}$ ]]; then
+    pairs_detail="${pairs_detail} ${platform}=${sha:0:8}…"
+  else
+    fail "paper pin sha256 ${platform}" "missing or not a 64-hex sha256 in paperctl_install(): ${sha:-<missing>}"
+    pairs_ok=0
+  fi
+done
+if [[ ${pairs_ok} == 1 ]]; then
+  pass "paper pin sha256 pairs" "4/4 platforms pinned:${pairs_detail}"
+fi
+
 if [[ ${FAILED} -ne 0 ]]; then
   log "pin validation FAILED"
   exit 1

@@ -60,7 +60,7 @@ envs/floxhub-consume/ Phase D' prototype: [install] pkg-path = "elvis/conductor-
 envs/floxhub-provision/ Phase D MVP: [install] the 5 catalog tools + elvis/bd + elvis/roborev (opt-in stage 7, needs auth)
 scripts/sandbox-test.sh   the harness — runs all stages, never hard-fails
 scripts/floxhub-provision.sh  Phase D MVP setup-script recipe (token → FLOX_FLOXHUB_TOKEN env → `flox activate`; the activated manifest defaults to envs/floxhub-provision and is redirectable via FLOXHUB_ACTIVATE_DIR to any repo's committed .flox env)
-scripts/conductor-startup-script-cloud.sh  the single workspace startup script: pinned roborev/trunk/rwx + python3.11 for the AL2023 class + opt-in uv/pytest/reflex (issue #44) + rwx auth + roborev config/daemon (reviews on demand with --wait, never a background auto-review hook) — wired into this repo's setup, and paste-ready for other repos' workspaces
+scripts/conductor-startup-script-cloud.sh  the single workspace startup script: pinned roborev/trunk/rwx + python3.11 for the AL2023 class + opt-in uv/pytest/reflex (issue #44) + opt-in paper Compute session capture (issue #86: pinned paperctl/paperd + agent-key login from PAPER_AGENT_KEY env var) + rwx auth + roborev config/daemon (reviews on demand with --wait, never a background auto-review hook) — wired into this repo's setup, and paste-ready for other repos' workspaces
 scripts/validate-pins.sh  pin-drift check: roborev/trunk pins vs the Flox manifests and the trunk preflight (CI)
 scripts/conductor-startup-script-cloud-test.sh  codified amazonlinux:2023 container verification of conductor-startup-script-cloud.sh (CI)
 prompts/conductor/   canonical cross-repo Conductor prompts (general, create-pr, fix-errors, resolve-merge-conflicts)
@@ -257,6 +257,91 @@ a requested tool that cannot be provisioned must fail setup loudly, never
 leave a workspace that appears ready but lacks them. Pin bumps: uv must
 be bumped in the startup script and both Flox manifests (and their locks)
 together; pytest/reflex live only in the startup script.
+
+### Paper Compute session capture (opt-in, issue #86)
+
+Every Claude Code session a Conductor cloud workspace runs publishes
+HTTP traffic to the Anthropic Messages endpoint. Routing that traffic
+through a local `paperd` proxy (`http://127.0.0.1:51539` by default)
+captures it to the corresponding [Paper Compute console](https://console.papercompute.com)
+session, where inspections, semantic search, skill extraction, and
+cost tracking all live. The startup script carries an opt-in paper
+stage to make every cloud workspace self-configure, same posture as
+the pydev-tools stage above: unset by default → SKIP row, paste-ready
+consumer's surface unchanged; explicitly turned on by the operator, in
+this repo's `.conductor/settings.toml` or a consuming repo's Conductor
+environment variables.
+
+Two env vars drive it (canonical references: the startup script header's
+`PAPER_AGENT_KEY` / `PAPER_ORG` block, plus `.env.cloud`'s
+placeholders section):
+
+- `PAPER_AGENT_KEY` — `paper_agent_…` + 43 base64url chars (issue #86's
+  resolved shape). The `paper_c2tf_…` gateway API keys minted from
+  [console.papercompute.com/api-keys](https://console.papercompute.com/api-keys)
+  are a different credential type (used for direct SDK access with
+  `Authorization: Bearer` against the gateway endpoint) and are rejected
+  at login; the binary surfaces the exact diagnostic on failure.
+- `PAPER_ORG` — the tenant slug the key was issued for. Required (the
+  key itself does not carry it; `paperctl login --agent-key-stdin`
+  errors on a missing `--org`).
+
+`PAPER_AGENT_GATEWAY` is optional (defaults to whatever the local
+`~/.config/paper/daemon.toml` already names; per-tenant override needed
+when PAPER uses a non-default gateway slug). `PAPER_AGENT_HARNESS`,
+`PAPER_AGENT_BACKEND`, `PAPER_AGENT_SCHEMA` further customize
+non-default tenants.
+
+Two steps end-to-end, only the first of which the startup script
+handles:
+
+1. **Set `PAPER_AGENT_KEY` (+ `PAPER_ORG`) in Conductor Settings →**
+   Environment (or `~/.conductor/settings.toml`'s
+   `[environment_variables.cloud]` for fine-grained routing). The
+   startup script's paper stage installs a pinned `paperctl @ v0.41.0`
+   (sha256pinned per platform, downloaded from
+   `download.papercompute.com`, presence/format-checked by
+   `scripts/validate-pins.sh`; a network cross-check against
+   `download.papercompute.com` is not part of the validate-pins
+   contract — a stale or wrong pin surfaces as a real download on the
+   first opt-in run), starts `paperd` headless via
+   `setsid nohup paperd` (the AL2023 / Vercel cloud sandbox has no
+   systemd user session, the same path the issue's authors used), and
+   runs `paperctl login --agent-key-stdin --org $PAPER_ORG [--gateway …]`.
+   A structural-only check at login; a stale or revoked agent key
+   surfaces as a 401 on the first Claude request through the proxy →
+   check `paperctl logs` and `paperctl status` for ongoing liveness. The
+   stage's PASS row records that capture is wired — until
+   `ANTHROPIC_BASE_URL` points workspace agents at the proxy (separate
+   step below), nothing is captured regardless.
+2. **Set `ANTHROPIC_BASE_URL=http://127.0.0.1:51539` in Conductor
+   Settings → Environment (the same field, but as an app-level
+   variable, NOT a per-shell export)** per the [Paper Compute Conductor
+   doc](https://papercompute.com/docs/paper/cli/conductor). The
+   startup script intentionally does not export it: a setup-shell
+   export dies with the shell and never reaches the workspace agent.
+   The Conductor app's app-level Environment field survives the
+   paste-ready contract and routes through to every workspace agent.
+   This var is documented in `.env.cloud`'s DELIBERATELY ABSENT
+   block — sourcing `.env.cloud` alone never sets it; the placement
+   (Conductor app-env vs. .env.cloud sourced by an operator shell)
+   matters.
+
+Verification after both vars are set: `paperctl status` reports
+`paperd: running`, `auth: agent key paper_agent_…XXXX (no expiry)`,
+`user: ─ (Paper agent)`, `org: <PAPER_ORG>`; a Claude Code session in
+any cloud workspace then appears in https://console.papercompute.com
+under that org's sessions list. The startup script never exports
+`ANTHROPIC_BASE_URL` — the app-env field is the single source of
+truth. With the vars unset (the default), the stage records a single
+SKIP `paper` row (no install, no daemon start, no login attempted) and
+changes nothing else.
+
+Operator-side follow-ups the script does NOT run (intentional, to keep
+the stage's blast-radius minimal): `paperctl skills install` to list
+the org's recorded-session corpus for skill generation/search
+awareness, and any initial `paperctl label create`, run by hand after
+the workspace is up.
 
 ### Standardized Conductor prompts for other repos' workspaces
 
