@@ -50,7 +50,7 @@ Stop and surface the problem to the user if any of these is true:
 - The branch has zero commits beyond the base — there's nothing to PR.
 - An open PR already exists for this branch — use `gh pr edit` to update it, not `gh pr create`. If the branch has a closed or merged PR, stop and offer a new branch name or ask for explicit confirmation before opening a new PR from the same head.
 
-Don't paper over these by force-pushing, amending, or running `git push -f`. The repo's agent instructions (AGENTS.md/CLAUDE.md) apply: destructive operations need explicit user approval.
+Don't paper over these by force-pushing, amending, or running `git push -f`. The repo's agent instructions (AGENTS.md/CLAUDE.md) apply: destructive operations need explicit user approval. **Exception:** use `git push --force-with-lease` without approval when resolving merge conflicts (see `resolve-merge-conflicts.md`).
 
 ### Step 2: Gather context for the "Why"
 
@@ -113,7 +113,7 @@ git log "origin/<confirmed-base>"..HEAD --oneline
 - Squash an unpublished branch from its merge base with `git reset --soft "$(git merge-base origin/<confirmed-base> HEAD)"` followed by `git commit`. This keeps newer base-branch commits out of the squash; Step 10 rebases onto the latest base afterward. Do not suggest an interactive rebase in non-interactive workspaces. Never use `--no-edit` flags that bypass message review.
 - The squashed commit message mirrors the PR title's intent (sentence-cased, why-focused) and captures the motivation in the body. No Conventional Commits prefix.
 - If the branch already has a single commit (or each existing commit is independently reviewable and ordered), skip the rebase but still confirm the count before moving on. If the branch is already published, preserve its history and use follow-up commits for review fixes; include the multi-commit history in the final handoff.
-- **Never force-push to a shared branch to squash after publication.** Squash *before* the first push.
+- **Never force-push to a shared branch to squash after publication.** Squash *before* the first push. **Exception:** use `git push --force-with-lease` when resolving merge conflicts during a rebase (see `resolve-merge-conflicts.md`).
 
 ### Step 5: Run relevant tests locally, then roborev review before publishing
 
@@ -238,7 +238,7 @@ If Step 2 identified a GitHub issue this PR addresses, carry its disposition for
 
 For an unpublished branch, rebase onto `origin/<confirmed-base>` so conflicts surface locally before the first push. For a published branch, preserve its history: do not rebase. If it needs the latest base, merge `origin/<confirmed-base>` into the branch; otherwise skip this step. After any rebase or merge, run the relevant checks and `roborev review --wait` on the updated history before pushing. If that review finds issues, follow the Step 4–5 fix, squash, and review loop for unpublished branches or preserve follow-up commits for published branches. This step runs only after an authorized publish request; preview-only requests stop at Step 8. This is the final step before pushing.
 
-Rebasing a branch that is already on a remote would rewrite published history and require a force-push, which is forbidden without explicit user approval.
+Rebasing a branch that is already on a remote would rewrite published history and require a force-push. When doing so to resolve merge conflicts, use `git push --force-with-lease` without approval (after tests and `roborev review --wait` pass per `resolve-merge-conflicts.md`).
 
 Run `git fetch origin` (stop if it fails), then `git rebase origin/<confirmed-base>` for an unpublished branch, or `git merge origin/<confirmed-base>` for a published branch that needs a base update.
 
@@ -251,7 +251,7 @@ Once the rebase or merge is clean, rerun Step 1's compound target-resolution che
 
 Run helper `push` with the confirmed base and the fresh `push_remote` and `push_ref`. It refuses placeholders and the base branch, verifies the configured upstream, and pushes to `HEAD:<push_ref>` (adding `-u` when no usable non-base upstream exists).
 
-Confirm the push succeeded before moving on. If it fails (auth, protected branch, non-fast-forward), surface the error and stop — do not force-push.
+Confirm the push succeeded before moving on. If it fails (auth, protected branch, non-fast-forward), surface the error and stop — do not force-push. **Exception:** when pushing a rebase with conflict resolutions, use `git push --force-with-lease` (see `resolve-merge-conflicts.md`).
 
 ### Step 12: Create or update the PR
 
