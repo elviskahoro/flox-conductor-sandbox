@@ -196,11 +196,11 @@ expected_platforms="linux-x86_64 linux-aarch64 darwin-x86_64 darwin-aarch64"
 pairs_ok=1
 pairs_detail=""
 for platform in ${expected_platforms}; do
-  hash="$(sed -n "/^  ${platform})/,/;;/p" "${WORK}/paperctl_install" | sed -n 's/.*sha256="\([0-9a-f]\{64\}\)".*/\1/p' | head -1)"
-  if [[ "${hash}" =~ ^[0-9a-f]{64}$ ]]; then
-    pairs_detail="${pairs_detail} ${platform}=${hash:0:8}…"
+  sha="$(sed -n "/^  ${platform})/,/;;/p" "${WORK}/paperctl_install" | sed -n 's/.*sha256="\([0-9a-f]\{64\}\)".*/\1/p' | head -1)"
+  if [[ "${sha}" =~ ^[0-9a-f]{64}$ ]]; then
+    pairs_detail="${pairs_detail} ${platform}=${sha:0:8}…"
   else
-    fail "paper pin sha256 ${platform}" "missing or not a 64-hex sha256 in paperctl_install(): ${hash:-<missing>}"
+    fail "paper pin sha256 ${platform}" "missing or not a 64-hex sha256 in paperctl_install(): ${sha:-<missing>}"
     pairs_ok=0
   fi
 done

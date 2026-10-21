@@ -1225,7 +1225,20 @@ paper_setup() {
   if paperctl status >/dev/null 2>&1; then
     record PASS paperd "reused running paperd ($(paperctl status 2>&1 | sed -n 's/^paperd:[[:space:]]*/paperd=/p' | head -1))"
   else
-    if command -v setsid >/dev/null 2>&1; then
+    # The daemon inherits the setup shell's environment by default.
+# That environment includes every secret this script (or the
+# consuming repo's Conductor env-var settings) carried in: PAPER_*,
+# RWX_ACCESS_TOKEN, TRUNK_TOKEN / TRUNK_API_TOKEN / TRUNK_USER_YAML,
+# FLOXHUB_TOKEN / FLOX_FLOXHUB_TOKEN / FLOXHUB_AUTOLOGIN,
+# INFISICAL_TOKEN / INFISICAL_PROJECT_ID. Each of those is then
+# readable from `/proc/<paperd-pid>/environ` for the daemon's
+# lifetime — a long-lived, persistent identity on a shared box. We
+# scrub them via `env -u` before the exec so paperd's environ is
+# just PATH + HOME + the small set every unix daemon needs. The list
+# is read once at start (not a per-call constant): every secret this
+# script or its companion stages may legitimately carry.
+scrub_args=(-u PAPER_AGENT_KEY -u PAPER_AGENT_HARNESS -u PAPER_AGENT_GATEWAY -u PAPER_AGENT_BACKEND -u PAPER_AGENT_SCHEMA -u PAPER_ORG -u RWX_ACCESS_TOKEN -u TRUNK_TOKEN -u TRUNK_API_TOKEN -u TRUNK_USER_YAML -u FLOXHUB_TOKEN -u FLOXHUB_AUTOLOGIN -u FLOX_FLOXHUB_TOKEN -u INFISICAL_TOKEN -u INFISICAL_PROJECT_ID)
+if command -v setsid >/dev/null 2>&1; then
       # `3>&- 4>&-` close the script's saved fds (the fds 3/4 it
       # `exec`'d at startup so the summary row reaches stdout even
       # when run via command substitution). If we let paperd inherit
@@ -1233,12 +1246,11 @@ paper_setup() {
       # variable assignments, etc.) wait on the daemon's stdin pipe
       # until paperd exits — setup hangs in any non-interactive
       # caller. paperd's normal fds are still redirected to /dev/null.
-      setsid nohup paperd </dev/null >/dev/null 2>&1 3>&- 4>&- &
-      disown 2>/dev/null || true
+      setsid env "${scrub_args[@]}" nohup paperd </dev/null >/dev/null 2>&1 3>&- 4>&- &
     else
-      nohup paperd </dev/null >/dev/null 2>&1 3>&- 4>&- &
-      disown 2>/dev/null || true
+      env "${scrub_args[@]}" nohup paperd </dev/null >/dev/null 2>&1 3>&- 4>&- &
     fi
+    disown 2>/dev/null || true
     local tries=10
     until [[ ${tries} -le 0 ]] || paperctl status >/dev/null 2>&1; do
       sleep 1

@@ -777,8 +777,11 @@ su - sandbox-user -c "
   command -v paperd >/dev/null 2>&1 ||
     fail \"paperd symlink did not land on PATH during the with-key run\"
   pin_paperctl=\"\$(sed -n 's/^PAPER_PIN=\"\([^\"]*\)\".*/\1/p' ${STARTUP_SCRIPT})\"
-  printf '%s' \"\$(paperctl version)\" | grep -q \"\${pin_paperctl}\" ||
-    fail \"paperctl does not report the pinned \${pin_paperctl}: \$(paperctl version)\"
+  # Allow both \`v0.41.0\` and \`0.41.0\` from paperctl version — present
+  # builds print the leading \`v\`; a future build that drops it should
+  # not flip this assertion.
+  printf '%s' \"\$(paperctl version)\" | grep -Eq \"\${pin_paperctl}|\${pin_paperctl#v}\" ||
+    fail \"paperctl does not report the pinned \${pin_paperctl} (with or without a leading v): \$(paperctl version)\"
   # Bot-mode auth status — the daemon now reflects the fake key.
   status_out=\"\$(paperctl status 2>&1)\"
   printf '%s' \"\${status_out}\" | grep -q 'auth:.*agent key' ||

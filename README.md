@@ -300,8 +300,11 @@ handles:
    `[environment_variables.cloud]` for fine-grained routing). The
    startup script's paper stage installs a pinned `paperctl @ v0.41.0`
    (sha256pinned per platform, downloaded from
-   `download.papercompute.com`, drift-checked by
-   `scripts/validate-pins.sh`), starts `paperd` headless via
+   `download.papercompute.com`, presence/format-checked by
+   `scripts/validate-pins.sh`; a network cross-check against
+   `download.papercompute.com` is not part of the validate-pins
+   contract — a stale or wrong pin surfaces as a real download on the
+   first opt-in run), starts `paperd` headless via
    `setsid nohup paperd` (the AL2023 / Vercel cloud sandbox has no
    systemd user session, the same path the issue's authors used), and
    runs `paperctl login --agent-key-stdin --org $PAPER_ORG [--gateway …]`.
