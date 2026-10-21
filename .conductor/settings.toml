@@ -195,7 +195,7 @@ Stop and surface the problem to the user if any of these is true:
 - The branch has zero commits beyond the base — there's nothing to PR.
 - An open PR already exists for this branch — use `gh pr edit` to update it, not `gh pr create`. If the branch has a closed or merged PR, stop and offer a new branch name or ask for explicit confirmation before opening a new PR from the same head.
 
-Don't paper over these by force-pushing, amending, or running `git push -f`. The repo's agent instructions (AGENTS.md/CLAUDE.md) apply: destructive operations need explicit user approval.
+Don't paper over these by force-pushing, amending, or running `git push -f`. The repo's agent instructions (AGENTS.md/CLAUDE.md) apply: destructive operations need explicit user approval. **Exception:** use `git push --force-with-lease` without approval when resolving merge conflicts (see `resolve-merge-conflicts.md`).
 
 ### Step 2: Gather context for the "Why"
 
@@ -258,7 +258,7 @@ git log "origin/<confirmed-base>"..HEAD --oneline
 - Squash an unpublished branch from its merge base with `git reset --soft "$(git merge-base origin/<confirmed-base> HEAD)"` followed by `git commit`. This keeps newer base-branch commits out of the squash; Step 10 rebases onto the latest base afterward. Do not suggest an interactive rebase in non-interactive workspaces. Never use `--no-edit` flags that bypass message review.
 - The squashed commit message mirrors the PR title's intent (sentence-cased, why-focused) and captures the motivation in the body. No Conventional Commits prefix.
 - If the branch already has a single commit (or each existing commit is independently reviewable and ordered), skip the rebase but still confirm the count before moving on. If the branch is already published, preserve its history and use follow-up commits for review fixes; include the multi-commit history in the final handoff.
-- **Never force-push to a shared branch to squash after publication.** Squash *before* the first push.
+- **Never force-push to a shared branch to squash after publication.** Squash *before* the first push. **Exception:** use `git push --force-with-lease` when resolving merge conflicts during a rebase (see `resolve-merge-conflicts.md`).
 
 ### Step 5: Run relevant tests locally, then roborev review before publishing
 
@@ -383,7 +383,7 @@ If Step 2 identified a GitHub issue this PR addresses, carry its disposition for
 
 For an unpublished branch, rebase onto `origin/<confirmed-base>` so conflicts surface locally before the first push. For a published branch, preserve its history: do not rebase. If it needs the latest base, merge `origin/<confirmed-base>` into the branch; otherwise skip this step. After any rebase or merge, run the relevant checks and `roborev review --wait` on the updated history before pushing. If that review finds issues, follow the Step 4–5 fix, squash, and review loop for unpublished branches or preserve follow-up commits for published branches. This step runs only after an authorized publish request; preview-only requests stop at Step 8. This is the final step before pushing.
 
-Rebasing a branch that is already on a remote would rewrite published history and require a force-push, which is forbidden without explicit user approval.
+Rebasing a branch that is already on a remote would rewrite published history and require a force-push. When doing so to resolve merge conflicts, use `git push --force-with-lease` without approval (after tests and `roborev review --wait` pass per `resolve-merge-conflicts.md`).
 
 Run `git fetch origin` (stop if it fails), then `git rebase origin/<confirmed-base>` for an unpublished branch, or `git merge origin/<confirmed-base>` for a published branch that needs a base update.
 
@@ -396,7 +396,7 @@ Once the rebase or merge is clean, rerun Step 1's compound target-resolution che
 
 Run helper `push` with the confirmed base and the fresh `push_remote` and `push_ref`. It refuses placeholders and the base branch, verifies the configured upstream, and pushes to `HEAD:<push_ref>` (adding `-u` when no usable non-base upstream exists).
 
-Confirm the push succeeded before moving on. If it fails (auth, protected branch, non-fast-forward), surface the error and stop — do not force-push.
+Confirm the push succeeded before moving on. If it fails (auth, protected branch, non-fast-forward), surface the error and stop — do not force-push. **Exception:** when pushing a rebase with conflict resolutions, use `git push --force-with-lease` (see `resolve-merge-conflicts.md`).
 
 ### Step 12: Create or update the PR
 
@@ -747,7 +747,7 @@ If the branch is already on `origin` (it has a PR), push the new commit(s) as a 
 git push
 ```
 
-- **Never force-push**, `--force-with-lease` included, without explicit user approval. If the push is rejected as non-fast-forward, `git fetch` and rebase/merge per the repo's convention, re-verify (Step 7), then push — surface any conflicts to the user rather than resolving them silently.
+- **Never force-push** without explicit user approval. **Exception:** use `git push --force-with-lease` without approval when resolving merge conflicts (see `resolve-merge-conflicts.md`). If the push is rejected as non-fast-forward, `git fetch` and rebase/merge per the repo's convention, re-verify (Step 7), then push — surface any conflicts to the user rather than resolving them silently.
 - If the branch has no upstream and no PR, don't create one; report the fix is committed locally and let the user decide on create-pr.
 - After pushing, check status once with `gh pr checks`. Don't poll in a loop: if checks are still running, say so and stop; the user can press the button again.
 
@@ -833,7 +833,7 @@ Baseline working agreements for every session in this workspace. Task-specific p
 
 ## Git and version control
 
-- **Never destroy work.** No `git push --force`, `reset --hard`, `clean -fd`, `checkout .`, branch deletion, or amending published commits without explicit approval. Look at what's there before overwriting or deleting.
+- **Never destroy work.** No `git push --force`, `reset --hard`, `clean -fd`, `checkout .`, branch deletion, or amending published commits without explicit approval, **except:** use `git push --force-with-lease` without approval when resolving merge conflicts (after running tests and verification per `resolve-merge-conflicts.md`). Look at what's there before overwriting or deleting.
 - **Don't touch changes you didn't make.** Pre-existing uncommitted changes stay as they are: no stashing, resetting, or discarding them.
 - **Stay on your branch.** Don't commit to the default branch directly. Branch names follow the repo's convention (e.g. `feature/<team>-<number>-<slug>`); don't rename without being asked.
 - **Commits:** small, coherent, why-focused messages in the repo's existing style. Stage only the files that belong to the change; skip tool-local cruft (`.agents/`, `.claude/`, Conductor-local files).
@@ -1087,7 +1087,7 @@ git push        # merge strategy: a plain fast-forward push
 ```
 
 - **Merge strategy:** plain `git push` — no approval gate, the user asked for this resolution.
-- **Rebase on an already-pushed branch:** this rewrites published history. **Stop and ask the user for explicit approval** before pushing, and use `git push --force-with-lease` (never bare `--force`) only after they say yes. Remind them that anyone else with the branch checked out will need to reset.
+- **Rebase on an already-pushed branch:** this rewrites published history. Use `git push --force-with-lease` (never bare `--force`) to push the rebased branch with conflict resolutions. No approval needed for force push during conflict resolution — the goal is to integrate both changes cleanly. Remind anyone else with the branch checked out that they will need to reset.
 - **Rebase on a local-only branch:** `git push -u origin "$(git branch --show-current)"`.
 - If the push is rejected (non-fast-forward because the remote moved), `git fetch` and re-run from Step 2 — don't force.
 
@@ -1125,9 +1125,9 @@ CI usually catches `<<<<<<<` in source, but not in docs, YAML comments, or templ
 
 A merge commit that also reformats files, bumps deps, or fixes a nearby bug is unreviewable — the reviewer can't tell resolution from drive-by. Put unrelated changes in a separate commit or a separate PR.
 
-### Don't force-push to make the problem disappear
+### Don't force-push to silently overwrite upstream work
 
-If a push is rejected, the remote has commits you haven't seen. Fetch and integrate; never `--force` over them.
+If a push is rejected, the remote has commits you haven't seen. Fetch and integrate; never `--force` over them. **Exception:** use `git push --force-with-lease` when rebasing on an already-pushed branch during conflict resolution (Step 9), after running all tests and `roborev review --wait`.
 
 ### Don't add AI attribution
 
