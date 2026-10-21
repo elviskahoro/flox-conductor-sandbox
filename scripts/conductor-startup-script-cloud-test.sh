@@ -696,4 +696,136 @@ su - sandbox-user -c "
     fail \"healed venv cannot import reflex\"
 " || fail "broken-venv heal verification failed"
 
+echo "=== RUN 13: paper stage SKIP row when PAPER_AGENT_KEY is unset ==="
+# Codifies issue #86's opt-in surface: a fresh container run with the
+# repo settings.toml's no-key default must record a SKIP install row
+# WITHOUT installing paperctl or paperd. A regression that hard-coded
+# an empty-key login, or that installed paper unconditionally, would
+# trip this — the assertion is the inverse of the install assertions
+# in RUN 14 (no paperctl/paperd on disk at all in the no-key path).
+# The auth row stays silent: the install SKIP already names the
+# operator-facing artifact (PAPER_AGENT_KEY missing), and `setsid`/`nohup`
+# never runs in the no-key path, so no recordable daemon state exists.
+RUN13_OUTPUT="$(su - sandbox-user -c "cd /tmp && STARTUP_BEST_EFFORT=1 bash ${STARTUP_SCRIPT}")" ||
+  fail "no-key paper run exited non-zero"
+printf '%s\n' "${RUN13_OUTPUT}"
+# FAIL-when-found cases (no `*)` default: fail loudly on a regression,
+# fall through otherwise) — same shape the rest of this script uses
+# (e.g. RUN 1 at line 134). SC2249 advisory would otherwise flag both.
+# shellcheck disable=SC2249
+case "${RUN13_OUTPUT}" in *" | FAIL |"*) fail "no-key paper run recorded FAIL row(s)" ;; esac
+# Positive assertion: a single SKIP paper row. Absence-of-FAIL alone
+# would stay green if the stage regressed into a silent no-op that
+# records no rows. PAPER_AUTH and PAPERD rows are forbidden by
+# construction (gating in paper_setup), so their presence is also a
+# regression marker. The two forbidden-pattern cases fail-on-match
+# (no `*)` default), matching the FAIL-only idiom in RUN 1.
+# shellcheck disable=SC2249
+case "${RUN13_OUTPUT}" in *"paper | SKIP"*) ;; *) fail "no-key paper run missing the paper | SKIP row (install gate)" ;; esac
+# shellcheck disable=SC2249
+case "${RUN13_OUTPUT}" in *"paper-auth |"*) fail "no-key paper run unexpectedly recorded a paper-auth row (auth gate regressed)" ;; esac
+# shellcheck disable=SC2249
+case "${RUN13_OUTPUT}" in *"paperd |"*) fail "no-key paper run unexpectedly recorded a paperd row (daemon must stay silent when no key)" ;; esac
+su - sandbox-user -c "
+  set -e
+  # Install verifications are deliberately the inverse of RUN 14:
+  # the paste-ready consumer's surface stays zero-footprint in the
+  # no-key path. Anything paperctl-shaped on disk in a fresh container
+  # is a regression — the install gate didn't keep. PATH-driven
+  # resolution (\`command -v\`) is the canonical evidence: install_bin
+  # may land the binary under ~/.local/bin rather than /usr/local/bin
+  # on hosts without a writable system bin (no /dev/null redirector or
+  # no passwordless sudo), so checking the user's PATH is the only
+  # host-agnostic assertion that survives both placements.
+  fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
+  if command -v paperctl >/dev/null 2>&1; then
+    fail \"paperctl resolvable on PATH under PAPER_AGENT_KEY unset — install gate regressed\"
+  fi
+  if command -v paperd >/dev/null 2>&1; then
+    fail \"paperd resolvable on PATH under PAPER_AGENT_KEY unset — install gate regressed\"
+  fi
+" || fail "no-key paper verification failed"
+
+echo "=== RUN 14: paper stage PASSes with a structurally-valid agent key ==="
+# The with-key path (issue #86): a real PAPER_ORG plus a structurally
+# valid agent-key value — the shape is paper_agent_ + 43 base64url
+# chars (paperctl itself enforces this at login). The agent-key's
+# REAL validity is checked only when traffic flows; this run confirms
+# the install + daemon + login-argv mechanics on real network without
+# burning gated credentials. The fake-but-valid key is the deliberate
+# NON-secret shape paperctl itself enforces at login.
+FAKE_AGENT_KEY="paper_agent_$(python3 -c 'import base64,sys;sys.stdout.write(base64.urlsafe_b64encode(b"N"*32).decode().rstrip("="))')"
+RUN14_OUTPUT="$(su - sandbox-user -c "cd /tmp && STARTUP_BEST_EFFORT=1 PAPER_AGENT_KEY=${FAKE_AGENT_KEY} PAPER_ORG=paperctl-test-org PAPER_AGENT_GATEWAY=default bash ${STARTUP_SCRIPT}")" ||
+  fail "with-key paper run exited non-zero"
+printf '%s\n' "${RUN14_OUTPUT}"
+# Same FAIL-when-found triple as RUN 13 (enable if the script ever
+# diverges from the other similar FAIL cases at line 134 etc.).
+# shellcheck disable=SC2249
+case "${RUN14_OUTPUT}" in *" | FAIL |"*) fail "with-key paper run recorded FAIL row(s)" ;; esac
+# All three paper-family rows in upgrade order: install, daemon, auth.
+case "${RUN14_OUTPUT}" in *"paper | PASS"*) ;; *) fail "with-key paper run missing the paper PASS install row" ;; esac
+case "${RUN14_OUTPUT}" in *"paperd | PASS"*) ;; *) fail "with-key paper run missing the paperd PASS row" ;; esac
+case "${RUN14_OUTPUT}" in *"paper-auth | PASS"*) ;; *) fail "with-key paper run missing the paper-auth PASS row" ;; esac
+case "${RUN14_OUTPUT}" in *"org paperctl-test-org"*) ;; *) fail "with-key paper run missing the org=paperctl-test-org detail" ;; esac
+su - sandbox-user -c "
+  set -e
+  fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
+  # Install landed on PATH (host-agnostic — install_bin may place
+  # under /usr/local/bin or ~/.local/bin depending on permissions).
+  command -v paperctl >/dev/null 2>&1 ||
+    fail \"paperctl did not land on PATH during the with-key run\"
+  command -v paperd >/dev/null 2>&1 ||
+    fail \"paperd symlink did not land on PATH during the with-key run\"
+  pin_paperctl=\"\$(sed -n 's/^PAPER_PIN=\"\([^\"]*\)\".*/\1/p' ${STARTUP_SCRIPT})\"
+  printf '%s' \"\$(paperctl version)\" | grep -q \"\${pin_paperctl}\" ||
+    fail \"paperctl does not report the pinned \${pin_paperctl}: \$(paperctl version)\"
+  # Bot-mode auth status — the daemon now reflects the fake key.
+  status_out=\"\$(paperctl status 2>&1)\"
+  printf '%s' \"\${status_out}\" | grep -q 'auth:.*agent key' ||
+    fail \"paperctl status does not report the bot-mode auth line: \${status_out}\"
+  printf '%s' \"\${status_out}\" | grep -q 'org:.*paperctl-test-org' ||
+    fail \"paperctl status does not report the org=paperctl-test-org: \${status_out}\"
+" || fail "with-key paper verification failed"
+# Clean up RUN 14's daemon before RUN 15 runs: paperd is detached
+# (setsid on AL2023 / nohup on darwin), so it would otherwise outlive
+# this subshell AND outlive the next login, contaminating RUN 15's
+# expectations. The pause is necessary: paperctl's control socket is
+# bound at startup; an immediate kill race-loses with its cleanup
+# hooks (we tolerantly SIGTERM and only SIGKILL after a grace window).
+su - sandbox-user -c 'pkill -x paperd 2>/dev/null || true; sleep 1; pkill -KILL -x paperd 2>/dev/null || true; rm -f /tmp/.paperd-sock.pid 2>/dev/null || true' || true
+su - sandbox-user -c "rm -f ~/.config/paper/agent-key.json ~/.config/paper/credentials.json ~/.local/state/paper/paperd.sock /tmp/paperd.sock 2>/dev/null || true; true" || true
+
+echo "=== RUN 15: paper-auth FAIL when PAPER_AGENT_KEY has the wrong prefix ==="
+# The exact branch the issue #86 author hit: a paper_c2tf_ value is
+# structurally wrong for paperctl login (gateway API keys are a
+# different credential type). A wrong-prefix key must FAIL the auth row
+# loudly — install + daemon still PASS (those don't depend on the key)
+# — and the diagnostic must name the wrong-type shape so an operator
+# knows to swap it for a real agent key. STARTUP_BEST_EFFORT=1 makes
+# this recorded-but-non-fatal under best-effort, exactly mirroring the
+# rwx-auth "token rejected" semantics from RUN 6.
+WRONG_PREFIX_KEY="paper_c2tf_$(python3 -c 'import base64,sys;sys.stdout.write(base64.urlsafe_b64encode(b"K"*32).decode().rstrip("="))')"
+RUN15_OUTPUT="$(su - sandbox-user -c "cd /tmp && STARTUP_BEST_EFFORT=1 PAPER_AGENT_KEY=${WRONG_PREFIX_KEY} PAPER_ORG=paperctl-test-org PAPER_AGENT_GATEWAY=default bash ${STARTUP_SCRIPT}")" ||
+  fail "wrong-prefix paper run exited non-zero (must record-FAIL-but-not-fail-the-run under STARTUP_BEST_EFFORT)"
+printf '%s\n' "${RUN15_OUTPUT}"
+case "${RUN15_OUTPUT}" in *"paper-auth | FAIL"*) ;; *) fail "wrong-prefix paper run missing the paper-auth FAIL row" ;; esac
+case "${RUN15_OUTPUT}" in *"paper_c2tf"*) ;; *) fail "wrong-prefix paper run FAIL message does not name the paper_c2tf diagnostic" ;; esac
+# Confirm the FAIL was a real login-time rejection, NOT a degraded
+# row masquerading as one: paperctl status must NOT report an agent-key
+# auth line after the run. A regression where the prefix check passed
+# (or an upstream paperctl change accepted paper_c2tf_) would otherwise
+# silently record the same FAIL row for a different reason.
+su - sandbox-user -c "
+  set -e
+  fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
+  status_out=\"\$(paperctl status 2>&1 || true)\"
+  printf '%s' \"\${status_out}\" | grep -q 'auth:.*agent key' &&
+    fail \"paperctl status reports an agent-key auth line after a wrong-prefix key was rejected: \${status_out}\"
+  printf '%s' \"\${status_out}\" | grep -q 'auth:.*not logged in' ||
+    fail \"paperctl status is not in not-logged-in state after a wrong-prefix key was rejected: \${status_out}\"
+" || fail "wrong-prefix paper post-condition verification failed"
+# Clean up RUN 15's daemon + any persisted credentials, mirroring RUN 14.
+su - sandbox-user -c 'pkill -x paperd 2>/dev/null || true; sleep 1; pkill -KILL -x paperd 2>/dev/null || true' || true
+su - sandbox-user -c "rm -f ~/.config/paper/agent-key.json ~/.config/paper/credentials.json ~/.local/state/paper/paperd.sock /tmp/paperd.sock 2>/dev/null || true; true" || true
+
 echo "=== ALL CHECKS PASSED ==="

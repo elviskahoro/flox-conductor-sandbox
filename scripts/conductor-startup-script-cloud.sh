@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2312  # $(...) in assignments and rows: stage failures surface through the stages' own || returns and the summary, not by killing the script mid-row
+# shellcheck disable=SC2310  # `if stage; then :; else record FAIL ...; maybe_fail; fi` is intentional: every stage's exit code routes through the summary rows below, never through set -e — mirroring the existing roborev/trunk/rwx/pytools invocations
 # The single Conductor workspace startup script: roborev + trunk + rwx +
 # Python 3.11 + the opt-in Python dev tools (uv/pytest/reflex), then the
 # auth/init that makes them work rather than merely exist.
@@ -164,6 +165,50 @@
 #                     consuming repo that wants these tools must set this
 #                     env var in ITS OWN Conductor env-var settings; a
 #                     pasted script alone never turns the stage on.
+#   PAPER_AGENT_KEY  opt-in Paper Compute session capture (issue #86).
+#                     Set to a `paper_agent_`… value to make the script
+#                     install paperctl/paperd headless and run
+#                     `paperctl login --agent-key-stdin` against the
+#                     tenant org named by PAPER_ORG. Unset (the default;
+#                     this repo's own settings.toml stays unset) → the
+#                     stage records a SKIP row and changes nothing —
+#                     paste-ready consumer's surface stays as it was.
+#                     A `paper_c2tf_` gateway API key from
+#                     console.papercompute.com/api-keys is NOT an agent
+#                     key (different credential type for direct SDK
+#                     access with `Authorization: Bearer` against the
+#                     gateway endpoint, never for login). To get a real
+#                     `paper_agent_` key, org admins must have the
+#                     `agent-keys` entitlement enabled for the tenant —
+#                     public Paper docs lag v0.40.0 on key creation.
+#                     Stale or revoked agent keys are accepted at login
+#                     time (only their prefix + 43-base64url shape is
+#                     checked) and surface as a 401 on the first Claude
+#                     request through the proxy; check `paperctl logs`
+#                     and `paperctl status` for ongoing liveness.
+#   PAPER_ORG       the tenant slug the key was issued for — REQUIRED
+#                     when PAPER_AGENT_KEY is set, because the key
+#                     itself does not carry it (`paperctl --agent-key-
+#                     stdin` errors on a missing `--org`). PAPER_AGENT_KEY
+#                     set without PAPER_ORG is recorded as a FAIL row
+#                     under both postures — the rwx auth stage's "token
+#                     rejected" semantics match (FAIL row, recorded but
+#                     maybe_fail-class so other stages still run).
+#   PAPER_AGENT_GATEWAY  optional --gateway name handed to
+#                     `paperctl login` so a bot's paperd has a primary
+#                     gateway up front (the v0.40+ strings warn that
+#                     bot paperd without --gateway routes to nothing).
+#                     Defaults to the daemon.toml already on disk
+#                     (this repo's local daemon.toml names "default",
+#                     schema "anthropic"); without the var on a fresh
+#                     sandbox, a WARN row reminds the operator to set
+#                     one — capture stays unconfigured, no FAIL.
+#   PAPER_AGENT_HARNESS / PAPER_AGENT_BACKEND / PAPER_AGENT_SCHEMA
+#                     optional `paperctl login --harness / --backend /
+#                     --schema` forwarding for tenants whose bot paperd
+#                     needs anything beyond the defaults. Schema is
+#                     `anthropic` by default (the gateway's current
+#                     schema, or `anthropic` on a fresh daemon.toml).
 set -euo pipefail
 
 # Save the original stdout/stderr as fd 3/4 BEFORE the log redirect: the
@@ -1005,6 +1050,257 @@ roborev_setup() {
   fi
 }
 
+# --- paper (Paper Compute session capture; opt-in via PAPER_AGENT_KEY, #86) -
+# Issue #86: route every Claude Code session's traffic through paperd's
+# local proxy so it lands in https://console.papercompute.com. Two moving
+# pieces — a small multi-call binary (paperctl and paperd are the same
+# image, argv[0] switched per install.sh's symlink), downloaded from
+# download.papercompute.com with hand-pinned per-platform sha256s (the
+# drift-prevention idiom the other tool stages already use), and an
+# opt-in agent-key login that runs paperd as a bot — no browser, no
+# token refresh. Operator opts in by exporting PAPER_AGENT_KEY in
+# Conductor's [environment_variables.cloud]; absent → SKIP row,
+# paste-ready surface unchanged (same opt-in grammar as STARTUP_PY_DEV_TOOLS).
+#
+# Headless daemon start: AL2023 / Vercel cloud sandboxes have no systemd
+# user session (the issue's proven path was `setsid nohup paperd`),
+# so a launchd / systemd supervisor unit is the wrong surface for this
+# script. `setsid nohup paperd` works on every platform (Linux x86_64 /
+# aarch64 and macOS). The proxy listens at 127.0.0.1:51539; setting
+# ANTHROPIC_BASE_URL to that address belongs in Conductor's app-level
+# Environment field (the issue's checklist), not in this script — a
+# setup-shell export would die with the shell and never reach the
+# workspace agent.
+#
+# Failure surface (single source of truth — the run section's row
+# contract; the rows in the summary below match these):
+#   PAPER_AGENT_KEY absent                      => SKIP paper (no install;
+#                                                    paper_setup returns 0
+#                                                    silently — the single
+#                                                    SKIP row carries the
+#                                                    operator-facing artifact)
+#   PAPER_AGENT_KEY set, install fails          => FAIL paper (loud);
+#                                                    paper_setup also returns 1
+#                                                    silently so the install row
+#                                                    stays the only diagnostic
+#   PAPER_AGENT_KEY set, PAPER_ORG missing      => FAIL paper-auth (loud;
+#                                                    ALWAYS — best-effort keeps
+#                                                    the row but does NOT demote
+#                                                    the loud FAIL to a WARN,
+#                                                    matching the rwx-auth
+#                                                    "token rejected" semantic)
+#   install OK, paperd fails to come up         => FAIL paperd (loud)
+#   install OK, login rejected                  => FAIL paper-auth (loud;
+#                                                    output redacted before log
+#                                                    so a future paperctl
+#                                                    version cannot echo the
+#                                                    raw key)
+#   login OK, agent-key workflow, no --gateway  => WARN paper-auth (recorded;
+#                                                    non-fatal — the operator
+#                                                    can re-run with a gateway
+#                                                    slug when they have one)
+PAPER_PIN="v0.41.0"
+PAPER_BASE_URL="https://download.papercompute.com"
+
+paperctl_install() {
+  # Opt-in gate lives in the install function too: PAPER_AGENT_KEY
+  # absent => the SKIP row below, no download, no /usr/local/bin
+  # placement, paste-ready consumer's surface unchanged. Without this
+  # gate the install would draw down download.papercompute.com on
+  # every cloud workspace regardless of operator intent.
+  if [[ -z "${PAPER_AGENT_KEY:-}" ]]; then
+    record SKIP paper "PAPER_AGENT_KEY not set — paperctl/paperd not installed; set PAPER_AGENT_KEY in Conductor Settings to enable (issue #86)"
+    return 0
+  fi
+  if command -v paperctl >/dev/null 2>&1; then
+    if paperctl version >/dev/null 2>&1; then
+      record PASS paper "reused $(command -v paperctl) ($(paperctl version 2>&1 | head -1 || true))"
+      # Reuse-path: a paperd argv-switched invocation needs to resolve
+      # next to paperctl. `link_bin` symlinks paperd if missing — same
+      # contract install.sh uses. Other tool stages intentionally do
+      # NOT enforce an exact version on reuse (the header's drift-
+      # prevention idiom — "reuse-if-present, regardless of version"),
+      # so this stage mirrors roborev/trunk/rwx/uv: a functional paperctl
+      # at ANY version is reused as-is, and only a fresh install pins.
+      if ! command -v paperd >/dev/null 2>&1; then
+        link_bin "$(command -v paperctl)" paperd || true
+      fi
+      return 0
+    fi
+    record FAIL paper "paperctl present at $(command -v paperctl) but not functional (paperctl version failed) — remove it and re-run setup"
+    return 1
+  fi
+  local asset sha256 dir path os arch
+  os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+  arch="$(uname -m | sed s/arm64/aarch64/)"
+  case "${os}-${arch}" in
+  linux-x86_64)
+    sha256="234c5feae31766781ffb3f6209a7935855f1df2d376641da96275c853dce3d2e"
+    ;;
+  linux-aarch64)
+    sha256="318be86c8b8792e750dd67140c7b48b1181981e47c8180578f44b4528aaa8aee"
+    ;;
+  darwin-x86_64)
+    sha256="cfe5aeb8c2191f19b0be35943a215e718cb3e4f7b2355dbe7fc87eb0aff16503"
+    ;;
+  darwin-aarch64)
+    sha256="f84be84108b088cc4b8ffcbc2ccbaabe5f59c252f9633d9c8f531a69a7e15896"
+    ;;
+  *)
+    record FAIL paper "no pinned paper ${PAPER_PIN} asset for ${os}-${arch}"
+    return 1
+    ;;
+  esac
+  dir="${WORK}/paper"
+  mkdir -p "${dir}"
+  asset="paperctl"
+  if ! curl -fsSLo "${dir}/${asset}" --retry 3 --connect-timeout 10 --max-time 120 "${PAPER_BASE_URL}/${PAPER_PIN}/${os}/${arch}/${asset}"; then
+    log "error: paperctl/paperd download failed from ${PAPER_BASE_URL}/${PAPER_PIN}/${os}/${arch}/paperctl"
+    return 1
+  fi
+  if ! checksum_verify "${sha256}" "${dir}/${asset}"; then
+    # Report the actual hash that broke the pin, so a reviewer can
+    # tell whether the bytes are stale-cache vs genuinely different.
+    # Pick `sha256sum` or `shasum -a 256` the same way `checksum_verify`
+    # does; never call both.
+    local actual_hash=""
+    if command -v sha256sum >/dev/null 2>&1; then
+      actual_hash="$(sha256sum "${dir}/${asset}" 2>/dev/null | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+      actual_hash="$(shasum -a 256 "${dir}/${asset}" 2>/dev/null | awk '{print $1}')"
+    fi
+    record FAIL paper "checksum mismatch for paperctl ${PAPER_PIN} on ${os}-${arch} (got sha256=${actual_hash:-<unavailable>}, expected ${sha256}) — supply-chain guard, do not bypass"
+    return 1
+  fi
+  chmod 755 "${dir}/${asset}"
+  path="$(install_bin "${dir}/${asset}" paperctl || true)"
+  if [[ -z "${path}" ]]; then
+    record FAIL paper "could not install paperctl to /usr/local/bin or ~/.local/bin (no root, no sudo)"
+    return 1
+  fi
+  note_placement "${path}"
+  # paperd is the same multi-call binary, argv[0] switched.
+  link_bin "${path}" paperd || true
+  hash -r 2>/dev/null || true
+  if ! command -v paperctl >/dev/null 2>&1; then
+    log "error: paperctl installed at ${path} but not on PATH"
+    return 1
+  fi
+  record PASS paper "${PAPER_PIN} (${path})"
+}
+
+paper_setup() {
+  # The opt-in gate lives here too. PAPER_AGENT_KEY absent => SKIP,
+  # the paste-ready consumer's surface stays at zero footprint. The
+  # install stage upstream records its own SKIP paper row (gated on
+  # the same env var), so the no-key path emits SKIP-only rows and
+  # touches nothing.
+  if [[ -z "${PAPER_AGENT_KEY:-}" ]]; then
+    return 0
+  fi
+  # Bail before reaching for the binary if the install stage set
+  # things up wrong: a `command -v paperctl` failure here would
+  # otherwise produce a second ambiguous FAIL row on the daemon
+  # path (and a third one for the login). The run section still
+  # records the install-stage FAIL on its own row, so we don't lose
+  # the diagnostic — we just stay silent in paper_setup to avoid
+  # shadowing it.
+  if ! command -v paperctl >/dev/null 2>&1; then
+    return 1
+  fi
+  if [[ -z "${PAPER_ORG:-}" ]]; then
+    record FAIL paper-auth "PAPER_AGENT_KEY set but PAPER_ORG missing — paperctl --agent-key-stdin requires the tenant slug because the key itself does not carry it"
+    return 1
+  fi
+  # Ensure the daemon is up before talking to its control socket.
+  # AL2023 / Vercel sandboxes have no systemd user session so the
+  # supervisor-managed path is wrong there — `setsid` makes a new
+  # session, `nohup` ignores SIGHUP, the daemon survives process
+  # cleanup. macOS has no `setsid` binary by default; `nohup … &
+  # disown` works equally well there (no /dev/fd / process
+  # substitution — gtm-sdk#279 — just pure redirects to /dev/null).
+  # Binding is verified through the control socket — `paperctl
+  # status` only succeeds once paperd has bound it — so a 10-try /
+  # sleep-1 / status poll is enough on every platform.
+  if paperctl status >/dev/null 2>&1; then
+    record PASS paperd "reused running paperd ($(paperctl status 2>&1 | sed -n 's/^paperd:[[:space:]]*/paperd=/p' | head -1))"
+  else
+    if command -v setsid >/dev/null 2>&1; then
+      # `3>&- 4>&-` close the script's saved fds (the fds 3/4 it
+      # `exec`'d at startup so the summary row reaches stdout even
+      # when run via command substitution). If we let paperd inherit
+      # them, capture-side callers (`$(...)`, the test harness's
+      # variable assignments, etc.) wait on the daemon's stdin pipe
+      # until paperd exits — setup hangs in any non-interactive
+      # caller. paperd's normal fds are still redirected to /dev/null.
+      setsid nohup paperd </dev/null >/dev/null 2>&1 3>&- 4>&- &
+      disown 2>/dev/null || true
+    else
+      nohup paperd </dev/null >/dev/null 2>&1 3>&- 4>&- &
+      disown 2>/dev/null || true
+    fi
+    local tries=10
+    until [[ ${tries} -le 0 ]] || paperctl status >/dev/null 2>&1; do
+      sleep 1
+      tries=$((tries - 1))
+    done
+    if ! paperctl status >/dev/null 2>&1; then
+      record FAIL paperd "paperd did not come up after detached start (paperctl status unreachable after 10s) — check ~/.config/paper/ paths and paperctl logs"
+      return 1
+    fi
+    if command -v setsid >/dev/null 2>&1; then
+      record PASS paperd "paperd started detached (setsid nohup)"
+    else
+      record PASS paperd "paperd started detached (nohup)"
+    fi
+  fi
+  # Build the login argv incrementally so unset optional vars do not
+  # pass empty placeholders to paperctl — the same empty --org
+  # already short-circuits the usage check.
+  local -a login_args=(--agent-key-stdin --org "${PAPER_ORG}")
+  if [[ -n "${PAPER_AGENT_GATEWAY:-}" ]]; then login_args+=(--gateway "${PAPER_AGENT_GATEWAY}"); fi
+  if [[ -n "${PAPER_AGENT_HARNESS:-}" ]]; then login_args+=(--harness "${PAPER_AGENT_HARNESS}"); fi
+  if [[ -n "${PAPER_AGENT_BACKEND:-}" ]]; then login_args+=(--backend "${PAPER_AGENT_BACKEND}"); fi
+  if [[ -n "${PAPER_AGENT_SCHEMA:-}" ]]; then login_args+=(--schema "${PAPER_AGENT_SCHEMA}"); fi
+  # Capture paperctl's own output rather than letting it flow to the
+  # setup log / Conductor UI as-is: the policy is "never print, log,
+  # commit, or paste secrets". paperctl v0.41.0 already truncates
+  # agent keys to `paper_agent_…ABCD' in its status output, but a
+  # future version could echo the full key on an unexpected error
+  # path; redacting the variable value here is cheap defence. We use
+  # bash-side parameter expansion rather than sed because a Paper
+  # agent key may contain sed-regex metacharacters (| * [ \ .) that
+  # would otherwise corrupt the redaction. `'old/new'` performs
+  # literal-string replacement with no regex interpretation.
+  local login_output login_rc redacted
+  login_output="$(printf '%s' "${PAPER_AGENT_KEY}" | paperctl login "${login_args[@]}" 2>&1)"
+  login_rc=$?
+  if [[ ${login_rc} -ne 0 ]]; then
+    redacted="${login_output//"${PAPER_AGENT_KEY}"/paper_agent_<REDACTED>}"
+    printf '%s\n' "${redacted}" >&2 || true
+    record FAIL paper-auth "paperctl login rejected the PAPER_AGENT_KEY (stale or non-paper_agent_ value? issue #86 — agent keys are paper_agent_…(43 base64url chars); paper_c2tf_… gateway API keys are a different credential type)"
+    return 1
+  fi
+  local detail
+  detail="$(paperctl status 2>&1 | sed -n 's/^proxy:[[:space:]]*/proxy=/p; s/^gateway:[[:space:]]*/gateway=/p; s/^backend:[[:space:]]*/backend=/p' | tr '\n' ';' | sed 's/;$//')"
+  # agent-key login succeeds here, but capture has no primary gateway
+  # to route through when PAPER_AGENT_GATEWAY is unset AND no
+  # [[gateways]] table survives on disk (the v0.40+ strings warn:
+  # `no primary gateway is configured for this agent key; re-run
+  # paperctl login --agent-key-file <PATH> --org <ORG> --gateway …`).
+  local need_warn=0
+  if [[ -z "${PAPER_AGENT_GATEWAY:-}" ]]; then
+    if [[ ! -s "${HOME}/.config/paper/daemon.toml" ]] || ! grep -qF '[[gateways]]' "${HOME}/.config/paper/daemon.toml" 2>/dev/null; then
+      need_warn=1
+    fi
+  fi
+  if [[ ${need_warn} == 1 ]]; then
+    record WARN paper-auth "agent key logged in for org ${PAPER_ORG} (${detail}); PAPER_AGENT_GATEWAY unset and no [[gateways]] in ~/.config/paper/daemon.toml — capture has no route; re-run with PAPER_AGENT_GATEWAY=<slug>"
+  else
+    record PASS paper-auth "agent key logged in for org ${PAPER_ORG} (${detail})"
+  fi
+}
+
 # --- run -------------------------------------------------------------------
 # STARTUP_BEST_EFFORT=1 (exported by this repo's settings.toml) keeps the
 # former cloud-install contract: tool-stage failures are recorded but do
@@ -1027,10 +1323,12 @@ log "host: $(uname -srm), user: $(id -un), pwd: $(pwd)"
 if roborev_install; then :; else record FAIL roborev "provisioning failed — see messages above"; maybe_fail; fi
 if trunk_stage; then :; else record FAIL trunk "provisioning failed — see messages above"; maybe_fail; fi
 if rwx_install; then :; else record FAIL rwx "provisioning failed — see messages above"; maybe_fail; fi
+if paperctl_install; then :; else record FAIL paper "provisioning failed — see messages above"; maybe_fail; fi
 if python311_stage; then :; else FAILED=1; record FAIL python3.11 "provisioning failed — see messages above"; fi
 if pytools_stage; then :; else FAILED=1; record FAIL pytools "provisioning failed — see the rows above"; fi
 if rwx_auth; then :; else maybe_fail; fi
 if roborev_setup; then :; else maybe_fail; fi
+if paper_setup; then :; else maybe_fail; fi
 
 log ""
 log "---- workspace startup summary ----"
