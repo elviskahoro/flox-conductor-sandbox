@@ -161,7 +161,7 @@ git push        # merge strategy: a plain fast-forward push
 ```
 
 - **Merge strategy:** plain `git push` — no approval gate, the user asked for this resolution.
-- **Rebase on an already-pushed branch:** this rewrites published history. **Stop and ask the user for explicit approval** before pushing, and use `git push --force-with-lease` (never bare `--force`) only after they say yes. Remind them that anyone else with the branch checked out will need to reset.
+- **Rebase on an already-pushed branch:** this rewrites published history. Use `git push --force-with-lease` (never bare `--force`) to push the rebased branch with conflict resolutions. No approval needed for force push during conflict resolution — the goal is to integrate both changes cleanly. Remind anyone else with the branch checked out that they will need to reset.
 - **Rebase on a local-only branch:** `git push -u origin "$(git branch --show-current)"`.
 - If the push is rejected (non-fast-forward because the remote moved), `git fetch` and re-run from Step 2 — don't force.
 
@@ -199,9 +199,9 @@ CI usually catches `<<<<<<<` in source, but not in docs, YAML comments, or templ
 
 A merge commit that also reformats files, bumps deps, or fixes a nearby bug is unreviewable — the reviewer can't tell resolution from drive-by. Put unrelated changes in a separate commit or a separate PR.
 
-### Don't force-push to make the problem disappear
+### Don't force-push to silently overwrite upstream work
 
-If a push is rejected, the remote has commits you haven't seen. Fetch and integrate; never `--force` over them.
+If a push is rejected, the remote has commits you haven't seen. Fetch and integrate; never `--force` over them. **Exception:** use `git push --force-with-lease` when rebasing on an already-pushed branch during conflict resolution (Step 9), after running all tests and `roborev review --wait`.
 
 ### Don't add AI attribution
 
