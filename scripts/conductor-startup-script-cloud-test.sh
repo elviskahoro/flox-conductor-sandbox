@@ -777,17 +777,37 @@ su - sandbox-user -c "
   command -v paperd >/dev/null 2>&1 ||
     fail \"paperd symlink did not land on PATH during the with-key run\"
   pin_paperctl=\"\$(sed -n 's/^PAPER_PIN=\"\([^\"]*\)\".*/\1/p' ${STARTUP_SCRIPT})\"
-  # Allow both \`v0.41.0\` and \`0.41.0\` from paperctl version — present
-  # builds print the leading \`v\`; a future build that drops it should
-  # not flip this assertion.
-  printf '%s' \"\$(paperctl version)\" | grep -Eq \"\${pin_paperctl}|\${pin_paperctl#v}\" ||
-    fail \"paperctl does not report the pinned \${pin_paperctl} (with or without a leading v): \$(paperctl version)\"
+  [[ -n \"${pin_paperctl}\" ]] || fail \"could not extract PAPER_PIN from the startup script\"
+  # Strip the optional leading \`v\` so a paperctl version reported
+  # as either \`v0.41.0\` or \`0.41.0\` matches. \`grep -F\` treats the
+  # pin as a literal (no regex interpretation of dots); \`--\` ends
+  # the option list so a future pin starting with \`-\` is a comparable
+  # prefix rather than a flag.
+  printf '%s' \"\$(paperctl version)\" | grep -Fq -- \"\${pin_paperctl#v}\" ||
+    fail \"paperctl does not report the pinned version \${pin_paperctl} (stripped leading v: \${pin_paperctl#v}): \$(paperctl version)\"
   # Bot-mode auth status — the daemon now reflects the fake key.
   status_out=\"\$(paperctl status 2>&1)\"
   printf '%s' \"\${status_out}\" | grep -q 'auth:.*agent key' ||
     fail \"paperctl status does not report the bot-mode auth line: \${status_out}\"
   printf '%s' \"\${status_out}\" | grep -q 'org:.*paperctl-test-org' ||
     fail \"paperctl status does not report the org=paperctl-test-org: \${status_out}\"
+  # Verify the daemon's environment was actually scrubbed of secrets —
+  # this is the security property the env -u scrub line adds; a
+  # regression that drops it must NOT pass the rest of this RUN.
+  # paperd is owned by sandbox-user, so its /proc environ is
+  # readable here. /proc environ is NULL-separated; we translate
+  # NULLs back to newlines for grep.
+  paperd_pid=\"$(pgrep -x paperd | head -1)\"
+  [[ -n \"\${paperd_pid}\" ]] ||
+    fail \"paperd process not found after the with-key run (cannot verify environ scrub)\"
+  # shellcheck disable=SC2312  # || true on a subprocess match
+  # shellcheck disable=SC1083  # nested quoting inside the su block confuses
+  # shellcheck's parser; the literal output is correct
+  paperd_environ=\"$(tr '\\0' '\\n' < /proc/\${paperd_pid}/environ 2>/dev/null || true)\"
+  printf '%s' \"\${paperd_environ}\" | grep -q \"PAPER_AGENT_KEY=\" &&
+    fail \"paperd's environ still leaks PAPER_AGENT_KEY (scrub regressed): \${paperd_environ}\"
+  printf '%s' \"\${paperd_environ}\" | grep -q \"^PATH=\" ||
+    fail \"paperd's environ lost PATH (over-scrubbed): \${paperd_environ}\"
 " || fail "with-key paper verification failed"
 # Clean up RUN 14's daemon before RUN 15 runs: paperd is detached
 # (setsid on AL2023 / nohup on darwin), so it would otherwise outlive
