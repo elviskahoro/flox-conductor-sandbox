@@ -30,6 +30,15 @@
 #      counterpart — the check is presence-and-shape, so an accidental
 #      unpinning (empty, or a floating range instead of an exact x.y.z)
 #      fails CI instead of silently floating.
+#   7. PI_PIN + PI_INTEGRITY (issue #85): single-home pins with no Flox
+#      counterpart — both must be present and non-empty, the pin an exact
+#      x.y.z (same shape rule as check 6), the integrity
+#      must look like `sha512-<base64>` (the npm registry `dist.integrity`
+#      field shape), and the pin must match the same package the URL pins
+#      (a re-pin that leaves the URL stale would download a different
+#      tarball than the integrity verifies).
+#   8. PI_NODE_MIN + PI_NODE_MIN_PIN (issue #85): a major.minor Node floor,
+#      recorded against the pin it was read from, which must equal PI_PIN.
 #
 # The former checks that cross-compared two in-repo scripts
 # (conductor-cloud-install.sh vs conductor-startup-script.sh, before they
@@ -166,6 +175,55 @@ for pin_name in PYTEST_PIN REFLEX_PIN; do
     fail "${pin_name}" "missing or not an exact x.y.z pin: ${pin_value:-<missing>}"
   fi
 done
+
+# 7. PI_PIN + PI_INTEGRITY + PI_TARBALL_URL (issue #85): all three must
+# be present in the startup script, the integrity must look like the
+# `sha512-<base64>` shape the npm registry emits, and the URL must embed
+# the same PI_PIN (a re-pin that left the URL stale would download a
+# different tarball than the integrity verifies).
+# pi_sri_bytes <base64>: decoded byte count (macOS 12 and older spell the
+# decode flag -D).
+pi_sri_bytes() {
+  { printf '%s' "$1" | base64 -d 2>/dev/null || printf '%s' "$1" | base64 -D 2>/dev/null; } | wc -c | tr -d ' '
+}
+PI_PIN_VALUE="$(sed -n 's/^PI_PIN="\([^"]*\)".*/\1/p' "${STARTUP}")"
+PI_INTEGRITY_VALUE="$(sed -n 's/^PI_INTEGRITY="\([^"]*\)".*/\1/p' "${STARTUP}")"
+PI_TARBALL_URL_VALUE="$(sed -n 's/^PI_TARBALL_URL="\([^"]*\)".*/\1/p' "${STARTUP}")"
+# Literal spot match against '${PI_PIN}' on the left is exactly what this
+# check exists to verify — keep both branches (slash-shape AND literal-
+# variable-shape) because a re-pin could leave the URL in either form.
+# shellcheck disable=SC2016,SC1073
+if [[ -z "${PI_PIN_VALUE}" || -z "${PI_INTEGRITY_VALUE}" || -z "${PI_TARBALL_URL_VALUE}" ]]; then
+  fail "PI_PIN/PI_INTEGRITY/PI_TARBALL_URL" "one or more missing: pin=${PI_PIN_VALUE:-<missing>}, integrity=${PI_INTEGRITY_VALUE:-<missing>}, url=${PI_TARBALL_URL_VALUE:-<missing>}"
+elif ! [[ "${PI_PIN_VALUE}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  fail "PI_PIN" "not an exact x.y.z pin: ${PI_PIN_VALUE}"
+elif ! [[ "${PI_INTEGRITY_VALUE}" =~ ^sha512-[A-Za-z0-9+/=]+$ ]]; then
+  fail "PI_INTEGRITY" "not an sha512 SRI string: ${PI_INTEGRITY_VALUE:0:24}... (expected sha512-<base64>)"
+elif [[ "$(pi_sri_bytes "${PI_INTEGRITY_VALUE#sha512-}")" != 64 ]]; then
+  # Same invariant the startup script's sri_to_hex enforces at runtime: a
+  # shape-valid but truncated pin must fail here, not in a sandbox.
+  fail "PI_INTEGRITY" "does not decode to a 64-byte sha512 digest: ${PI_INTEGRITY_VALUE:0:24}..."
+elif [[ "${PI_TARBALL_URL_VALUE}" != *'${PI_PIN}'* ]] && [[ "${PI_TARBALL_URL_VALUE}" != *"/pi-coding-agent-${PI_PIN_VALUE}.tgz"* ]]; then
+  fail "PI_TARBALL_URL" "does not embed PI_PIN (${PI_PIN_VALUE}); URL=${PI_TARBALL_URL_VALUE} — a re-pin must update both"
+else
+  pass "PI_PIN" "exact pin ${PI_PIN_VALUE}"
+  pass "PI_INTEGRITY" "sha512 SRI pin (${PI_INTEGRITY_VALUE:0:18}...) paired with pi-coding-agent-${PI_PIN_VALUE}.tgz"
+fi
+
+# 8. PI_NODE_MIN + PI_NODE_MIN_PIN (issue #85): the Node floor gating the pi
+# SKIP comes from the pinned package's `engines`, which only a re-pinner can
+# re-read. PI_NODE_MIN must be a major.minor floor, and PI_NODE_MIN_PIN (the
+# pin it was read from) must equal PI_PIN, so a re-pin fails CI until the
+# floor has been revisited.
+PI_NODE_MIN_VALUE="$(sed -n 's/^PI_NODE_MIN="\([^"]*\)".*/\1/p' "${STARTUP}")"
+PI_NODE_MIN_PIN_VALUE="$(sed -n 's/^PI_NODE_MIN_PIN="\([^"]*\)".*/\1/p' "${STARTUP}")"
+if ! [[ "${PI_NODE_MIN_VALUE}" =~ ^[0-9]+\.[0-9]+$ ]]; then
+  fail "PI_NODE_MIN" "not a major.minor Node floor: ${PI_NODE_MIN_VALUE:-<missing>}"
+elif [[ "${PI_NODE_MIN_PIN_VALUE}" != "${PI_PIN_VALUE}" ]]; then
+  fail "PI_NODE_MIN_PIN" "floor was read from pi ${PI_NODE_MIN_PIN_VALUE:-<missing>} but PI_PIN is ${PI_PIN_VALUE:-<missing>} — re-check \`npm view @earendil-works/pi-coding-agent@${PI_PIN_VALUE} engines\` and update both"
+else
+  pass "PI_NODE_MIN" "Node >=${PI_NODE_MIN_VALUE} (read from pi ${PI_NODE_MIN_PIN_VALUE})"
+fi
 
 if [[ ${FAILED} -ne 0 ]]; then
   log "pin validation FAILED"

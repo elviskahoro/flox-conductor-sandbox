@@ -133,8 +133,15 @@ that field, so the GUI paste is the only mechanism; the file keeps the
 paste-safety constraints (no triple-double-quotes, no backslash
 line-continuations) that Conductor's TOML serialization requires, and
 `scripts/validate-pins.sh` enforces them in CI. Set `RWX_ACCESS_TOKEN` —
-and optionally `ROBOREV_AGENT` (default `claude-code`) — in the same
-settings' environment variables, never inline in the script. (The rwx
+and optionally `ROBOREV_AGENT` (default `pi`, issue #85's rollover from
+`claude-code`, which never reaches a Conductor cloud sandbox in practice
+and codex returns 401) plus `ROBOREV_MODEL`
+(`fireworks/accounts/fireworks/models/glm-5p3` by default when the agent
+is pi; the
+`fireworks/` provider prefix is required, see issue #85's gotcha) plus
+`FIREWORKS_API_KEY` (Pi + Fireworks cannot review without it; the smoke
+check WARNs when missing) — in the same settings' environment variables,
+never inline in the script. (The rwx
 pin's former sibling copy in gtm-sdk's conductor-workspace-setup.sh went
 away when that repo retired the script — this repo's startup script is now
 the pin's only executable home.)
