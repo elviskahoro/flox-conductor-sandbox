@@ -1,7 +1,6 @@
 # flox-conductor-sandbox
 
-Minimal-scope test bed for [elviskahoro/gtm-sdk#445](https://github.com/elviskahoro/gtm-sdk/issues/445):
-*"Publish bd/roborev to FloxHub as prebuilt binaries — flake source builds
+"Publish bd/roborev to FloxHub as prebuilt binaries — flake source builds
 break on Vercel sandbox."*
 
 This repo isolates the load-bearing unknowns of that issue's plan into the
