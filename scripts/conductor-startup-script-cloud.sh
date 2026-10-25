@@ -1170,7 +1170,17 @@ ensure_daemon() {
   local stage="$1"
   if roborev status >/dev/null 2>&1; then
     record PASS "${stage}" "daemon running"
-  elif roborev daemon start; then
+    # The spawned daemon must not inherit this shell's spare fds: the
+    # su - login chain saves the caller's original stdout/stderr as
+    # fds 3/4, and a daemon holding that saved stdout keeps every
+    # $(...)-style capture pipe open forever — the capturing shell
+    # deadlocks after the script itself exits cleanly (the stalled
+    # container runs: the suite's RUN 22 was the first execution where
+    # the real, non-stubbed roborev found the daemon down and spawned
+    # it mid-capture). Close the saved fds around the spawn so the
+    # daemon starts with stdio only; the CLI redirects the daemon's own
+    # stdout/stderr to its logs.
+  elif roborev daemon start </dev/null 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&-; then
     record PASS "${stage}" "daemon revived"
   else
     record FAIL "${stage}" "daemon not running and 'roborev daemon start' failed"
