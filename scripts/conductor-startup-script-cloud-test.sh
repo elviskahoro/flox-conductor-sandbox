@@ -233,7 +233,7 @@ su - sandbox-user -c "
 
   # Issue #91: the entire CLI lands via the same /usr/local/bin path as
   # roborev/rwx; both binaries (entire + git-remote-entire) must resolve
-  # and `entire version` must report the pinned x.y.z.
+  # and the entire binary's version output must report the pinned x.y.z.
   [ \"\$(command -v entire)\" = /usr/local/bin/entire ] ||
     fail \"entire resolved to \$(command -v entire), expected /usr/local/bin/entire\"
   entire_version_out=\"\$(entire version 2>&1)\" || true
