@@ -1218,13 +1218,13 @@ echo "=== RUN 22: entire install via stubbed curl; replay the SUM script's per-p
 # (2) take the pinned pin off the LIVE script, (3) substitute the
 # placeholder with that pin (so `entire version` after install reports
 # it), (4) tar the result, (5) sha256 the tar, (6) patch the script's
-# ENTIRE_SHA256_LINUX_AMD64 constant to match, (7) stub curl serves the
-# prepped tar for the entire URL. This sequence keeps the integrity
-# constant in lock-step with the served tar. RUN 22B then degrades the
-# stub curl to serve the bare fixture body (no tar), whose sha256 matches
-# no actual tarball — that exercises the runtime integrity close in both
-# BEST_EFFORT=1 (FAIL row, exit 0) and default posture (FAIL row, exit 1)
-# branches.
+# ENTIRE_SHA256_<CURRENT-PLATFORM> constant to match, (7) stub curl
+# serves the prepped tar for the entire URL. This sequence keeps the
+# integrity constant in lock-step with the served tar. RUN 22B then
+# degrades the stub curl to serve the bare fixture body (no tar), whose
+# sha256 matches no actual tarball — that exercises the runtime
+# integrity close in both BEST_EFFORT=1 (FAIL row, exit 0) and default
+# posture (FAIL row, exit 1) branches.
 rm -rf /tmp/entire-install-repo /tmp/entire-install-stubs /tmp/entire-startup.sh /tmp/entire-fixture
 mkdir -p /tmp/entire-install-stubs /tmp/entire-fixture
 ENTIRE_FIXTURE_BODY="$(printf 'entire-tarball-fixture-bytes-issue-91-RUN22')"
