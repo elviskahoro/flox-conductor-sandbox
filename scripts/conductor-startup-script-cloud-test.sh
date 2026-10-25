@@ -1961,7 +1961,7 @@ cq_install_subtest() { # <name> <env-prefix> — runs the cold-mismatch install
     fail "cq-mismatch ${name} run placed cq in /usr/local/bin despite the integrity mismatch"
   tail -n "+$((log_before + 1))" /home/sandbox-user/.conductor-setup.log | grep -qF "error: cq" ||
     fail "cq-mismatch ${name} run setup log missing the cq integrity-mismatch error"
-  rm -rf "${stubdir}" "${stubdir}.bak" "${outfile}"
+  rm -rf "${stubdir}" "${outfile}"
 }
 # Both postures — the cq WARN-only contract, symmetric to pi_install's
 # pi WARN-only contract (RUN 20 codifies the same matrix for pi).
