@@ -39,6 +39,10 @@
 #      tarball than the integrity verifies).
 #   8. PI_NODE_MIN + PI_NODE_MIN_PIN (issue #85): a major.minor Node floor,
 #      recorded against the pin it was read from, which must equal PI_PIN.
+#   9. ENTIRE_PIN (issue #91): exactly x.y.z, like pi's pin shape. The four
+#      ENTIRE_SHA256_<platform> constants must all be present and hex-64; a
+#      missing constant makes the runtime install fail closed on that
+#      platform, so the CI check is presence-and-shape, not cross-check.
 #
 # The former checks that cross-compared two in-repo scripts
 # (conductor-cloud-install.sh vs conductor-startup-script.sh, before they
@@ -224,6 +228,30 @@ elif [[ "${PI_NODE_MIN_PIN_VALUE}" != "${PI_PIN_VALUE}" ]]; then
 else
   pass "PI_NODE_MIN" "Node >=${PI_NODE_MIN_VALUE} (read from pi ${PI_NODE_MIN_PIN_VALUE})"
 fi
+
+# 9. ENTIRE_PIN + ENTIRE_SHA256_* (issue #91). ENTIRE_PIN must be a
+# non-floating x.y.z, exactly like pi's. The four per-platform SHA256
+# constants must each be present and a 64-char lowercase hex string — the
+# runtime install fails closed on any missing entry, so the CI check just
+# catches that case earlier, before a sandbox sees it. The tarball URL is
+# derived inline from ENTIRE_PIN (no separate constant to drift), so it
+# stays in sync by construction; no extra cross-check needed there.
+ENTIRE_PIN_VALUE="$(sed -n 's/^ENTIRE_PIN="\([^"]*\)".*/\1/p' "${STARTUP}")"
+if ! [[ "${ENTIRE_PIN_VALUE}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  fail "ENTIRE_PIN" "missing or not an exact x.y.z pin: ${ENTIRE_PIN_VALUE:-<missing>}"
+else
+  pass "ENTIRE_PIN" "exact pin ${ENTIRE_PIN_VALUE}"
+fi
+for plat in LINUX_AMD64 LINUX_ARM64 DARWIN_AMD64 DARWIN_ARM64; do
+  hash_value="$(sed -n "s/^ENTIRE_SHA256_${plat}=\"\([0-9a-f]*\)\".*/\1/p" "${STARTUP}")"
+  if [[ -z "${hash_value}" ]]; then
+    fail "ENTIRE_SHA256_${plat}" "missing — required for issue #91's entire install on platform ${plat,,}"
+  elif ! [[ "${hash_value}" =~ ^[0-9a-f]{64}$ ]]; then
+    fail "ENTIRE_SHA256_${plat}" "not a 64-char lowercase hex sha256: ${hash_value}"
+  else
+    pass "ENTIRE_SHA256_${plat}" "pinned (${hash_value:0:12}...)"
+  fi
+done
 
 if [[ ${FAILED} -ne 0 ]]; then
   log "pin validation FAILED"

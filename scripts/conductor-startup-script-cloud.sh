@@ -97,7 +97,7 @@
 #            provision must fail setup loudly, never leave a workspace
 #            that appears ready but lacks them.
 #
-# Pins: ROBOREV_PIN/RWX_PIN/UV_PIN/PYTEST_PIN/REFLEX_PIN and every sha256
+# Pins: ROBOREV_PIN/RWX_PIN/UV_PIN/PYTEST_PIN/REFLEX_PIN/ENTIRE_PIN and every sha256
 # below are the single in-repo home of those constants. The roborev pin is
 # kept in sync with envs/repackage/.flox/env/manifest.toml's [build.roborev]
 # and envs/floxhub-provision's roborev.version; the uv pin is kept in sync
@@ -110,7 +110,17 @@
 # the pins live only here, and validate-pins.sh asserts they stay exact
 # x.y.z pins. (The rwx block's former sibling copy in gtm-sdk's
 # conductor-workspace-setup.sh went away when that repo retired the script,
-# gtm-sdk#944 — this file is now the pin's only executable home.)
+# gtm-sdk#944 — this file is now the pin's only executable home.) ENTIRE_PIN
+# + the four ENTIRE_SHA256_* constants are single-home pins with no Flox
+# counterpart (issue #91): the entire CLI is a binary release with no
+# manifest build, so the only sync surface is here — validate-pins.sh
+# asserts the pin stays an exact x.y.z AND that every supported platform
+# has a sha256 constant set. Re-pin runbook: bump ENTIRE_PIN, then re-hash
+# the four release tarballs from
+# https://install.entire.com/v${ENTIRE_PIN}/entire_<platform>.tar.gz (which
+# mirrors what GitHub releases also publish; both URLs produce byte-identical
+# content, hand-checked at the original pin) and update the four
+# ENTIRE_SHA256_* constants in the same commit.
 #
 # Paste-safety constraints (load-bearing for consumer 2, because Conductor
 # serializes the GUI setup field into a TOML multiline string): NO
@@ -636,6 +646,104 @@ rwx_install() {
     return 1
   fi
   record PASS rwx "${RWX_PIN} (${path})"
+}
+
+# --- entire (Entire.io CLI) -------------------------------------------------
+# Pinned release tarball, fail-closed per-platform sha256. The tarball ships
+# two binaries plus README/LICENSE/completions: `entire` (the CLI itself) and
+# `git-remote-entire` (git's handler for `entire://` remotes — needed for
+# `entire repo clone` etc.). Per-tool pins section in the header (item below
+# `RWX_PIN`) covers ENTIRE_PIN + the per-platform ENTIRE_SHA256_* constants;
+# scripts/validate-pins.sh enforces both the x.y.z shape and the
+# constant-set/drift surface for them.
+#
+# Download origin: install.entire.com is the canonical CDN the Entire CLI's
+# own install.sh script uses first (it's the published mirror that survives
+# GitHub outages — the README/install docs name it as primary; GitHub is the
+# documented fallback). Both URLs publish byte-identical tarballs with the
+# same sha256, so picking the CDN keeps the script pinned to the same artifact
+# the CLI's official installer would pin to. Pins update the same way as
+# roborev/rwx: new pin + hand-hashed per-platform sha256 (no checksum file
+# is published alongside the release).
+#
+# Like the other tools in this script, this stage NEVER auto-runs
+# `entire enable`: that operator action is what writes .entire/settings.json
+# and installs agent hook files, and committing them is a per-repo decision
+# (the README documents the workflow). All this stage does is make the
+# commands available so an operator can run `entire enable --agent <X>` (or
+# read-only queries like `entire checkpoint list`, `entire trail list`,
+# `entire review`) in any later shell.
+ENTIRE_PIN="0.12.1"
+# Per-platform sha256 of the entire_${platform}.tar.gz release artifact (the
+# install.entire.com CDN and the GitHub release tarball are byte-identical,
+# so either URL yields the same hash). Re-pin runbook in the header.
+ENTIRE_SHA256_LINUX_AMD64="15645d3c41cd91e3e3dc42f91a92f02739f57c3f31233236f8f4d7c7e2029ffc"
+ENTIRE_SHA256_LINUX_ARM64="371ad9a35665887bb8bff64b57cf358dfca649ceb75da545ba3f4d9ec5a4cac6"
+ENTIRE_SHA256_DARWIN_AMD64="c7adf5a3e91320c81685eb3491f8a91d2551f36208ba6f82f6673a9c28ffd360"
+ENTIRE_SHA256_DARWIN_ARM64="77f1a9174fd9b503f0503e776f2fa1e913cda1eba2a37772d3a6b97ad67edfb1"
+
+entire_install() {
+  if command -v entire >/dev/null 2>&1; then
+    record PASS entire "reused $(command -v entire) ($(entire version 2>&1 | head -1 || true))"
+    return 0
+  fi
+  local platform asset sha256
+  case "$(uname -s)-$(uname -m)" in
+  Linux-x86_64)
+    platform="linux_amd64"
+    sha256="${ENTIRE_SHA256_LINUX_AMD64:-}"
+    ;;
+  Linux-aarch64)
+    platform="linux_arm64"
+    sha256="${ENTIRE_SHA256_LINUX_ARM64:-}"
+    ;;
+  Darwin-x86_64)
+    platform="darwin_amd64"
+    sha256="${ENTIRE_SHA256_DARWIN_AMD64:-}"
+    ;;
+  Darwin-arm64)
+    platform="darwin_arm64"
+    sha256="${ENTIRE_SHA256_DARWIN_ARM64:-}"
+    ;;
+  *)
+    log "error: no pinned entire asset for $(uname -s)-$(uname -m)"
+    return 1
+    ;;
+  esac
+  if [[ -z "${sha256}" ]]; then
+    log "error: missing pinned entire sha256 for ${platform} (set ENTIRE_SHA256_${platform^^} in the pins block)"
+    return 1
+  fi
+  asset="entire_${platform}.tar.gz"
+  local url="https://install.entire.com/v${ENTIRE_PIN}/${asset}"
+  local dir="${WORK}/entire"
+  mkdir -p "${dir}"
+  if ! curl -fsSLo "${dir}/${asset}" "${url}"; then
+    return 1
+  fi
+  if ! checksum_verify "${sha256}" "${dir}/${asset}"; then
+    return 1
+  fi
+  if ! tar -xzf "${dir}/${asset}" -C "${dir}" ||
+    [[ ! -x "${dir}/entire" ]] || [[ ! -x "${dir}/git-remote-entire" ]]; then
+    log "error: entire tarball did not yield executable ./entire and ./git-remote-entire"
+    return 1
+  fi
+  local entire_path gre_path
+  entire_path="$(install_bin "${dir}/entire" entire || true)"
+  gre_path="$(install_bin "${dir}/git-remote-entire" git-remote-entire || true)"
+  if [[ -z "${entire_path}" || -z "${gre_path}" ]]; then
+    log "error: could not place entire / git-remote-entire in a bin directory (entire=${entire_path:-<none>}, git-remote-entire=${gre_path:-<none>})"
+    return 1
+  fi
+  note_placement "${entire_path}"
+  note_placement "${gre_path}"
+  hash -r 2>/dev/null || true
+  if ! command -v entire >/dev/null 2>&1 || ! command -v git-remote-entire >/dev/null 2>&1; then
+    log "error: entire installed at ${entire_path} but not on PATH (or git-remote-entire missing from PATH)"
+    return 1
+  fi
+  record PASS entire "v${ENTIRE_PIN} (entire: ${entire_path}, git-remote-entire: ${gre_path})"
 }
 
 # --- python3.11 -------------------------------------------------------------
@@ -1314,6 +1422,15 @@ log "host: $(uname -srm), user: $(id -un), pwd: $(pwd)"
 if roborev_install; then :; else record FAIL roborev "provisioning failed — see messages above"; maybe_fail; fi
 if trunk_stage; then :; else record FAIL trunk "provisioning failed — see messages above"; maybe_fail; fi
 if rwx_install; then :; else record FAIL rwx "provisioning failed — see messages above"; maybe_fail; fi
+# entire follows rwx in the tool-stage chain (issue #91): a Go release
+# binary with a per-platform sha256 pin, README/LICENSE/completions, and a
+# companion `git-remote-entire` helper that Git invokes for `entire://`
+# remotes. Operator-driven `entire enable` is never run here — committing
+# .entire/settings.json and the agent hook files is a per-repo decision the
+# README documents separately. Like the other tool stages above, a
+# provisioning failure is fatal under the default posture, recorded-but-
+# non-fatal under STARTUP_BEST_EFFORT=1.
+if entire_install; then :; else record FAIL entire "provisioning failed — see messages above"; maybe_fail; fi
 # pi runs before python311 so a fresh sandbox with no Node gets the SKIP row
 # (the script never auto-installs Node 22 — that would expand the surface
 # past issue #85's intent: a default agent that works where Node is present,

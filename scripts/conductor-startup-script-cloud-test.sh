@@ -197,6 +197,7 @@ su - sandbox-user -c "
   fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
   pin_roborev=\"\$(sed -n 's/^ROBOREV_PIN=\"\([^\"]*\)\".*/\1/p' ${STARTUP_SCRIPT})\"
   pin_rwx=\"\$(sed -n 's/^RWX_PIN=\"\([^\"]*\)\".*/\1/p' ${STARTUP_SCRIPT})\"
+  pin_entire=\"\$(sed -n 's/^ENTIRE_PIN=\"\([^\"]*\)\".*/\1/p' ${STARTUP_SCRIPT})\"
 
   [ \"\$(command -v python3)\" = /usr/local/bin/python3 ] ||
     fail \"python3 resolved to \$(command -v python3), expected /usr/local/bin/python3\"
@@ -229,6 +230,19 @@ su - sandbox-user -c "
   # message always agree.
   printf '%s' \"\${rwx_version_out}\" | grep -q \"\${pin_rwx}\" ||
     fail \"rwx does not report the pinned \${pin_rwx}: \${rwx_version_out}\"
+
+  # Issue #91: the entire CLI lands via the same /usr/local/bin path as
+  # roborev/rwx; both binaries (entire + git-remote-entire) must resolve
+  # and `entire version` must report the pinned x.y.z.
+  [ \"\$(command -v entire)\" = /usr/local/bin/entire ] ||
+    fail \"entire resolved to \$(command -v entire), expected /usr/local/bin/entire\"
+  entire_version_out=\"\$(entire version 2>&1)\" || true
+  printf '%s' \"\${entire_version_out}\" | grep -q \"Entire CLI \${pin_entire}\" ||
+    fail \"entire does not report the pinned \${pin_entire}: \${entire_version_out}\"
+  [ \"\$(command -v git-remote-entire)\" = /usr/local/bin/git-remote-entire ] ||
+    fail \"git-remote-entire resolved to \$(command -v git-remote-entire), expected /usr/local/bin/git-remote-entire\"
+  git-remote-entire --help >/dev/null 2>&1 ||
+    fail \"git-remote-entire is not runnable\"
 
   /usr/bin/python3 --version 2>&1 | grep -q '^Python 3\.9\.' ||
     fail \"/usr/bin/python3 must stay 3.9 for dnf: \$(/usr/bin/python3 --version 2>&1)\"
@@ -1187,5 +1201,147 @@ printf '%s' "${RUN21C_OUTPUT}"
 case "${RUN21C_OUTPUT}" in *"roborev-config | WARN | ROBOREV_MODEL is set but .roborev.toml already exists"*) ;; *) fail "ignored-model run missing the ROBOREV_MODEL WARN row" ;; esac
 ! su - sandbox-user -c "grep -q '^model' /tmp/pi-nonl-repo/.roborev.toml" ||
   fail "ignored-model run rewrote the existing .roborev.toml"
+
+echo "=== RUN 22: entire install via stubbed curl; replay the SUM script's per-platform pin path ==="
+# Issue #91 install path with the same fixture-driven pattern RUN 14 uses for
+# pi: deterministic byte fixture → sha256 → patch the script's
+# ENTIRE_SHA256_<PLATFORM> constant in a sandbox copy → stubbed curl
+# intercepts only the entire tarball URL. The curl → sha256_verify → tar
+# extract → install_bin chain runs against the fixture unchanged; only the
+# per-platform constant is rewritten, so the installer's runtime checks
+# stay exactly what they are in production. RUN 22 covers fresh install +
+# idempotent reuse + the fail-closed branch where the fixture's integrity
+# does not match a rewriting constant.
+#
+# Sequence: (1) write stub binaries with a placeholder for the pin,
+# (2) take the pinned pin off the LIVE script, (3) substitute the
+# placeholder with that pin (so `entire version` after install reports
+# it), (4) tar the result, (5) sha256 the tar, (6) patch the script's
+# ENTIRE_SHA256_LINUX_AMD64 constant to match, (7) stub curl serves the
+# prepped tar for the entire URL. This sequence keeps the integrity
+# constant in lock-step with the served tar. RUN 22B then degrades the
+# stub curl to serve the bare fixture body (no tar), whose sha256 matches
+# no actual tarball — that exercises the runtime integrity close in both
+# BEST_EFFORT=1 (FAIL row, exit 0) and default posture (FAIL row, exit 1)
+# branches.
+rm -rf /tmp/entire-install-repo /tmp/entire-install-stubs /tmp/entire-startup.sh /tmp/entire-fixture
+mkdir -p /tmp/entire-install-stubs /tmp/entire-fixture
+ENTIRE_FIXTURE_BODY="$(printf 'entire-tarball-fixture-bytes-issue-91-RUN22')"
+printf '#!/bin/sh\necho "Entire CLI @ENTIRE_PIN@-stub"\nexit 0\n' > /tmp/entire-fixture/entire
+printf '#!/bin/sh\nexit 0\n' > /tmp/entire-fixture/git-remote-entire
+LIVE_ENTIRE_PIN_VALUE="$(sed -n 's/^ENTIRE_PIN="\([^"]*\)".*/\1/p' "${STARTUP_SCRIPT}")"
+sed -i.bak "s|@ENTIRE_PIN@|${LIVE_ENTIRE_PIN_VALUE}|g" /tmp/entire-fixture/entire
+chmod 755 /tmp/entire-fixture/entire /tmp/entire-fixture/git-remote-entire
+tar -czf /tmp/entire-install-stubs/entire_fake.tar.gz -C /tmp/entire-fixture entire git-remote-entire
+ENTIRE_FIXTURE_SHA256_HEX="$(sha256sum /tmp/entire-install-stubs/entire_fake.tar.gz | awk '{print $1}')"
+echo "entire fixture tar sha256: ${ENTIRE_FIXTURE_SHA256_HEX}"
+# Sandbox copy of the startup script with the LINUX_AMD64 sha256 rewritten
+# to match the test fixture's actual tar file. The live
+# ENTIRE_SHA256_LINUX_AMD64 stays in
+# scripts/conductor-startup-script-cloud.sh; the rewrite happens ONLY on
+# this /tmp copy. The pin, the runtime case branch, the install_bin call,
+# and the git-remote-entire co-install all stay as the production script
+# has them.
+sed "s|^ENTIRE_SHA256_LINUX_AMD64=.*|ENTIRE_SHA256_LINUX_AMD64=\"${ENTIRE_FIXTURE_SHA256_HEX}\"|" \
+  "${STARTUP_SCRIPT}" > /tmp/entire-startup.sh
+grep -qxF "ENTIRE_SHA256_LINUX_AMD64=\"${ENTIRE_FIXTURE_SHA256_HEX}\"" /tmp/entire-startup.sh ||
+  fail "ENTIRE_SHA256_LINUX_AMD64 patch did not apply to /tmp/entire-startup.sh"
+chmod 755 /tmp/entire-startup.sh
+ENTIRE_PIN_VALUE="${LIVE_ENTIRE_PIN_VALUE}"
+ENTIRE_STUB_URL="https://install.entire.com/v${ENTIRE_PIN_VALUE}/entire_linux_amd64.tar.gz"
+# Stub curl with the same parser shape as RUN 14's pi stub: handles both
+# the combined `-fsSLo <path>` form curl accepts in one or two args AND
+# the split `-o <path>` form. The entire tarball URL yields the prepped
+# tarball (so the integrity verify matches what we just rewrote, then
+# `tar -xzf` succeeds); other paths fall through to the host curl so
+# roborev/trunk/rwx/pi in the same script are unaffected.
+# shellcheck disable=SC2016
+{
+  printf '#!/bin/sh\n'
+  printf 'url=""\noutput=""\nprev=""\n'
+  printf 'for a in "$@"; do\n'
+  printf '  case "$prev" in\n'
+  printf '    -o|-fsSLo|-fsLo|-fLo|-fo) output="$a" ;;\n'
+  printf '  esac\n'
+  printf '  case "$a" in\n'
+  printf '    http://*|https://*) url="$a" ;;\n'
+  printf '    -o|-fsSLo|-fsLo|-fLo|-fo) prev="$a"; continue ;;\n'
+  printf '  esac\n'
+  printf '  prev=""\n'
+  printf 'done\n'
+  printf 'case "$url" in\n'
+  printf '  %s)\n' "${ENTIRE_STUB_URL}"
+  printf '    if [ -n "$output" ]; then\n'
+  printf '      cp /tmp/entire-install-stubs/entire_fake.tar.gz "$output"\n'
+  printf '    else\n'
+  printf '      cat /tmp/entire-install-stubs/entire_fake.tar.gz\n'
+  printf '    fi\n'
+  printf '    exit 0;;\n'
+  printf '  *) exec /usr/bin/curl "$@";;\n'
+  printf 'esac\n'
+} > /tmp/entire-install-stubs/curl
+chmod 755 /tmp/entire-install-stubs/curl
+rm -f /usr/local/bin/entire /usr/local/bin/git-remote-entire
+su - sandbox-user -c "git init -q /tmp/entire-install-repo"
+RUN22_OUTPUT="$(su - sandbox-user -c "cd /tmp/entire-install-repo && PATH=/tmp/entire-install-stubs:/usr/local/bin:\$PATH bash /tmp/entire-startup.sh")" ||
+  fail "entire-install run exited non-zero"
+printf '%s' "${RUN22_OUTPUT}"
+case "${RUN22_OUTPUT}" in *" | FAIL |"*) fail "entire-install run recorded FAIL row(s)" ;; esac
+case "${RUN22_OUTPUT}" in *"entire | PASS"*) ;; *) fail "entire-install run missing the entire PASS row" ;;
+esac
+case "${RUN22_OUTPUT}" in *"entire: /usr/local/bin/entire, git-remote-entire: /usr/local/bin/git-remote-entire"*) ;; *) fail "entire-install run PASS row did not name both /usr/local/bin paths" ;; esac
+su - sandbox-user -c "
+  set -e
+  fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
+  [ -x /usr/local/bin/entire ] ||
+    fail \"entire-install run did not place the entire binary under /usr/local/bin\"
+  [ -x /usr/local/bin/git-remote-entire ] ||
+    fail \"entire-install run did not place git-remote-entire under /usr/local/bin\"
+  entire_version_out=\"\$(entire version 2>&1)\" || true
+  printf '%s' \"\${entire_version_out}\" | grep -q \"Entire CLI ${ENTIRE_PIN_VALUE}\" ||
+    fail \"installed entire version does not report the pin \${ENTIRE_PIN_VALUE}: \${entire_version_out}\"
+" || fail "entire-install verification failed"
+
+echo "=== RUN 22B: entire integrity mismatch leaves entire uninstalled ==="
+# Same fail-closed posture as the roborev/trunk/rwx tool stages: under
+# STARTUP_BEST_EFFORT=1 (this repo's settings.toml contract) a FAIL row is
+# recorded but the run exits 0; under the default posture the same FAIL row
+# exits non-zero. RUN 22B keeps RUN 22's patched /tmp/entire-startup.sh
+# (whose sha256 is the fixture-tar hash) but rewrites the stub curl to
+# serve the bare fixture body string instead — that string's sha256 matches
+# no actual tarball, so the runtime integrity check fails closed. Either
+# branch with an installed /usr/local/bin/entire would be a regression.
+DEGRADED_STUB="$(mktemp /tmp/entire-install-stubs/curl.degraded.XXXXXX)"
+sed "s|cp /tmp/entire-install-stubs/entire_fake.tar.gz \"\\\$output\"|printf '%s' \"${ENTIRE_FIXTURE_BODY}\" > \"\$output\"|" /tmp/entire-install-stubs/curl > "${DEGRADED_STUB}"
+sed -i.bak "s|cat /tmp/entire-install-stubs/entire_fake.tar.gz|printf '%s' \"${ENTIRE_FIXTURE_BODY}\"|" "${DEGRADED_STUB}"
+chmod 755 "${DEGRADED_STUB}"
+rm -rf /tmp/entire-mismatch-repo
+su - sandbox-user -c "rm -f /usr/local/bin/entire /usr/local/bin/git-remote-entire; git init -q /tmp/entire-mismatch-repo"
+RUN22B_OUTPUT="$(STARTUP_BEST_EFFORT=1 su - sandbox-user -c "cd /tmp/entire-mismatch-repo && PATH=${DEGRADED_STUB}:/usr/local/bin:\$PATH bash /tmp/entire-startup.sh")" ||
+  fail "entire-mismatch best-effort run exited non-zero (a tool-stage failure is recorded, not fatal under BEST_EFFORT=1)"
+printf '%s' "${RUN22B_OUTPUT}"
+case "${RUN22B_OUTPUT}" in *"entire | FAIL | provisioning failed"*) ;; *) fail "entire-mismatch best-effort run missing the FAIL row" ;; esac
+[[ ! -e /usr/local/bin/entire ]] ||
+  fail "entire-mismatch best-effort run placed the entire binary in /usr/local/bin despite the integrity mismatch"
+[[ ! -e /usr/local/bin/git-remote-entire ]] ||
+  fail "entire-mismatch best-effort run placed git-remote-entire in /usr/local/bin despite the integrity mismatch"
+# Default posture (no STARTUP_BEST_EFFORT) — the same FAIL row must fail
+# the run loudly. Same patched script, same degraded stub curl.
+if RUN22C_OUTPUT="$(su - sandbox-user -c "cd /tmp/entire-mismatch-repo && PATH=${DEGRADED_STUB}:/usr/local/bin:\$PATH bash /tmp/entire-startup.sh")"; then
+  fail "entire-mismatch strict-posture run exited 0 — a tool-stage failure must fail setup loudly by default"
+fi
+case "${RUN22C_OUTPUT}" in *"entire | FAIL | provisioning failed"*) ;; *) fail "entire-mismatch strict-posture run missing the FAIL row" ;; esac
+[[ ! -e /usr/local/bin/entire ]] ||
+  fail "entire-mismatch strict-posture run placed the entire binary in /usr/local/bin despite the integrity mismatch"
+rm -f "${DEGRADED_STUB}" "${DEGRADED_STUB}.bak"
+
+echo "=== RUN 22D: entire reused on idempotent re-run ==="
+# Cold-install via RUN 22 left /usr/local/bin/entire and
+# /usr/local/bin/git-remote-entire for sandbox-user; a re-run must take the
+# reuse row for both, not re-download.
+RUN22D_OUTPUT="$(su - sandbox-user -c "cd /tmp/entire-install-repo && PATH=/tmp/entire-install-stubs:/usr/local/bin:\$PATH bash /tmp/entire-startup.sh")" ||
+  fail "entire-reuse run exited non-zero"
+printf '%s' "${RUN22D_OUTPUT}"
+case "${RUN22D_OUTPUT}" in *"entire | PASS | reused /usr/local/bin/entire"*) ;; *) fail "entire-reuse run missing the reused entire PASS row" ;; esac
 
 echo "=== ALL CHECKS PASSED ==="
