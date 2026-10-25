@@ -1211,7 +1211,8 @@ echo "=== RUN 22: entire install via stubbed curl; replay the SUM script's per-p
 # per-platform constant is rewritten, so the installer's runtime checks
 # stay exactly what they are in production. RUN 22 covers fresh install +
 # idempotent reuse + the fail-closed branch where the fixture's integrity
-# does not match a rewriting constant.
+# does not match a rewriting constant; RUN 22E covers the mixed state
+# (entire on PATH without its companion) and the stale-binary shadow WARN.
 #
 # Sequence: (1) write stub binaries with a placeholder for the pin,
 # (2) take the pinned pin off the LIVE script, (3) substitute the
@@ -1357,5 +1358,38 @@ case "${RUN22C_OUTPUT}" in *"entire | FAIL | provisioning failed"*) ;; *) fail "
 [[ ! -e /usr/local/bin/entire ]] ||
   fail "entire-mismatch strict-posture run placed the entire binary in /usr/local/bin despite the integrity mismatch"
 rm -rf "${DEGRADED_STUB_DIR}"
+
+echo "=== RUN 22E: entire without its companion falls through to the pinned install ==="
+# The reuse gate requires BOTH binaries, so the mixed state — entire on
+# PATH, git-remote-entire missing — must take the fresh-install path and
+# place the companion, never a reuse row. The shadow sub-case then keeps a
+# stale entire in ~/.local/bin (which the startup script prepends to PATH)
+# and expects a WARN naming it, not a PASS over the shadowed install.
+rm -f /usr/local/bin/git-remote-entire
+install -m 755 /tmp/entire-fixture/entire /usr/local/bin/entire
+rm -rf /tmp/entire-mixed-repo
+su - sandbox-user -c "git init -q /tmp/entire-mixed-repo"
+RUN22E_OUTPUT="$(su - sandbox-user -c "cd /tmp/entire-mixed-repo && PATH=/tmp/entire-install-stubs:/usr/local/bin:\$PATH bash /tmp/entire-startup.sh")" ||
+  fail "entire-mixed-state run exited non-zero"
+printf '%s' "${RUN22E_OUTPUT}"
+case "${RUN22E_OUTPUT}" in *"entire | PASS | reused"*) fail "entire-mixed-state run took the reuse row despite the missing companion" ;; esac
+case "${RUN22E_OUTPUT}" in *"entire | PASS | v${ENTIRE_PIN_VALUE} (entire: /usr/local/bin/entire, git-remote-entire: /usr/local/bin/git-remote-entire)"*) ;; *) fail "entire-mixed-state run missing the pinned install PASS row" ;; esac
+su - sandbox-user -c "
+  set -e
+  fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
+  [ -x /usr/local/bin/entire ] &&
+    [ -x /usr/local/bin/git-remote-entire ] ||
+    fail \"entire-mixed-state run did not leave both binaries under /usr/local/bin\"
+" || fail "entire-mixed-state verification failed"
+# Shadow sub-case: a stale entire earlier on PATH keeps resolving after the
+# pinned install; the stage must WARN and name the shadowing binary.
+rm -f /usr/local/bin/git-remote-entire
+su - sandbox-user -c "mkdir -p ~/.local/bin && install -m 755 /tmp/entire-fixture/entire ~/.local/bin/entire"
+RUN22E2_OUTPUT="$(su - sandbox-user -c "cd /tmp/entire-mixed-repo && PATH=/tmp/entire-install-stubs:/usr/local/bin:\$PATH bash /tmp/entire-startup.sh")" ||
+  fail "entire-shadowed run exited non-zero"
+printf '%s' "${RUN22E2_OUTPUT}"
+case "${RUN22E2_OUTPUT}" in *"entire | WARN | v${ENTIRE_PIN_VALUE} installed"*"but PATH resolves entire to /home/sandbox-user/.local/bin/entire"*) ;; *) fail "entire-shadowed run missing the WARN row naming the shadowing binary" ;; esac
+case "${RUN22E2_OUTPUT}" in *" | FAIL |"*) fail "entire-shadowed run recorded FAIL row(s)" ;; esac
+rm -f /home/sandbox-user/.local/bin/entire
 
 echo "=== ALL CHECKS PASSED ==="

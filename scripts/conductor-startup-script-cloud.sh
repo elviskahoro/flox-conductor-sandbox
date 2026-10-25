@@ -743,9 +743,21 @@ entire_install() {
   note_placement "${entire_path}"
   note_placement "${gre_path}"
   hash -r 2>/dev/null || true
-  if ! command -v entire >/dev/null 2>&1 || ! command -v git-remote-entire >/dev/null 2>&1; then
+  local resolved_entire resolved_gre
+  resolved_entire="$(command -v entire 2>/dev/null || true)"
+  resolved_gre="$(command -v git-remote-entire 2>/dev/null || true)"
+  if [[ -z "${resolved_entire}" || -z "${resolved_gre}" ]]; then
     log "error: entire installed at ${entire_path} but not on PATH (or git-remote-entire missing from PATH)"
     return 1
+  fi
+  # Both deliverables are placed, but a pre-existing entire earlier on PATH
+  # (an operator's manual install in ~/.local/bin — which setup prepends to
+  # PATH — is exactly this stage's target machine, issue #91) keeps
+  # resolving after the pinned install. Name that state instead of PASSing
+  # a pinned-version row over a stale, shadowing binary.
+  if [[ "${resolved_entire}" != "${entire_path}" || "${resolved_gre}" != "${gre_path}" ]]; then
+    record WARN entire "v${ENTIRE_PIN} installed (entire: ${entire_path}, git-remote-entire: ${gre_path}) but PATH resolves entire to ${resolved_entire} and git-remote-entire to ${resolved_gre} — remove the stale binary or reorder PATH if the pinned entire must run"
+    return 0
   fi
   record PASS entire "v${ENTIRE_PIN} (entire: ${entire_path}, git-remote-entire: ${gre_path})"
 }
