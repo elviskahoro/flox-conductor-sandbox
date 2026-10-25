@@ -60,7 +60,7 @@ envs/floxhub-consume/ Phase D' prototype: [install] pkg-path = "elvis/conductor-
 envs/floxhub-provision/ Phase D MVP: [install] the 5 catalog tools + elvis/bd + elvis/roborev (opt-in stage 7, needs auth)
 scripts/sandbox-test.sh   the harness — runs all stages, never hard-fails
 scripts/floxhub-provision.sh  Phase D MVP setup-script recipe (token → FLOX_FLOXHUB_TOKEN env → `flox activate`; the activated manifest defaults to envs/floxhub-provision and is redirectable via FLOXHUB_ACTIVATE_DIR to any repo's committed .flox env)
-scripts/conductor-startup-script-cloud.sh  the single workspace startup script: pinned roborev/trunk/rwx + python3.11 for the AL2023 class + opt-in uv/pytest/reflex (issue #44) + rwx auth + roborev config/daemon (reviews on demand with --wait, never a background auto-review hook) — wired into this repo's setup, and paste-ready for other repos' workspaces
+scripts/conductor-startup-script-cloud.sh  the single workspace startup script: pinned roborev/trunk/rwx/entire + python3.11 for the AL2023 class + opt-in uv/pytest/reflex (issue #44) + rwx auth + roborev config/daemon (reviews on demand with --wait, never a background auto-review hook) — wired into this repo's setup, and paste-ready for other repos' workspaces
 scripts/validate-pins.sh  pin-drift check: roborev/trunk pins vs the Flox manifests and the trunk preflight (CI)
 scripts/conductor-startup-script-cloud-test.sh  codified amazonlinux:2023 container verification of conductor-startup-script-cloud.sh (CI)
 prompts/conductor/   canonical cross-repo Conductor prompts (general, create-pr, fix-errors, resolve-merge-conflicts)
@@ -185,6 +185,44 @@ stores the two secrets these stages read.
 Until the wiring lands, a workspace that needs the full surface runs the
 helpers by hand after the startup script (or an operator pastes the
 startup script plus the helper invocations into the setup field).
+
+### Entire.io CLI (opt-in to enable, issue #91)
+
+Issue #91 added the [Entire.io CLI](https://docs.entire.io/) (`entire`) to
+the startup script alongside roborev/trunk/rwx. Every fresh workspace
+local or cloud gets `entire` on PATH plus the bundled `git-remote-entire`
+(needed for `entire://` URLs, e.g. via `entire repo clone`). It is pinned
+the same way as the other tools (`ENTIRE_PIN="0.12.1"` in the startup
+script) and downloaded+checksum-verified from
+`https://install.entire.com/v${ENTIRE_PIN}/entire_<platform>.tar.gz`
+(the canonical CDN the upstream `install.sh` script uses; the GitHub
+release is a documented fallback, and both URLs serve byte-identical
+content). Failures follow the roborev/trunk/rwx tool-stage contract, not
+pi's: a FAIL row is fatal by default, recorded-but-non-fatal under
+`STARTUP_BEST_EFFORT=1`. `scripts/validate-pins.sh` enforces the pin as
+an exact x.y.z and asserts every supported platform has an
+`ENTIRE_SHA256_<platform>` constant set — re-pin runbook in the
+script's pins block.
+
+The startup script does **not** auto-run `entire enable`: that operator
+action is what writes `.entire/settings.json` and installs agent hook
+files, and committing them is a per-repo decision. To query trails and
+gates on a PR, run in any later shell:
+
+```bash
+entire status                    # repo-local enable status (noop if not enabled)
+entire checkpoint list           # checkpoints the local branch holds
+entire trail list --project gh/<owner>/<repo>
+entire trail show <trail>        # intent + linked changes for one trail
+entire review --list             # configured review profiles
+```
+
+The run-time install is the only state the script mutates; the
+script never touches `~/.config/entire` or `.entire/`. If your operator
+setup wants the project enabled, run `entire enable --agent <agent>`
+once and commit the resulting `.entire/settings.json` / `.entire/.gitignore`
+back to the repo. Same model as `roborev`: the binary lands on PATH, the
+repo-level config stays a per-repo operator decision.
 
 ### Python dev tools: uv, pytest, Reflex (opt-in, issue #44)
 
