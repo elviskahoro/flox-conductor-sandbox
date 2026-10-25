@@ -1236,20 +1236,30 @@ chmod 755 /tmp/entire-fixture/entire /tmp/entire-fixture/git-remote-entire
 tar -czf /tmp/entire-install-stubs/entire_fake.tar.gz -C /tmp/entire-fixture entire git-remote-entire
 ENTIRE_FIXTURE_SHA256_HEX="$(sha256sum /tmp/entire-install-stubs/entire_fake.tar.gz | awk '{print $1}')"
 echo "entire fixture tar sha256: ${ENTIRE_FIXTURE_SHA256_HEX}"
-# Sandbox copy of the startup script with the LINUX_AMD64 sha256 rewritten
-# to match the test fixture's actual tar file. The live
-# ENTIRE_SHA256_LINUX_AMD64 stays in
+# Sandbox copy of the startup script with the CURRENT platform's sha256
+# rewritten to match the test fixture's actual tar file. The live
+# ENTIRE_SHA256_* constants stay in
 # scripts/conductor-startup-script-cloud.sh; the rewrite happens ONLY on
 # this /tmp copy. The pin, the runtime case branch, the install_bin call,
 # and the git-remote-entire co-install all stay as the production script
-# has them.
-sed "s|^ENTIRE_SHA256_LINUX_AMD64=.*|ENTIRE_SHA256_LINUX_AMD64=\"${ENTIRE_FIXTURE_SHA256_HEX}\"|" \
+# has them. Platform-generic on purpose: CI runs linux_amd64, but the
+# header-documented local repro runs linux_arm64 — with a hardcoded AMD64
+# sha/URL the arm64 runs would fetch the real tarball from the CDN (the
+# stub never matches the arm64 URL), so the mismatch runs would exercise
+# the live network with the real pin instead of the fixture.
+ENTIRE_TEST_PLATFORM="linux_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
+case "${ENTIRE_TEST_PLATFORM}" in
+linux_amd64 | linux_arm64) ;;
+*) fail "no entire fixture platform for $(uname -s)-$(uname -m)" ;;
+esac
+ENTIRE_SHA_VAR="ENTIRE_SHA256_${ENTIRE_TEST_PLATFORM^^}"
+sed "s|^${ENTIRE_SHA_VAR}=.*|${ENTIRE_SHA_VAR}=\"${ENTIRE_FIXTURE_SHA256_HEX}\"|" \
   "${STARTUP_SCRIPT}" > /tmp/entire-startup.sh
-grep -qxF "ENTIRE_SHA256_LINUX_AMD64=\"${ENTIRE_FIXTURE_SHA256_HEX}\"" /tmp/entire-startup.sh ||
-  fail "ENTIRE_SHA256_LINUX_AMD64 patch did not apply to /tmp/entire-startup.sh"
+grep -qxF "${ENTIRE_SHA_VAR}=\"${ENTIRE_FIXTURE_SHA256_HEX}\"" /tmp/entire-startup.sh ||
+  fail "${ENTIRE_SHA_VAR} patch did not apply to /tmp/entire-startup.sh"
 chmod 755 /tmp/entire-startup.sh
 ENTIRE_PIN_VALUE="${LIVE_ENTIRE_PIN_VALUE}"
-ENTIRE_STUB_URL="https://install.entire.com/v${ENTIRE_PIN_VALUE}/entire_linux_amd64.tar.gz"
+ENTIRE_STUB_URL="https://install.entire.com/v${ENTIRE_PIN_VALUE}/entire_${ENTIRE_TEST_PLATFORM}.tar.gz"
 # Stub curl with the same parser shape as RUN 14's pi stub: handles both
 # the combined `-fsSLo <path>` form curl accepts in one or two args AND
 # the split `-o <path>` form. The entire tarball URL yields the prepped
