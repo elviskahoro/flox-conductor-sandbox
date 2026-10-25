@@ -1895,7 +1895,7 @@ printf '%s' "${RUN23_OUTPUT}"
 case "${RUN23_OUTPUT}" in *" | FAIL |"*) fail "cq-install run recorded FAIL row(s)" ;; esac
 case "${RUN23_OUTPUT}" in *"cq | PASS"*) ;; *) fail "cq-install run missing the cq PASS row" ;;
 esac
-case "${RUN23_OUTPUT}" in *"cq: /usr/local/bin/cq"*) ;; *) fail "cq-install run PASS row did not name the /usr/local/bin path" ;; esac
+case "${RUN23_OUTPUT}" in *"(/usr/local/bin/cq)"*) ;; *) fail "cq-install run PASS row did not name the /usr/local/bin path" ;; esac
 su - sandbox-user -c "
   set -e
   fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
@@ -1922,34 +1922,50 @@ echo "=== RUN 28: cq integrity mismatch leaves cq uninstalled, setup passes ==="
 # the stub serves the bare fixture body string instead of the prepped
 # tarball, so the runtime sha256 verify fails closed. cq is WARN-only and
 # never fatal — BOTH postures still exit 0; the WARN row + the setup-log
-# error line are the signal. RUN 27 left /usr/local/bin/cq present, so
-# this RUN explicitly removes it to start from a no-cq state.
+# "error: cq ..." line are the signal. RUN 27 left /usr/local/bin/cq
+# present, so this RUN explicitly removes it (at the outer root level —
+# sandbox-user cannot delete a root-owned /usr/local/bin/cq without
+# sudo) to start from a no-cq state.
 cq_install_subtest() { # <name> <env-prefix> — runs the cold-mismatch install
   local name="$1" prefix="$2"
-  local log_before stub repo
+  local log_before stubdir stub repo outfile
   log_before="$(wc -l < /home/sandbox-user/.conductor-setup.log)"
-  stub="$(mktemp /tmp/cq-install-stubs/curl.degraded.XXXXXX)"
+  # A directory on PATH, not a file — shells only search directories.
+  # RUN 22B's `DEGRADED_STUB` mktemp-as-file bug was the same issue;
+  # this one puts the patched curl into a fresh dir before prepending.
+  stubdir="$(mktemp -d /tmp/cq-install-stubs/degraded.XXXXXX)"
+  stub="${stubdir}/curl"
   sed "s|cp /tmp/cq-fixture-tar \"\\\$output\"|printf 'cq-mismatch-fixture-not-a-real-tar' > \"\$output\"|" /tmp/cq-install-stubs/curl > "${stub}"
   sed -i.bak "s|cat /tmp/cq-fixture-tar|printf 'cq-mismatch-fixture-not-a-real-tar'|" "${stub}"
   chmod 755 "${stub}"
   repo="/tmp/cq-mismatch-${name}"
   rm -rf "${repo}"
-  su - sandbox-user -c "rm -f /usr/local/bin/cq; git init -q ${repo}"
-  if eval "${prefix} su - sandbox-user -c \"cd ${repo} && PATH=${stub}:/usr/local/bin:\\\$PATH bash /tmp/cq-startup.sh\""; then
-    fail "cq-mismatch ${name} run exited non-zero — cq failures must be WARN-only, never halt setup"
-  fi >"${repo}.out" 2>&1
-  printf '%s' "$(cat "${repo}.out")"
-  case "$(cat "${repo}.out")" in *" | FAIL |"*) fail "cq-mismatch ${name} run recorded FAIL row(s) — cq must never FAIL the run" ;; esac
-  case "$(cat "${repo}.out")" in *"cq | WARN | install failed"*) ;; *) fail "cq-mismatch ${name} run missing the cq install-failed WARN row" ;; esac
+  # Outer root-level: /usr/local/bin/cq is owned by root (install_bin put
+  # it there with sudo), and a sandbox-user `rm` on a root-owned file is
+  # an operation that bugs silently through the next gate.
+  rm -f /usr/local/bin/cq
+  su - sandbox-user -c "git init -q ${repo}"
+  outfile="${repo}.out"
+  # Prefix goes inside the -c string so a login su doesn't drop it
+  # (su - resets env, so a STARTUP_BEST_EFFORT=1 su -c -c form wouldn't
+  # carry through). The cmd exits 0 under both postures (cq is
+  # WARN-only), so the `if !` is what fails on a regression.
+  if ! su - sandbox-user -c "cd ${repo} && ${prefix} PATH=${stubdir}:/usr/local/bin:/usr/bin:/bin bash /tmp/cq-startup.sh" >"${outfile}" 2>&1; then
+    cat "${outfile}"
+    fail "cq-mismatch ${name} run exited non-zero (expected: setup script exits 0 under both STARTUP_BEST_EFFORT=1 and the default posture — cq failures must NOT halt setup). Re-read the saved output above for the real exit reason."
+  fi
+  printf '%s' "$(cat "${outfile}")"
+  case "$(cat "${outfile}")" in *" | FAIL |"*) fail "cq-mismatch ${name} run recorded FAIL row(s) — cq must never FAIL the run" ;; esac
+  case "$(cat "${outfile}")" in *"cq | WARN | install failed"*) ;; *) fail "cq-mismatch ${name} run missing the cq install-failed WARN row" ;; esac
   [[ ! -e /usr/local/bin/cq ]] ||
     fail "cq-mismatch ${name} run placed cq in /usr/local/bin despite the integrity mismatch"
   tail -n "+$((log_before + 1))" /home/sandbox-user/.conductor-setup.log | grep -qF "error: cq" ||
     fail "cq-mismatch ${name} run setup log missing the cq integrity-mismatch error"
-  rm -f "${stub}" "${stub}.bak" "${repo}.out"
+  rm -rf "${stubdir}" "${stubdir}.bak" "${outfile}"
 }
 # Both postures — the cq WARN-only contract, symmetric to pi_install's
 # pi WARN-only contract (RUN 20 codifies the same matrix for pi).
-cq_install_subtest "best-effort" "STARTUP_BEST_EFFORT=1 "
+cq_install_subtest "best-effort" "STARTUP_BEST_EFFORT=1"
 cq_install_subtest "strict-posture" ""
 
 echo "=== ALL CHECKS PASSED ==="

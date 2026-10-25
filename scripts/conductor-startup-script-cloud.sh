@@ -820,9 +820,11 @@ cq_install() {
   local dir="${WORK}/cq"
   mkdir -p "${dir}"
   if ! curl -fsSLo "${dir}/${asset}" "${url}"; then
+    log "error: cq download failed — ${url}"
     return 1
   fi
   if ! checksum_verify "${sha256}" "${dir}/${asset}"; then
+    log "error: cq integrity mismatch — ${url} (expected sha256 ${sha256})"
     return 1
   fi
   if ! tar -xzf "${dir}/${asset}" -C "${dir}" || [[ ! -x "${dir}/cq" ]]; then
