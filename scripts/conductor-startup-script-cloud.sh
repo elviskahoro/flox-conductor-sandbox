@@ -133,7 +133,8 @@
 # fallback-installer idiom) by exporting STARTUP_BEST_EFFORT=1: then the
 # tool stages (roborev/trunk/rwx install, rwx auth, roborev
 # config/daemon) record
-# their FAIL rows but do not fail the run, and only a Python 3.11 failure
+# their FAIL rows but do not fail the run (the pi stage never fails it under
+# either posture: a failed install is a WARN row and pi stays uninstalled), and only a Python 3.11 failure
 # on the AL2023 target class (the stated >=3.11 requirement) or a
 # pytools-stage failure when STARTUP_PY_DEV_TOOLS=1 requested them
 # (issue #44: a requested tool that cannot be provisioned must never
@@ -150,9 +151,29 @@
 #                     cursor, kiro, kilo, pi, ...) — deliberately not a
 #                     hard allowlist: the accepted set differs across
 #                     roborev versions, and the check-agents smoke step
-#                     is the semantic check. Defaults to claude-code,
-#                     which Conductor cloud sandboxes ship
-#                     pre-authenticated.
+#                     is the semantic check. Defaults to pi — issue #85's
+#                     rollover from claude-code, because the sandbox's
+#                     pre-authenticated claude-code never reaches a sandbox
+#                     in practice and codex returns 401.
+#   ROBOREV_MODEL     optional model override written into .roborev.toml
+#                     alongside `agent`. Defaults to
+#                     `fireworks/accounts/fireworks/models/glm-5p3` —
+#                     issue #85's verified-working pair with Pi + Fireworks.
+#                     The default applies only when the agent is pi; other
+#                     agents get no model line unless this is set.
+#                     Empty disables the line so no model is written.
+#                     The `fireworks/` provider prefix is required; a bare
+#                     `accounts/fireworks/models/...` is rejected by
+#                     roborev's call as `Model ... not found`, and
+#                     `~/.pi/agent/settings.json`'s `defaultProvider`
+#                     does NOT fix it (issue #85's gotcha).
+#   FIREWORKS_API_KEY required when ROBOREV_AGENT=pi (the default) and the
+#                     model resolves through Fireworks. Pi calls Fireworks
+#                     directly under the configured `model`; without the
+#                     key, the smoke check WARNs and reviews cannot run.
+#                     Truncate to a stub for local development — but a
+#                     sandbox that ships an unset FIREWORKS_API_KEY is
+#                     configured-but-broken until the key is set.
 #   STARTUP_BEST_EFFORT  set to 1 (this repo's settings.toml does) to make
 #                     the tool stages recorded-but-non-fatal; see the
 #                     failure-semantics section above.
@@ -304,6 +325,27 @@ checksum_verify() {
   fi
 }
 
+# sha512_verify <sha512-hex> <file>: the SRI form npm's `dist.integrity`
+# gives (`sha512-<base64>`) decodes to the file's full 128-char hex sha512.
+# sha256sum cannot verify it, so a separate helper calls sha512sum /
+# `shasum -a 512` with the same stdin shape as checksum_verify.
+sha512_verify() {
+  local expected="$1" file="$2"
+  local tool="sha512sum"
+  if ! command -v sha512sum >/dev/null 2>&1; then
+    if ! command -v shasum >/dev/null 2>&1; then
+      log "error: no sha512 tool (sha512sum or shasum) to verify ${file}"
+      return 1
+    fi
+    tool="shasum -a 512"
+  fi
+  # shellcheck disable=SC2086  # intentional two-word command (shasum -a 512), not a path to quote
+  if ! echo "${expected}  ${file}" | ${tool} -c - >/dev/null; then
+    log "error: checksum mismatch for ${file} (expected ${expected})"
+    return 1
+  fi
+}
+
 # --- roborev ----------------------------------------------------------------
 # Pinned release binary, fail-closed sha256 (same pins the sandbox repos
 # cross-check in CI). Reuse-if-present keeps re-runs cheap. No FloxHub
@@ -361,6 +403,145 @@ roborev_install() {
     return 1
   fi
   record PASS roborev "v${ROBOREV_PIN} (${path})"
+}
+
+# --- pi ----------------------------------------------------------------------
+# Pinned tarball + SRI sha512 (the same npm registry `dist.integrity` field).
+# Pi 0.73.1 lived under `@mariozechner/pi-coding-agent`; the package was
+# renamed to `@earendil-works/pi-coding-agent` after that release (the Earendil
+# Works handoff, see pi.dev changelog 2026-05). The pinned v1.3.0 is the
+# continuation of that same line, not a fork. ROBOREV_AGENT=pi is the new
+# default review agent (issue #85's rollover from claude-code): claude-code
+# never reaches a Conductor cloud sandbox in practice and codex returns 401,
+# so roborev's `agent = ...` had no working default for cloud workspaces.
+#
+# Pi's engines field requires Node >=22.19.0. AL2023's stock nodejs is 18 and
+# amazon-linux-2023 extras do not carry a 22 — installing Node 22 from
+# Nodesource or a third-party repo would significantly expand the script's
+# surface (out of scope: the script's design floor is reuse-what's-there plus
+# minimal installs), so this stage SKIPs when npm is missing instead of
+# bringing in a Node toolchain. Consumers that want a different agent
+# (opencode — issue #85's stated fallback when Pi proves unworkable) can
+# override ROBOREV_AGENT for their own workspaces.
+PI_PIN="1.3.0"
+# SRI base64 SHA512 of the registry tarball. The pair PI_PIN + PI_INTEGRITY
+# is the in-repo pin surface validate-pins.sh cross-checks against itself
+# (single-home, no Flox counterpart). Re-pin by running
+# `npm view @earendil-works/pi-coding-agent@<NEW_PIN> dist` and capturing
+# `integrity` verbatim — don't compute it locally.
+PI_INTEGRITY="sha512-V/WoCjA2hQSe3QLWIUB24cTRdtEdeLiIzkDqU5RMXV6VWuD+KGZnzVBMhglwdnQTySkehZsjt8a3g6Jd2g4nnw=="
+PI_TARBALL_URL="https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-${PI_PIN}.tgz"
+# Node floor from the pinned package's `engines` field (major.minor). A
+# re-pin must re-check it with `npm view
+# @earendil-works/pi-coding-agent@<NEW_PIN> engines`: a stale floor lets an
+# older Node past the SKIP and fail setup at npm install instead.
+PI_NODE_MIN="22.19"
+# The PI_PIN the floor above was read from; validate-pins.sh fails CI until
+# it matches PI_PIN, so a re-pin cannot leave the floor unchecked.
+# shellcheck disable=SC2034  # read by validate-pins.sh, not at runtime
+PI_NODE_MIN_PIN="1.3.0"
+PI_NODE_MIN_MAJOR="${PI_NODE_MIN%%.*}"
+PI_NODE_MIN_MINOR="${PI_NODE_MIN#*.}"
+
+# sri_to_hex <sri-sha512>: decode the base64 portion of an SRI string into a
+# lowercase hex digest that sha512sum can verify. Strip the "sha512-" prefix
+# from $1, base64-decode, hex-print, strip spaces+newlines. The result is the
+# 128-char hex that pairs with the tarball content sha512sum sees. Uses
+# `od -An -v -tx1` for the hex (alphabetically portable: xxd is missing on
+# stock amazonlinux:2023, but `od` ships in coreutils).
+sri_to_hex() {
+  local b64="${1#sha512-}" hex
+  # macOS 12 and older spell the decode flag -D.
+  hex="$({ printf '%s' "${b64}" | base64 -d 2>/dev/null || printf '%s' "${b64}" | base64 -D; } |
+    od -An -v -tx1 | tr -d ' \n')"
+  # tr ends the pipeline, so its status hides a failed decode; a sha512 is
+  # exactly 64 bytes, so anything but 128 hex chars means the pin is bad.
+  [[ ${#hex} -eq 128 ]] || return 1
+  printf '%s' "${hex}"
+}
+
+pi_install() {
+  # An explicit, well-formed non-pi ROBOREV_AGENT opts out of the default,
+  # so don't download or globally install an agent nobody will use. (A
+  # malformed value falls back to pi in roborev_setup, so it still installs.)
+  if [[ "${ROBOREV_AGENT:-}" =~ ^[a-z0-9][a-z0-9-]*$ && "${ROBOREV_AGENT}" != "pi" ]]; then
+    record SKIP pi "ROBOREV_AGENT=${ROBOREV_AGENT} selects another review agent — pi not installed"
+    return 0
+  fi
+  if command -v pi >/dev/null 2>&1; then
+    record PASS pi "reused $(command -v pi) ($(pi --version 2>&1 | head -1 || true))"
+    return 0
+  fi
+  if ! command -v npm >/dev/null 2>&1; then
+    record SKIP pi "npm not installed — install Node ${PI_NODE_MIN}+ separately (Pi's engines field requires >=${PI_NODE_MIN}) and re-run setup, or set ROBOREV_AGENT=opencode / an already-installed agent. Conductor cloud sandboxes without npm come up reviews-only-via-roborev (no agent installed)."
+    return 0
+  fi
+  # pi is only the default agent, so a Node below its engines floor (e.g. a
+  # dnf nodejs18 pulled in for other tooling) SKIPs like a missing npm
+  # instead of failing setup for a user who never asked for pi.
+  local node_ver node_major node_minor
+  node_ver="$(node --version 2>/dev/null || true)"
+  node_ver="${node_ver#v}"
+  node_major="${node_ver%%.*}"
+  node_minor="${node_ver#*.}"
+  node_minor="${node_minor%%.*}"
+  # A version without a minor ("22") would leave node_minor == node_major;
+  # treat it as unparseable so it SKIPs rather than passing the floor.
+  [[ "${node_ver}" == *.* ]] || node_minor=""
+  if ! [[ "${node_major}" =~ ^[0-9]+$ && "${node_minor}" =~ ^[0-9]+$ ]] ||
+    ((node_major < PI_NODE_MIN_MAJOR || (node_major == PI_NODE_MIN_MAJOR && node_minor < PI_NODE_MIN_MINOR))); then
+    record SKIP pi "Node ${node_ver:-<none>} is below Pi's engines requirement (>=${PI_NODE_MIN}) — install Node ${PI_NODE_MIN}+ and re-run setup, or set ROBOREV_AGENT=opencode / an already-installed agent."
+    return 0
+  fi
+  local tarball_pi="${WORK}/pi-coding-agent-${PI_PIN}.tgz"
+  if ! curl -fsSLo "${tarball_pi}" "${PI_TARBALL_URL}"; then
+    log "error: failed to download ${PI_TARBALL_URL}"
+    return 1
+  fi
+  local expected_hex
+  if ! expected_hex="$(sri_to_hex "${PI_INTEGRITY}")"; then
+    log "error: could not decode Pi integrity pin"
+    return 1
+  fi
+  if ! sha512_verify "${expected_hex}" "${tarball_pi}"; then
+    log "error: pi tarball integrity mismatch (expected ${PI_INTEGRITY})"
+    return 1
+  fi
+  # Match the install_bin convention: /usr/local when writable (root or
+  # passwordless sudo), ~/.local otherwise. `--prefix` forces a known install
+  # location independent of npm's user rc; it is the same mechanism pi's
+  # `env NPM_CONFIG_PREFIX=...` runner use to keep install reproducible.
+  local prefix npm_cmd=()
+  if [[ "$(id -u)" == 0 || -w "${LOCAL_BIN}" ]]; then
+    prefix="/usr/local"
+  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    prefix="/usr/local"
+    # secure_path would drop a user-local npm (nvm, ~/.local); carry PATH over.
+    npm_cmd=(sudo -n env "PATH=${PATH}" npm)
+  else
+    prefix="${HOME}/.local"
+  fi
+  if [[ ${#npm_cmd[@]} -eq 0 ]]; then
+    npm_cmd=(npm)
+  fi
+  # Pi's engines field rejects Node below PI_NODE_MIN in npm install; surface the most common
+  # cause explicitly instead of letting a generic ENOENT/EBADENGINE error
+  # hide behind a generic message. npm's output stays in the setup log
+  # (stdout is redirected there) rather than under WORK, which the EXIT
+  # trap deletes, so the exact rule that fired is still greppable.
+  if ! "${npm_cmd[@]}" install -g --prefix "${prefix}" "${tarball_pi}"; then
+    log "error: npm install -g --prefix ${prefix} ${tarball_pi} failed (npm output above in ${SETUP_LOG}); the most common cause on a fresh sandbox is Node below Pi's engines requirement (>=${PI_NODE_MIN}) — install Node ${PI_NODE_MIN}+ and re-run setup"
+    return 1
+  fi
+  hash -r 2>/dev/null || true
+  if ! command -v pi >/dev/null 2>&1; then
+    log "error: pi installed under --prefix ${prefix} but its bin/ is not on PATH (expected ${prefix}/bin/pi) — add ${prefix}/bin to PATH or symlink pi into ${LOCAL_BIN} by hand"
+    return 1
+  fi
+  if [[ "${prefix}/bin" != "${LOCAL_BIN}" ]]; then
+    note_placement "${prefix}/bin/pi"
+  fi
+  record PASS pi "v${PI_PIN} ($(command -v pi))"
 }
 
 # --- trunk ------------------------------------------------------------------
@@ -845,7 +1026,15 @@ rwx_auth() {
 # touched — if a roborev hook is found there, a WARN tells the user to
 # remove it by hand. Everything is anchored to `git rev-parse
 # --show-toplevel` so running setup from a subdirectory cannot misfire.
-ROBOREV_AGENT_DEFAULT="claude-code"
+ROBOREV_AGENT_DEFAULT="pi"
+# Default model for ROBOREV_AGENT=pi (issue #85's verified-working pair).
+# The `fireworks/` provider prefix is required: a bare
+# `accounts/fireworks/models/...` is rejected by roborev as `Model ... not
+# found`, and `~/.pi/agent/settings.json`'s `defaultProvider` does NOT fix
+# this surface (issue #85's gotcha). Empty string disables the line — roborev
+# then decides; the comment in the toml writer explains what each branch
+# means.
+ROBOREV_MODEL_DEFAULT="fireworks/accounts/fireworks/models/glm-5p3"
 
 # ensure_daemon <stage>: status → PASS "daemon running"; start → PASS
 # "daemon revived"; neither → FAIL under <stage> (deferred setup failure).
@@ -878,7 +1067,7 @@ roborev_setup() {
     # The raw value is deliberately NOT replayed in the row: a value with
     # newlines or control characters — exactly what this gate stops — would
     # split or spoof the multi-line setup summary.
-    record WARN roborev-config "ROBOREV_AGENT is malformed (expected a lowercase agent slug like claude-code) — using ${ROBOREV_AGENT_DEFAULT}; check the environment variable"
+    record WARN roborev-config "ROBOREV_AGENT is malformed (expected a lowercase agent slug like pi) — using ${ROBOREV_AGENT_DEFAULT}; check the environment variable"
     agent="${ROBOREV_AGENT_DEFAULT}"
   fi
   # `git roborev ...` (the push-gate spelling): native git-subcommand
@@ -970,16 +1159,87 @@ roborev_setup() {
   # never re-split, spaces in repo_root included.
   rm -f "${repo_root}"/.roborev.toml.tmp.* 2>/dev/null || true
   if [[ -f "${repo_root}/.roborev.toml" ]]; then
-    record PASS roborev-config ".roborev.toml already present"
+    # Never rewritten (a script-written file may since have been committed),
+    # but one from before issue #85 still names claude-code, which never
+    # reaches a cloud sandbox: say so instead of passing it silently.
+    if grep -q '^# Written by conductor-startup-script-cloud.sh' "${repo_root}/.roborev.toml" &&
+      grep -q '^agent = "claude-code"$' "${repo_root}/.roborev.toml"; then
+      record WARN roborev-config ".roborev.toml was written by an earlier setup with agent claude-code, which cannot review in cloud sandboxes (issue #85) — delete it and re-run setup to get the pi default, or edit agent/model by hand"
+    else
+      record PASS roborev-config ".roborev.toml already present"
+    fi
+    # ROBOREV_MODEL only applies when the file is written; flag a set value
+    # the existing file does not already reflect (value never replayed).
+    if [[ -n "${ROBOREV_MODEL+x}" ]]; then
+      local model_applied=1
+      if [[ -n "${ROBOREV_MODEL}" && ! "${ROBOREV_MODEL}" =~ ^[~a-zA-Z0-9_./:@-]+$ ]]; then
+        # Same gate as the write path; a newline would split grep -F's pattern.
+        model_applied=0
+      elif [[ -n "${ROBOREV_MODEL}" ]]; then
+        grep -qxF 'model = "'"${ROBOREV_MODEL}"'"' "${repo_root}/.roborev.toml" || model_applied=0
+      elif grep -q '^model' "${repo_root}/.roborev.toml"; then
+        model_applied=0
+      fi
+      if [[ ${model_applied} -eq 0 ]]; then
+        record WARN roborev-config "ROBOREV_MODEL is set but .roborev.toml already exists and is never rewritten — edit its model line by hand, or delete the file and re-run setup"
+      fi
+    fi
+    # Reviews run the agent this file names, so smoke-check that one rather
+    # than the environment's; same slug gate as ROBOREV_AGENT, since the
+    # value lands in summary rows.
+    local line file_agent=""
+    # `|| [[ -n ... ]]` keeps a last line that has no trailing newline.
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+      case "${line}" in
+      'agent = "'*'"')
+        file_agent="${line#'agent = "'}"
+        file_agent="${file_agent%'"'}"
+        break
+        ;;
+      esac
+    done <"${repo_root}/.roborev.toml"
+    if [[ "${file_agent}" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+      agent="${file_agent}"
+    fi
   else
+    # ROBOREV_MODEL writes a second `model = "..."` line under the agent.
+    # Same syntactic gate as agent: a model string lands verbatim in TOML, so
+    # quotes/newlines/control chars corrupt the file. Reject them and fall
+    # back to no model line (roborev then decides what default model to
+    # pick — better than emitting broken TOML).
+    # An explicitly empty ROBOREV_MODEL means "no model line" (see the
+    # header). Unset takes the default only for pi: the Fireworks slug is
+    # pi's verified pair, not a model another agent can resolve.
+    local model=""
+    if [[ -n "${ROBOREV_MODEL+x}" ]]; then
+      model="${ROBOREV_MODEL}"
+    elif [[ "${agent}" == "pi" ]]; then
+      model="${ROBOREV_MODEL_DEFAULT}"
+    fi
+    if [[ -n "${model}" && ! "${model}" =~ ^[~a-zA-Z0-9_./:@-]+$ ]]; then
+      # The raw value is deliberately NOT replayed in the row: ctrl chars in
+      # a value would split or spoof the multi-line summary, the same
+      # reason the agent gate above never replays ROBOREV_AGENT raw.
+      record WARN roborev-config "ROBOREV_MODEL is malformed — omitting model line; check the environment variable"
+      model=""
+    fi
     local toml_tmp
     # mktemp IN the repo root so the final mv is a same-filesystem rename —
     # a $TMPDIR temp would make mv a cross-device copy+unlink, not atomic
     # (the same reasoning as the rwx token stage's same-dir temp).
     toml_tmp="$(mktemp "${repo_root}/.roborev.toml.tmp.XXXXXX")"
-    if printf '# Written by conductor-startup-script-cloud.sh — reviews here are\n# on demand and blocking (roborev review --wait); no post-commit\n# auto-review hook is installed (see that script for the reasoning).\nagent = "%s"\n' "${agent}" >"${toml_tmp}" &&
-      mv -f "${toml_tmp}" "${repo_root}/.roborev.toml"; then
-      record PASS roborev-config ".roborev.toml written (agent: ${agent}) — reviews on demand, always with --wait"
+    local toml_status=0
+    local toml_fmt='# Written by conductor-startup-script-cloud.sh — reviews here are\n# on demand and blocking (roborev review --wait); no post-commit\n# auto-review hook is installed (see that script for the reasoning).\nagent = "%s"\n'
+    local toml_args=("${agent}") written="agent: ${agent}"
+    if [[ -n "${model}" ]]; then
+      toml_fmt+='model = "%s"\n'
+      toml_args+=("${model}")
+      written+=", model: ${model}"
+    fi
+    # shellcheck disable=SC2059  # the format is the fixed literal above; values go through %s
+    printf "${toml_fmt}" "${toml_args[@]}" >"${toml_tmp}" || toml_status=$?
+    if [[ ${toml_status} -eq 0 ]] && mv -f "${toml_tmp}" "${repo_root}/.roborev.toml"; then
+      record PASS roborev-config ".roborev.toml written (${written}) — reviews on demand, always with --wait"
     else
       rm -f "${toml_tmp}"
       record FAIL roborev-config "could not write ${repo_root}/.roborev.toml"
@@ -997,11 +1257,38 @@ roborev_setup() {
   # Smoke-check that the review agent actually responds — this is what makes
   # reviews work end to end. Non-fatal: a wrong agent choice or a transient
   # failure shouldn't fail setup when roborev itself installed and the repo
-  # config was written.
+  # config was written. For the pi default (issue #85), the most common cause
+  # of failure on a fresh sandbox is a missing FIREWORKS_API_KEY (the agent
+  # is on disk but its model call needs the key) — surface that explicitly so
+  # the row points at the missing var, not a generic "agent failed". When pi
+  # never installed (the npm-absent SKIP), the key cannot help, so say that.
+  # The key hint also needs the configured model to route through Fireworks:
+  # check .roborev.toml so a committed copy counts too.
+  local fireworks_model=0
+  if grep -q '^model = "fireworks/' "${repo_root}/.roborev.toml" 2>/dev/null; then
+    fireworks_model=1
+  fi
+  # .env.cloud ships a <fireworks-api-key> placeholder; an unreplaced one is
+  # as useless as an unset key, so name it rather than fall to the generic row.
+  local fireworks_key_state=""
+  if [[ -z "${FIREWORKS_API_KEY:-}" ]]; then
+    fireworks_key_state="is unset"
+  elif [[ "${FIREWORKS_API_KEY}" == "<"*">" ]]; then
+    fireworks_key_state="is still the .env.cloud placeholder"
+  fi
+  # .roborev.toml exists by now and is never rewritten, so ROBOREV_AGENT
+  # alone cannot change the agent on a re-run: say how to actually switch.
+  local switch_hint="or switch agents by editing the agent line in .roborev.toml (it wins over ROBOREV_AGENT), or delete it, set ROBOREV_AGENT, and re-run setup"
   if roborev check-agents --agent "${agent}" --timeout 30 >/dev/null 2>&1; then
     record PASS roborev-agent "${agent} answered a smoke prompt — reviews are live"
   else
-    record WARN roborev-agent "${agent} failed its smoke check — reviews may not run; inspect with roborev check-agents, or set ROBOREV_AGENT and re-run setup"
+    if [[ "${agent}" == "pi" ]] && ! command -v pi >/dev/null 2>&1; then
+      record WARN roborev-agent "pi is not installed (see the pi row above) — install Node ${PI_NODE_MIN}+ and re-run setup, ${switch_hint}"
+    elif [[ "${agent}" == "pi" && "${fireworks_model}" == 1 && -n "${fireworks_key_state}" ]]; then
+      record WARN roborev-agent "${agent} smoke failed and FIREWORKS_API_KEY ${fireworks_key_state} — Pi + Fireworks cannot review without the key; export it in Conductor env vars (the script header documents it) and re-run setup, ${switch_hint}"
+    else
+      record WARN roborev-agent "${agent} failed its smoke check — reviews may not run; inspect with roborev check-agents, ${switch_hint}"
+    fi
   fi
 }
 
@@ -1027,6 +1314,16 @@ log "host: $(uname -srm), user: $(id -un), pwd: $(pwd)"
 if roborev_install; then :; else record FAIL roborev "provisioning failed — see messages above"; maybe_fail; fi
 if trunk_stage; then :; else record FAIL trunk "provisioning failed — see messages above"; maybe_fail; fi
 if rwx_install; then :; else record FAIL rwx "provisioning failed — see messages above"; maybe_fail; fi
+# pi runs before python311 so a fresh sandbox with no Node gets the SKIP row
+# (the script never auto-installs Node 22 — that would expand the surface
+# past issue #85's intent: a default agent that works where Node is present,
+# a clean SKIP where it isn't, and ROBOREV_AGENT for consumers who want
+# something else). A pi install failure is never fatal, under either
+# posture: pi is left uninstalled with a WARN row (the error, e.g. an
+# integrity mismatch, is in the log above it) and the roborev-agent smoke
+# row repeats that reviews have no agent. Owner decision: a review agent is
+# not worth failing workspace setup over.
+if pi_install; then :; else record WARN pi "install failed — pi was not installed (see messages above); fix and re-run setup, or set ROBOREV_AGENT=opencode / an already-installed agent"; fi
 if python311_stage; then :; else FAILED=1; record FAIL python3.11 "provisioning failed — see messages above"; fi
 if pytools_stage; then :; else FAILED=1; record FAIL pytools "provisioning failed — see the rows above"; fi
 if rwx_auth; then :; else maybe_fail; fi

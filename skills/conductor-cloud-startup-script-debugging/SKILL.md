@@ -60,7 +60,7 @@ Caveats: comments count (a `#` line triggered it). Both halves of a slice can 40
 
 Useful to prove the script itself is fine so you stop suspecting it:
 
-- **AL2023 container (matches Conductor's OS):** `docker run --platform linux/amd64 --rm -v "$PWD":/src:ro -w /src amazonlinux:2023 bash scripts/conductor-startup-script-cloud-test.sh` (about 5 to 10 minutes).
+- **AL2023 container (matches Conductor's OS):** `docker run --platform linux/<native-arch> --rm -v "$PWD":/src:ro -w /src amazonlinux:2023 bash scripts/conductor-startup-script-cloud-test.sh` (about 5 to 10 minutes). Use the host's native architecture (`linux/arm64` on Apple Silicon): under qemu emulation the pinned Go binaries crash or hang at random, so the test refuses to run there (issue #92).
 - **Vercel sandbox (needs `vercel login`):** `npx --yes sandbox@latest create --name X`, `cp` a repo tarball in, `exec X sh -c 'cd $HOME && bash -c "set -euo pipefail; bash repo/scripts/conductor-startup-script-cloud.sh"'`, then `npx --yes sandbox@latest rm X`. The default Vercel sandbox image is **Ubuntu**, not AL2023, so use the container for OS fidelity. Neither can reproduce the 403: that is Conductor's API, on Conductor's own Vercel account, not yours.
 - Note: Claude Code's safety check may block `exec ... bash -c '<script>'` as a suspected removal. Use `sh -c` with plain commands, or separate calls.
 

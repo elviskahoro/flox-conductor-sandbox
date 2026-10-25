@@ -5,4 +5,13 @@
 # here directly. Reviews are on demand and blocking (roborev review
 # --wait); no post-commit auto-review hook is installed (see that
 # script for the reasoning).
-agent = "claude-code"
+#
+# Pin rationale (issue #85): Pi + Fireworks was the only pair that
+# actually reached reviews in a Conductor cloud sandbox — claude-code
+# never logged in and codex returned 401. The `fireworks/` provider
+# prefix in `model` is required; a bare `accounts/fireworks/models/...`
+# fails with `Model ... not found`, and `~/.pi/agent/settings.json`'s
+# `defaultProvider` does NOT fix it. FIREWORKS_API_KEY belongs in the
+# sandbox environment, not in this file.
+agent = "pi"
+model = "fireworks/accounts/fireworks/models/glm-5p3"
