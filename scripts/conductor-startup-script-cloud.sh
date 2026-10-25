@@ -683,7 +683,11 @@ ENTIRE_SHA256_DARWIN_AMD64="c7adf5a3e91320c81685eb3491f8a91d2551f36208ba6f82f667
 ENTIRE_SHA256_DARWIN_ARM64="77f1a9174fd9b503f0503e776f2fa1e913cda1eba2a37772d3a6b97ad67edfb1"
 
 entire_install() {
-  if command -v entire >/dev/null 2>&1; then
+  # Reuse requires BOTH binaries: this stage's contract is entire plus its
+  # git-remote-entire companion (entire:// remotes fail without it), so a
+  # pre-existing entire without the companion must fall through to the
+  # pinned install below instead of PASSing over a half install.
+  if command -v entire >/dev/null 2>&1 && command -v git-remote-entire >/dev/null 2>&1; then
     record PASS entire "reused $(command -v entire) ($(entire version 2>&1 | head -1 || true))"
     return 0
   fi

@@ -1302,6 +1302,17 @@ su - sandbox-user -c "
     fail \"installed entire version does not report the pin \${ENTIRE_PIN_VALUE}: \${entire_version_out}\"
 " || fail "entire-install verification failed"
 
+echo "=== RUN 22D: entire reused on idempotent re-run ==="
+# Cold-install via RUN 22 left /usr/local/bin/entire and
+# /usr/local/bin/git-remote-entire for sandbox-user; a re-run must take the
+# reuse row for both, not re-download. This runs BEFORE the RUN 22B/22C
+# mismatch runs below: those remove the binaries to force the fresh-install
+# path, after which no reuse row is possible.
+RUN22D_OUTPUT="$(su - sandbox-user -c "cd /tmp/entire-install-repo && PATH=/tmp/entire-install-stubs:/usr/local/bin:\$PATH bash /tmp/entire-startup.sh")" ||
+  fail "entire-reuse run exited non-zero"
+printf '%s' "${RUN22D_OUTPUT}"
+case "${RUN22D_OUTPUT}" in *"entire | PASS | reused /usr/local/bin/entire"*) ;; *) fail "entire-reuse run missing the reused entire PASS row" ;; esac
+
 echo "=== RUN 22B: entire integrity mismatch leaves entire uninstalled ==="
 # Same fail-closed posture as the roborev/trunk/rwx tool stages: under
 # STARTUP_BEST_EFFORT=1 (this repo's settings.toml contract) a FAIL row is
@@ -1311,13 +1322,25 @@ echo "=== RUN 22B: entire integrity mismatch leaves entire uninstalled ==="
 # serve the bare fixture body string instead — that string's sha256 matches
 # no actual tarball, so the runtime integrity check fails closed. Either
 # branch with an installed /usr/local/bin/entire would be a regression.
-DEGRADED_STUB="$(mktemp /tmp/entire-install-stubs/curl.degraded.XXXXXX)"
-sed "s|cp /tmp/entire-install-stubs/entire_fake.tar.gz \"\\\$output\"|printf '%s' \"${ENTIRE_FIXTURE_BODY}\" > \"\$output\"|" /tmp/entire-install-stubs/curl > "${DEGRADED_STUB}"
-sed -i.bak "s|cat /tmp/entire-install-stubs/entire_fake.tar.gz|printf '%s' \"${ENTIRE_FIXTURE_BODY}\"|" "${DEGRADED_STUB}"
-chmod 755 "${DEGRADED_STUB}"
+# The rm runs at this outer (root) level, like RUN 16's pi cleanup:
+# install_bin placed the binaries via sudo, so sandbox-user cannot remove
+# them — a silently-failing rm inside the su would leave entire on PATH
+# and turn the mismatch run into a reuse-row run.
+rm -f /usr/local/bin/entire /usr/local/bin/git-remote-entire
 rm -rf /tmp/entire-mismatch-repo
-su - sandbox-user -c "rm -f /usr/local/bin/entire /usr/local/bin/git-remote-entire; git init -q /tmp/entire-mismatch-repo"
-RUN22B_OUTPUT="$(STARTUP_BEST_EFFORT=1 su - sandbox-user -c "cd /tmp/entire-mismatch-repo && PATH=${DEGRADED_STUB}:/usr/local/bin:\$PATH bash /tmp/entire-startup.sh")" ||
+su - sandbox-user -c "git init -q /tmp/entire-mismatch-repo"
+# The degraded stub lives in its own DIRECTORY so it can sit first on PATH:
+# shells only search directories, so a stub file placed on PATH directly is
+# never invoked and every URL silently falls through to the real curl —
+# which would make this a live-network test, not a fixture-driven one.
+DEGRADED_STUB_DIR="$(mktemp -d /tmp/entire-degraded-stubs.XXXXXX)"
+sed "s|cp /tmp/entire-install-stubs/entire_fake.tar.gz \"\\\$output\"|printf '%s' \"${ENTIRE_FIXTURE_BODY}\" > \"\$output\"|" /tmp/entire-install-stubs/curl > "${DEGRADED_STUB_DIR}/curl"
+sed -i.bak "s|cat /tmp/entire-install-stubs/entire_fake.tar.gz|printf '%s' \"${ENTIRE_FIXTURE_BODY}\"|" "${DEGRADED_STUB_DIR}/curl"
+chmod 755 "${DEGRADED_STUB_DIR}/curl"
+# STARTUP_BEST_EFFORT=1 goes INSIDE the -c string (RUN 6's convention):
+# `su -` resets the environment, so a prefix assignment on the su command
+# line never reaches the startup script.
+RUN22B_OUTPUT="$(su - sandbox-user -c "cd /tmp/entire-mismatch-repo && STARTUP_BEST_EFFORT=1 PATH=${DEGRADED_STUB_DIR}:/usr/local/bin:\$PATH bash /tmp/entire-startup.sh")" ||
   fail "entire-mismatch best-effort run exited non-zero (a tool-stage failure is recorded, not fatal under BEST_EFFORT=1)"
 printf '%s' "${RUN22B_OUTPUT}"
 case "${RUN22B_OUTPUT}" in *"entire | FAIL | provisioning failed"*) ;; *) fail "entire-mismatch best-effort run missing the FAIL row" ;; esac
@@ -1327,21 +1350,12 @@ case "${RUN22B_OUTPUT}" in *"entire | FAIL | provisioning failed"*) ;; *) fail "
   fail "entire-mismatch best-effort run placed git-remote-entire in /usr/local/bin despite the integrity mismatch"
 # Default posture (no STARTUP_BEST_EFFORT) — the same FAIL row must fail
 # the run loudly. Same patched script, same degraded stub curl.
-if RUN22C_OUTPUT="$(su - sandbox-user -c "cd /tmp/entire-mismatch-repo && PATH=${DEGRADED_STUB}:/usr/local/bin:\$PATH bash /tmp/entire-startup.sh")"; then
+if RUN22C_OUTPUT="$(su - sandbox-user -c "cd /tmp/entire-mismatch-repo && PATH=${DEGRADED_STUB_DIR}:/usr/local/bin:\$PATH bash /tmp/entire-startup.sh")"; then
   fail "entire-mismatch strict-posture run exited 0 — a tool-stage failure must fail setup loudly by default"
 fi
 case "${RUN22C_OUTPUT}" in *"entire | FAIL | provisioning failed"*) ;; *) fail "entire-mismatch strict-posture run missing the FAIL row" ;; esac
 [[ ! -e /usr/local/bin/entire ]] ||
   fail "entire-mismatch strict-posture run placed the entire binary in /usr/local/bin despite the integrity mismatch"
-rm -f "${DEGRADED_STUB}" "${DEGRADED_STUB}.bak"
-
-echo "=== RUN 22D: entire reused on idempotent re-run ==="
-# Cold-install via RUN 22 left /usr/local/bin/entire and
-# /usr/local/bin/git-remote-entire for sandbox-user; a re-run must take the
-# reuse row for both, not re-download.
-RUN22D_OUTPUT="$(su - sandbox-user -c "cd /tmp/entire-install-repo && PATH=/tmp/entire-install-stubs:/usr/local/bin:\$PATH bash /tmp/entire-startup.sh")" ||
-  fail "entire-reuse run exited non-zero"
-printf '%s' "${RUN22D_OUTPUT}"
-case "${RUN22D_OUTPUT}" in *"entire | PASS | reused /usr/local/bin/entire"*) ;; *) fail "entire-reuse run missing the reused entire PASS row" ;; esac
+rm -rf "${DEGRADED_STUB_DIR}"
 
 echo "=== ALL CHECKS PASSED ==="
