@@ -1400,6 +1400,35 @@ roborev_setup() {
   fi
 }
 
+# --- cq environment ----------------------------------------------------------
+# cq (mozilla-ai's shared knowledge store) falls back to an EMPTY local
+# SQLite store when CQ_ADDR is unset, even though `cq --help` advertises
+# https://cq.exchange as the default (verified with cq v0.18.0: unset gives
+# zero units and empty queries; set gives the remote store). Persist the
+# address in ~/.bashrc so every later agent shell reaches the remote. Only
+# the address — never CQ_API_KEY, which stays in the Conductor environment.
+# The `:=` form keeps a CQ_ADDR the workspace already sets (e.g. a
+# self-hosted server). Idempotent: one marker-delimited block, replaced on
+# re-run. A failure is a WARN, never fatal: cq is optional.
+CQ_ADDR_BLOCK_BEGIN="# >>> conductor cq >>>"
+CQ_ADDR_BLOCK_END="# <<< conductor cq <<<"
+
+cq_env() {
+  local rc="${HOME}/.bashrc" tmp="${WORK}/bashrc.cq"
+  if [[ -f "${rc}" ]] && grep -qF "${CQ_ADDR_BLOCK_BEGIN}" "${rc}"; then
+    record PASS cq-env "CQ_ADDR block already in ~/.bashrc"
+    return 0
+  fi
+  {
+    if [[ -f "${rc}" ]]; then cat "${rc}"; fi
+    echo "${CQ_ADDR_BLOCK_BEGIN}"
+    echo ': "${CQ_ADDR:=https://cq.exchange}"'
+    echo "export CQ_ADDR"
+    echo "${CQ_ADDR_BLOCK_END}"
+  } > "${tmp}" && cat "${tmp}" > "${rc}" || return 1
+  record PASS cq-env "CQ_ADDR defaulted to https://cq.exchange via ~/.bashrc"
+}
+
 # --- run -------------------------------------------------------------------
 # STARTUP_BEST_EFFORT=1 (exported by this repo's settings.toml) keeps the
 # former cloud-install contract: tool-stage failures are recorded but do
@@ -1444,6 +1473,7 @@ if pi_install; then :; else record WARN pi "install failed — pi was not instal
 if python311_stage; then :; else FAILED=1; record FAIL python3.11 "provisioning failed — see messages above"; fi
 if pytools_stage; then :; else FAILED=1; record FAIL pytools "provisioning failed — see the rows above"; fi
 if rwx_auth; then :; else maybe_fail; fi
+if cq_env; then :; else record WARN cq-env "could not persist CQ_ADDR to ~/.bashrc — cq will use an empty local store; export CQ_ADDR=https://cq.exchange"; fi
 if roborev_setup; then :; else maybe_fail; fi
 
 log ""
