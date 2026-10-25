@@ -1160,6 +1160,22 @@ ROBOREV_AGENT_DEFAULT="pi"
 # means.
 ROBOREV_MODEL_DEFAULT="fireworks/accounts/fireworks/models/glm-5p3"
 
+# roborev_quiet <args...>: a roborev CLI call whose output is discarded and
+# which may touch — or lazily start — the daemon. The daemon is long-lived,
+# and this script keeps its original stdout/stderr as fds 3/4 for the whole
+# run (the summary surfaces there at the end). A daemon spawned with those
+# fds inherited holds the caller's capture pipe open forever, so any
+# $(...)-style consumer of this script deadlocks after the script itself
+# exits cleanly — the mechanism behind the stalled container runs, where
+# RUN 22 was the suite's first execution to run the real (non-stubbed)
+# roborev against a down daemon: 'roborev status' lazily starts it. Every
+# daemon-touching call therefore runs with stdio redirected and the spare
+# fds closed; the CLI already points the daemon's own stdout/stderr at its
+# logs.
+roborev_quiet() {
+  roborev "$@" </dev/null >/dev/null 2>&1 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&-
+}
+
 # ensure_daemon <stage>: status → PASS "daemon running"; start → PASS
 # "daemon revived"; neither → FAIL under <stage> (deferred setup failure).
 # One call site today (roborev-daemon, after the hook posture and the
@@ -1168,19 +1184,9 @@ ROBOREV_MODEL_DEFAULT="fireworks/accounts/fireworks/models/glm-5p3"
 # review finding).
 ensure_daemon() {
   local stage="$1"
-  if roborev status >/dev/null 2>&1; then
+  if roborev_quiet status; then
     record PASS "${stage}" "daemon running"
-    # The spawned daemon must not inherit this shell's spare fds: the
-    # su - login chain saves the caller's original stdout/stderr as
-    # fds 3/4, and a daemon holding that saved stdout keeps every
-    # $(...)-style capture pipe open forever — the capturing shell
-    # deadlocks after the script itself exits cleanly (the stalled
-    # container runs: the suite's RUN 22 was the first execution where
-    # the real, non-stubbed roborev found the daemon down and spawned
-    # it mid-capture). Close the saved fds around the spawn so the
-    # daemon starts with stdio only; the CLI redirects the daemon's own
-    # stdout/stderr to its logs.
-  elif roborev daemon start </dev/null 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&-; then
+  elif roborev_quiet daemon start; then
     record PASS "${stage}" "daemon revived"
   else
     record FAIL "${stage}" "daemon not running and 'roborev daemon start' failed"
@@ -1413,7 +1419,7 @@ roborev_setup() {
   # .roborev.toml exists by now and is never rewritten, so ROBOREV_AGENT
   # alone cannot change the agent on a re-run: say how to actually switch.
   local switch_hint="or switch agents by editing the agent line in .roborev.toml (it wins over ROBOREV_AGENT), or delete it, set ROBOREV_AGENT, and re-run setup"
-  if roborev check-agents --agent "${agent}" --timeout 30 >/dev/null 2>&1; then
+  if roborev_quiet check-agents --agent "${agent}" --timeout 30; then
     record PASS roborev-agent "${agent} answered a smoke prompt — reviews are live"
   else
     if [[ "${agent}" == "pi" ]] && ! command -v pi >/dev/null 2>&1; then
