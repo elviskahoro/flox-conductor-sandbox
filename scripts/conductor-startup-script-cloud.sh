@@ -683,7 +683,11 @@ ENTIRE_SHA256_DARWIN_AMD64="c7adf5a3e91320c81685eb3491f8a91d2551f36208ba6f82f667
 ENTIRE_SHA256_DARWIN_ARM64="77f1a9174fd9b503f0503e776f2fa1e913cda1eba2a37772d3a6b97ad67edfb1"
 
 entire_install() {
-  if command -v entire >/dev/null 2>&1; then
+  # Reuse requires BOTH binaries: this stage's contract is entire plus its
+  # git-remote-entire companion (entire:// remotes fail without it), so a
+  # pre-existing entire without the companion must fall through to the
+  # pinned install below instead of PASSing over a half install.
+  if command -v entire >/dev/null 2>&1 && command -v git-remote-entire >/dev/null 2>&1; then
     record PASS entire "reused $(command -v entire) ($(entire version 2>&1 | head -1 || true))"
     return 0
   fi
@@ -739,9 +743,21 @@ entire_install() {
   note_placement "${entire_path}"
   note_placement "${gre_path}"
   hash -r 2>/dev/null || true
-  if ! command -v entire >/dev/null 2>&1 || ! command -v git-remote-entire >/dev/null 2>&1; then
+  local resolved_entire resolved_gre
+  resolved_entire="$(command -v entire 2>/dev/null || true)"
+  resolved_gre="$(command -v git-remote-entire 2>/dev/null || true)"
+  if [[ -z "${resolved_entire}" || -z "${resolved_gre}" ]]; then
     log "error: entire installed at ${entire_path} but not on PATH (or git-remote-entire missing from PATH)"
     return 1
+  fi
+  # Both deliverables are placed, but a pre-existing entire earlier on PATH
+  # (an operator's manual install in ~/.local/bin — which setup prepends to
+  # PATH — is exactly this stage's target machine, issue #91) keeps
+  # resolving after the pinned install. Name that state instead of PASSing
+  # a pinned-version row over a stale, shadowing binary.
+  if [[ "${resolved_entire}" != "${entire_path}" || "${resolved_gre}" != "${gre_path}" ]]; then
+    record WARN entire "v${ENTIRE_PIN} installed (entire: ${entire_path}, git-remote-entire: ${gre_path}) but PATH resolves entire to ${resolved_entire} and git-remote-entire to ${resolved_gre} — remove the stale binary or reorder PATH if the pinned entire must run"
+    return 0
   fi
   record PASS entire "v${ENTIRE_PIN} (entire: ${entire_path}, git-remote-entire: ${gre_path})"
 }
@@ -1144,6 +1160,22 @@ ROBOREV_AGENT_DEFAULT="pi"
 # means.
 ROBOREV_MODEL_DEFAULT="fireworks/accounts/fireworks/models/glm-5p3"
 
+# roborev_quiet <args...>: a roborev CLI call whose output is discarded and
+# which may touch — or lazily start — the daemon. The daemon is long-lived,
+# and this script keeps its original stdout/stderr as fds 3/4 for the whole
+# run (the summary surfaces there at the end). A daemon spawned with those
+# fds inherited holds the caller's capture pipe open forever, so any
+# $(...)-style consumer of this script deadlocks after the script itself
+# exits cleanly — the mechanism behind the stalled container runs, where
+# RUN 22 was the suite's first execution to run the real (non-stubbed)
+# roborev against a down daemon: 'roborev status' lazily starts it. Every
+# daemon-touching call therefore runs with stdio redirected and the spare
+# fds closed; the CLI already points the daemon's own stdout/stderr at its
+# logs.
+roborev_quiet() {
+  roborev "$@" </dev/null >/dev/null 2>&1 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&-
+}
+
 # ensure_daemon <stage>: status → PASS "daemon running"; start → PASS
 # "daemon revived"; neither → FAIL under <stage> (deferred setup failure).
 # One call site today (roborev-daemon, after the hook posture and the
@@ -1152,9 +1184,9 @@ ROBOREV_MODEL_DEFAULT="fireworks/accounts/fireworks/models/glm-5p3"
 # review finding).
 ensure_daemon() {
   local stage="$1"
-  if roborev status >/dev/null 2>&1; then
+  if roborev_quiet status; then
     record PASS "${stage}" "daemon running"
-  elif roborev daemon start; then
+  elif roborev_quiet daemon start; then
     record PASS "${stage}" "daemon revived"
   else
     record FAIL "${stage}" "daemon not running and 'roborev daemon start' failed"
@@ -1387,7 +1419,7 @@ roborev_setup() {
   # .roborev.toml exists by now and is never rewritten, so ROBOREV_AGENT
   # alone cannot change the agent on a re-run: say how to actually switch.
   local switch_hint="or switch agents by editing the agent line in .roborev.toml (it wins over ROBOREV_AGENT), or delete it, set ROBOREV_AGENT, and re-run setup"
-  if roborev check-agents --agent "${agent}" --timeout 30 >/dev/null 2>&1; then
+  if roborev_quiet check-agents --agent "${agent}" --timeout 30; then
     record PASS roborev-agent "${agent} answered a smoke prompt — reviews are live"
   else
     if [[ "${agent}" == "pi" ]] && ! command -v pi >/dev/null 2>&1; then
