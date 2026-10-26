@@ -1510,8 +1510,22 @@ case "${RUN23D_OUTPUT}" in
 *"pi | WARN | ROBOREV_AGENT=claude-code is a known-cloudsandbox-broken review agent (issue #101): pi is already installed"*) ;;
 *) fail "23D tailored-WARN run missing the 'pi is already installed' branch of the override WARN — the misleading 'pi is not installed' wording on a re-run hides a working config" ;;
 esac
+# The misleading 'pi is not installed' wording must NOT appear when pi
+# is on PATH. It is, however, semantically correct on the fresh-install
+# branch — RUN 23 above is the canonical example and is the target
+# shape this negative assertion protects against leaking through the
+# tailored branch.
 case "${RUN23D_OUTPUT}" in
 *"pi is not installed, reviews will not run"*) fail "23D tailored-WARN run fell through to the 'pi is not installed' branch despite pi being installed on PATH" ;;
+esac
+# The neutral wording must NOT falsely claim reviews are live in this
+# workspace — pi_install cannot observe whether a committed agent = "pi"
+# .roborev.toml exists, and pretending otherwise directs the operator
+# away from a fresh-repo failure mode that the override would actually
+# trigger (it's the same misleading-row class the tailored branch was
+# written to fix, just with a different agent line).
+case "${RUN23D_OUTPUT}" in
+*"keeps reviews live in this workspace"*) fail "23D tailored-WARN run still claims reviews are live in this workspace — the claim depends on a committed agent = \"pi\" .roborev.toml that pi_install cannot observe" ;;
 esac
 
 echo "=== RUN 24: \$HOME/<repo>/.git auto-discovery runs the full roborev stage ==="

@@ -503,13 +503,15 @@ pi_install() {
         # pi is already installed from a prior run, but the override was
         # since set (the operator's likely intent here: evaluate how the
         # override behaves without disturbing a working config). The
-        # override changes only what gets written to NEW .roborev.toml
-        # files — a committed `.roborev.toml` whose agent line was set
-        # under the pi default keeps winning (per roborev_setup's
-        # file-agent recalibration), so reviews in THIS workspace are
-        # still live. The WARN still fires so an empty-repo re-clone
-        # under the same override doesn't silently land a broken agent.
-        record WARN pi "ROBOREV_AGENT=${ROBOREV_AGENT} is a known-cloudsandbox-broken review agent (issue #101): pi is already installed and a committed agent = \"pi\" .roborev.toml keeps reviews live in this workspace, but a future fresh repo under the same override would land a broken agent — unset the override (or set ROBOREV_AGENT=pi) to make pi the workspace-wide default"
+        # pi_install stage cannot tell from here whether a committed
+        # `.roborev.toml` exists for the current workspace — that check
+        # lives in roborev_setup, which runs after this — so speak only
+        # about what this stage CAN observe: pi is on PATH, but the
+        # override still drives what roborev_setup writes to a NEW
+        # `.roborev.toml` (a freshly-discovered repo under this override
+        # would land agent = "${ROBOREV_AGENT}" — known-broken here).
+        # The action is unchanged either way: unset the override.
+        record WARN pi "ROBOREV_AGENT=${ROBOREV_AGENT} is a known-cloudsandbox-broken review agent (issue #101): pi is already installed, but the override still drives NEW .roborev.toml writes (a fresh repo this run touches would land agent = \"${ROBOREV_AGENT}\") — unset the override (or set ROBOREV_AGENT=pi) to make pi the workspace-wide default"
       else
         record WARN pi "ROBOREV_AGENT=${ROBOREV_AGENT} points at a known-cloudsandbox-broken review agent (issue #101) — pi is not installed, reviews will not run; unset the override (or set ROBOREV_AGENT=pi) so the script's pi default installs"
       fi
