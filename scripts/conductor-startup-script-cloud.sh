@@ -499,7 +499,20 @@ pi_install() {
     # to let pi install). Other agent slugs keep the quiet SKIP because
     # some future version may actually work.
     if [[ "${ROBOREV_AGENT}" == "claude-code" || "${ROBOREV_AGENT}" == "codex" ]]; then
-      record WARN pi "ROBOREV_AGENT=${ROBOREV_AGENT} points at a known-cloudsandbox-broken review agent (issue #101) — pi is not installed, reviews will not run; unset the override (or set ROBOREV_AGENT=pi) so the script's pi default installs"
+      if command -v pi >/dev/null 2>&1; then
+        # pi is already installed from a prior run, but the override was
+        # since set (the operator's likely intent here: evaluate how the
+        # override behaves without disturbing a working config). The
+        # override changes only what gets written to NEW .roborev.toml
+        # files — a committed `.roborev.toml` whose agent line was set
+        # under the pi default keeps winning (per roborev_setup's
+        # file-agent recalibration), so reviews in THIS workspace are
+        # still live. The WARN still fires so an empty-repo re-clone
+        # under the same override doesn't silently land a broken agent.
+        record WARN pi "ROBOREV_AGENT=${ROBOREV_AGENT} is a known-cloudsandbox-broken review agent (issue #101): pi is already installed and a committed agent = \"pi\" .roborev.toml keeps reviews live in this workspace, but a future fresh repo under the same override would land a broken agent — unset the override (or set ROBOREV_AGENT=pi) to make pi the workspace-wide default"
+      else
+        record WARN pi "ROBOREV_AGENT=${ROBOREV_AGENT} points at a known-cloudsandbox-broken review agent (issue #101) — pi is not installed, reviews will not run; unset the override (or set ROBOREV_AGENT=pi) so the script's pi default installs"
+      fi
     else
       record SKIP pi "ROBOREV_AGENT=${ROBOREV_AGENT} selects another review agent — pi not installed"
     fi

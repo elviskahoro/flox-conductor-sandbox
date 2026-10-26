@@ -132,7 +132,10 @@
 #     instead of the quiet SKIP row they used to share with valid agent
 #     slugs. RUN 23B asserts the same row for codex; RUN 23C's opencode
 #     override is the regression check that any future relaxation does not
-#     promote a working agent to WARN.
+#     promote a working agent to WARN. RUN 23D pairs an installed pi with
+#     the override and asserts the tailored WARN that mentions "pi is
+#     already installed" rather than the misleading "pi is not installed"
+#     wording a re-run would otherwise produce.
 #   - RUN 24 (issue #101): the $HOME/<repo> auto-discovery path. With cwd
 #     outside any worktree and HOME pointing at a directory holding exactly
 #     one git worktree (the Conductor cloud clone convention), the roborev
@@ -142,7 +145,9 @@
 #     RUN 24 codifies against. RUN 24B asserts two worktrees at the top
 #     level is taken as ambiguous: find_repo_root returns 1 and the
 #     no-worktree fallback must fire instead of silently picking a wrong
-#     repo's .roborev.toml.
+#     repo's .roborev.toml. RUN 24C1 asserts CONDUCTOR_WORKSPACE_PATH is
+#     used when set with no $HOME worktree; RUN 24C2 asserts the env var
+#     wins precedence when a $HOME worktree would also resolve.
 #   - RUN 25 (issue #101): the no-worktree fallback. With no CONDUCTOR_
 #     WORKSPACE_PATH and no worktrees under $HOME, the roborev stage must
 #     record a single loud WARN naming the gap and still run daemon +
@@ -1479,6 +1484,36 @@ case "${RUN23C_OUTPUT}" in
 *"pi | WARN | ROBOREV_AGENT=opencode"*) fail "opencode override run was promoted to WARN — only claude-code/codex should be promoted" ;;
 esac
 
+# RUN 23D: the tailored-WARN branch — pi is already installed from a
+# prior run, so the override's WARN must NOT say "pi is not installed"
+# (issue #101 followup finding: the original message was misleading on
+# re-run scenarios where pi is in place and reviews still work via the
+# committed .roborev.toml agent line).
+rm -rf /tmp/pi-already-installed-repo
+su - sandbox-user -c "git init -q /tmp/pi-already-installed-repo"
+# Pre-step: install pi via the default-agent path so it exists on PATH.
+# This is the natural sequence: first setup with no override installs pi
+# and writes .roborev.toml with agent = "pi"; later the operator sets
+# ROBOREV_AGENT=claude-code to evaluate the override without disturbing
+# the working config.
+RUN23D_PRE_OUTPUT="$(su - sandbox-user -c "cd /tmp/pi-already-installed-repo && PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
+  fail "23D pre-install run exited non-zero"
+case "${RUN23D_PRE_OUTPUT}" in *"pi | PASS"*) ;; *) fail "23D pre-install run did not install pi" ;; esac
+# The override re-run with pi in place. The tailored WARN row must fire
+# (override is still a known-broken-in-sandboxes agent) but it must NOT
+# claim pi is uninstalled — that is the regression a re-run produces
+# against the original "pi is not installed" wording.
+RUN23D_OUTPUT="$(su - sandbox-user -c "cd /tmp/pi-already-installed-repo && ROBOREV_AGENT=claude-code PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
+  fail "23D tailored-WARN run exited non-zero"
+printf '%s' "${RUN23D_OUTPUT}"
+case "${RUN23D_OUTPUT}" in
+*"pi | WARN | ROBOREV_AGENT=claude-code is a known-cloudsandbox-broken review agent (issue #101): pi is already installed"*) ;;
+*) fail "23D tailored-WARN run missing the 'pi is already installed' branch of the override WARN — the misleading 'pi is not installed' wording on a re-run hides a working config" ;;
+esac
+case "${RUN23D_OUTPUT}" in
+*"pi is not installed, reviews will not run"*) fail "23D tailored-WARN run fell through to the 'pi is not installed' branch despite pi being installed on PATH" ;;
+esac
+
 echo "=== RUN 24: \$HOME/<repo>/.git auto-discovery runs the full roborev stage ==="
 # Issue #101's first-class fix: Conductor cloud sandboxes run setup
 # from $HOME, NOT from inside the cloned repo, so without auto-
@@ -1554,6 +1589,62 @@ case "${RUN24B_OUTPUT}" in
 *) fail "ambiguous-home run missing the no-worktree WARN row — find_repo_root failed open instead of refusing" ;;
 esac
 case "${RUN24B_OUTPUT}" in *".roborev.toml written"*) fail "ambiguous-home run wrote .roborev.toml — find_repo_root picked a wrong repo" ;; esac
+
+# RUN 24C: CONDUCTOR_WORKSPACE_PATH takes precedence over the $HOME scan.
+# find_repo_root's primary resolution path (the commit message's first
+# bullet) gives Conductor's install-script env var precedence over the
+# $HOME/* scan so operators can point at an explicit path. Both the
+# straightforward case and the precedence case need coverage: a regression
+# in this branch — a typo in the env-var name, broken precedence, or
+# git-C resolving to a subdirectory — would pass CI silently while
+# breaking the Conductor-cloud machines this commit was written to fix.
+# Case 24C1: CONDUCTOR_WORKSPACE_PATH set, no $HOME worktree.
+rm -rf /tmp/cwp-workspace /tmp/cwp-empty-home
+su - sandbox-user -c "
+  set -e
+  mkdir -p /tmp/cwp-workspace
+  cd /tmp/cwp-workspace
+  git init -q repo
+  cd repo
+  git config user.email t@t; git config user.name t
+  echo init > README && git add README && git commit -q -m init
+  mkdir -p /tmp/cwp-empty-home
+"
+RUN24C1_OUTPUT="$(su - sandbox-user -c "cd /tmp && HOME=/tmp/cwp-empty-home CONDUCTOR_WORKSPACE_PATH=/tmp/cwp-workspace/repo PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
+  fail "cwp-straight run exited non-zero"
+case "${RUN24C1_OUTPUT}" in
+*".roborev.toml written (agent: pi, model: fireworks/accounts/fireworks/models/glm-5p3)"*) ;;
+*) fail "cwp-straight run missing the .roborev.toml-written row — CONDUCTOR_WORKSPACE_PATH was not used" ;;
+esac
+[ -f /tmp/cwp-workspace/repo/.roborev.toml ] ||
+  fail "cwp-straight run did not write .roborev.toml into the CONDUCTOR_WORKSPACE_PATH repo"
+# Case 24C2: CONDUCTOR_WORKSPACE_PATH and a different $HOME worktree;
+# the env var must win. Without precedence the script would pick either
+# arbitrarily, so a regression in the resolution order would land the
+# wrong repo's .roborev.toml silently.
+rm -rf /tmp/cwp-precedence
+su - sandbox-user -c "
+  set -e
+  mkdir -p /tmp/cwp-precedence/ws
+  cd /tmp/cwp-precedence/ws
+  git config --global --unset user.email 2>/dev/null || true
+  git config --global --unset user.name 2>/dev/null || true
+  git init -q
+  git config user.email t@t; git config user.name t
+  echo init > README && git add README && git commit -q -m init
+  mkdir -p /tmp/cwp-precedence/home-elsewhere/repo
+  cd /tmp/cwp-precedence/home-elsewhere/repo
+  git config --global --unset user.email 2>/dev/null || true
+  git config --global --unset user.name 2>/dev/null || true
+  git init -q
+  echo init > README
+"
+RUN24C2_OUTPUT="$(su - sandbox-user -c "cd /tmp && HOME=/tmp/cwp-precedence/home-elsewhere CONDUCTOR_WORKSPACE_PATH=/tmp/cwp-precedence/ws PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
+  fail "cwp-precedence run exited non-zero"
+[ -f /tmp/cwp-precedence/ws/.roborev.toml ] ||
+  fail "cwp-precedence run did not write .roborev.toml into CONDUCTOR_WORKSPACE_PATH — the setup scanned for \$HOME repos and either failed open or picked the wrong one"
+[ ! -f /tmp/cwp-precedence/home-elsewhere/repo/.roborev.toml ] ||
+  fail "cwp-precedence run wrote .roborev.toml into the \$HOME repo — env var lost the precedence test"
 
 echo "=== RUN 25: no-worktree fallback records the loud WARN + still runs daemon + smoke ==="
 # Issue #101's no-worktree fallback: find_repo_root returns 1 when
