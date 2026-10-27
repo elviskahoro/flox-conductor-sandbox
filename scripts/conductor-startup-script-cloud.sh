@@ -1289,16 +1289,18 @@ find_repo_root() {
 # the FIREWORKS_API_KEY root cause and the operator never fixes it —
 # RUN 18 captured that exact regression.
 #
-# The has_toml guard: when <repo_root> is empty OR the .roborev.toml does
-# not exist (no-worktree fallback, or pre-existing repo whose .roborev.toml
-# the script declined to write), the PASS row must NOT claim "reviews are
-# live" — it can't, because roborev reads the toml from disk and the file
-# was never written this run. The switch_hint must likewise not point the
-# operator at editing a .roborev.toml that doesn't exist; it tells them
-# how to land one (sit inside a discoverable repo, or set
-# CONDUCTOR_WORKSPACE_PATH). Same overclaim class commit 244b3bf removed
-# from pi_install's WARN — scoped the same way here. RUN 25's prefix
-# assert locks both wording paths.
+# The has_toml guard: today, has_toml=0 only fires on the no-worktree
+# fallback (repo_root="", the with-worktree path always writes a toml
+# or returns 1 before the smoke check). The -f check is defensive —
+# future call sites that pass a non-empty repo_root without a toml
+# would land here too, and the wording guards are correct either way.
+# In the empty/no-toml state the PASS row must NOT claim "reviews are
+# live" (roborev reads the toml from disk and none was written this
+# run), and the switch_hint must NOT point the operator at editing a
+# .roborev.toml that doesn't exist — same overclaim class commit
+# 244b3bf removed from pi_install's WARN. RUN 25's prefix assert plus
+# its positive/negative wording locks lock the no-toml shape; the
+# with-worktree running case goes through has_toml=1 unchanged.
 roborev_smoke_check() {
   local agent="$1" repo_root="$2"
   local has_toml=0
