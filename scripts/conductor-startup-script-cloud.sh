@@ -1299,7 +1299,7 @@ find_repo_root() {
 # run), and the switch_hint must NOT point the operator at editing a
 # .roborev.toml that doesn't exist — same overclaim class commit
 # 244b3bf removed from pi_install's WARN. RUN 25's prefix assert plus
-# its positive/negative wording locks lock the no-toml shape; the
+# its positive/negative wording locks pin the no-toml shape; the
 # with-worktree running case goes through has_toml=1 unchanged.
 roborev_smoke_check() {
   local agent="$1" repo_root="$2"
