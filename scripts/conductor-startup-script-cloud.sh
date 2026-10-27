@@ -1288,10 +1288,25 @@ find_repo_root() {
 # rather than a generic "agent failed". For pi a generic FAIL row hides
 # the FIREWORKS_API_KEY root cause and the operator never fixes it —
 # RUN 18 captured that exact regression.
+#
+# The has_toml guard: when <repo_root> is empty OR the .roborev.toml does
+# not exist (no-worktree fallback, or pre-existing repo whose .roborev.toml
+# the script declined to write), the PASS row must NOT claim "reviews are
+# live" — it can't, because roborev reads the toml from disk and the file
+# was never written this run. The switch_hint must likewise not point the
+# operator at editing a .roborev.toml that doesn't exist; it tells them
+# how to land one (sit inside a discoverable repo, or set
+# CONDUCTOR_WORKSPACE_PATH). Same overclaim class commit 244b3bf removed
+# from pi_install's WARN — scoped the same way here. RUN 25's prefix
+# assert locks both wording paths.
 roborev_smoke_check() {
   local agent="$1" repo_root="$2"
-  local fireworks_model=0
+  local has_toml=0
   if [[ -n "${repo_root}" && -f "${repo_root}/.roborev.toml" ]]; then
+    has_toml=1
+  fi
+  local fireworks_model=0
+  if [[ "${has_toml}" == 1 ]]; then
     if grep -q '^model = "fireworks/' "${repo_root}/.roborev.toml" 2>/dev/null; then
       fireworks_model=1
     fi
@@ -1309,10 +1324,20 @@ roborev_smoke_check() {
   fi
   # .roborev.toml exists by now in the with-worktree path and is never
   # rewritten, so ROBOREV_AGENT alone cannot change the agent on a
-  # re-run: say how to actually switch.
-  local switch_hint="or switch agents by editing the agent line in .roborev.toml (it wins over ROBOREV_AGENT), or delete it, set ROBOREV_AGENT, and re-run setup"
+  # re-run: say how to actually switch. Two shapes — the toml-editing
+  # pointer only makes sense when a toml is actually present.
+  local switch_hint
+  if [[ "${has_toml}" == 1 ]]; then
+    switch_hint="or switch agents by editing the agent line in .roborev.toml (it wins over ROBOREV_AGENT), or delete it, set ROBOREV_AGENT, and re-run setup"
+  else
+    switch_hint="or set ROBOREV_AGENT to a working agent and re-run setup from inside a discoverable repo (or set CONDUCTOR_WORKSPACE_PATH=/path/to/repo), so the next run writes a .roborev.toml"
+  fi
   if roborev_quiet check-agents --agent "${agent}" --timeout 30; then
-    record PASS roborev-agent "${agent} answered a smoke prompt — reviews are live"
+    if [[ "${has_toml}" == 1 ]]; then
+      record PASS roborev-agent "${agent} answered a smoke prompt — reviews are live"
+    else
+      record PASS roborev-agent "${agent} answered a smoke prompt; no .roborev.toml was written this run, so reviews won't run end-to-end here — ${switch_hint}"
+    fi
   else
     if [[ "${agent}" == "pi" ]] && ! command -v pi >/dev/null 2>&1; then
       record WARN roborev-agent "pi is not installed (see the pi row above) — install Node ${PI_NODE_MIN}+ and re-run setup, ${switch_hint}"

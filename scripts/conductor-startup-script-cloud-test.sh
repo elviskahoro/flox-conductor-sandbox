@@ -1655,6 +1655,12 @@ su - sandbox-user -c "
 "
 RUN24C2_OUTPUT="$(su - sandbox-user -c "cd /tmp && HOME=/tmp/cwp-precedence/home-elsewhere CONDUCTOR_WORKSPACE_PATH=/tmp/cwp-precedence/ws PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
   fail "cwp-precedence run exited non-zero"
+printf '%s' "${RUN24C2_OUTPUT}"
+case "${RUN24C2_OUTPUT}" in *" | FAIL |"*) fail "cwp-precedence run recorded FAIL row(s)" ;; esac
+case "${RUN24C2_OUTPUT}" in
+*".roborev.toml written (agent: pi, model: fireworks/accounts/fireworks/models/glm-5p3)"*) ;;
+*) fail "cwp-precedence run missing the .roborev.toml-written row — CONDUCTOR_WORKSPACE_PATH was not used" ;;
+esac
 [ -f /tmp/cwp-precedence/ws/.roborev.toml ] ||
   fail "cwp-precedence run did not write .roborev.toml into CONDUCTOR_WORKSPACE_PATH — the setup scanned for \$HOME repos and either failed open or picked the wrong one"
 [ ! -f /tmp/cwp-precedence/home-elsewhere/repo/.roborev.toml ] ||
@@ -1699,6 +1705,19 @@ case "${RUN25_OUTPUT}" in *"roborev-agent | PASS"*) ;; *) fail "no-worktree run 
 # And the things that DO need a worktree must NOT have run.
 case "${RUN25_OUTPUT}" in *".roborev.toml written"*) fail "no-worktree run wrote .roborev.toml despite no worktree" ;; esac
 case "${RUN25_OUTPUT}" in *"roborev-hook |"*) fail "no-worktree run recorded a roborev-hook row despite no worktree" ;; esac
+# The PASS row must reflect the no-toml reality (roborev reads the
+# config from disk — without a written .roborev.toml reviews don't run
+# end-to-end) and must NOT carry the old "reviews are live" overclaim
+# the with-worktree path makes. RUN 25's no-worktree falling shape locks
+# the new wording against a regression that flips has_toml back to
+# silent — same overclaim class commit 244b3bf removed from pi_install.
+case "${RUN25_OUTPUT}" in
+*"pi answered a smoke prompt; no .roborev.toml was written this run, so reviews won't run end-to-end here"*) ;;
+*) fail "no-worktree PASS row missing the no-.roborev.toml-tail wording" ;;
+esac
+case "${RUN25_OUTPUT}" in
+*"roborev-agent | PASS | pi answered a smoke prompt — reviews are live"*) fail "no-worktree PASS row carried the with-worktree 'reviews are live' overclaim" ;;
+esac
 su - sandbox-user -c "
   set -e
   fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
