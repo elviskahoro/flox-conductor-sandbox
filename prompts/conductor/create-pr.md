@@ -286,15 +286,22 @@ Review threads (especially from `pullfrog`, also roborev and humans) must not be
 - For each thread whose concern is actually resolved by a pushed commit, reply briefly with the commit SHA, then resolve it: `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<thread-id>`
 - Leave a thread open, with a reply explaining why, if the concern was declined, deferred, or only partly fixed. Never resolve a thread whose issue is still present.
 
-### Step 13: Suggest the merge once tests and checks pass
+### Step 13: Watch CI and fix failures until green, then suggest the merge
 
-Merging is never automatic. Once the PR is open, check its status with a single call (`gh pr checks <pr-number>`). When tests and required checks have passed, suggest merging with the GitHub CLI and wait for the user to say yes:
+Merging is never automatic, but getting the checks green is part of creating the PR — don't hand back a PR with red or pending CI and wait to be told to fix it. After the PR is open, loop:
+
+1. Wait for checks with `gh pr checks <pr-number> --watch --fail-fast` (or poll `gh pr checks <pr-number>` every 30–60s if `--watch` is unavailable). Treat "no checks reported yet" right after pushing as pending and retry for a couple of minutes before concluding there are none.
+2. If any check fails, read the failing logs (`gh run view <run-id> --log-failed`), reproduce locally where possible, fix the root cause, run the relevant local tests, commit, and push. The branch is now published: add follow-up commits, do not amend, rebase, or force-push. Rerun `roborev review --wait` if the fix is non-trivial (skip if unavailable in a cloud sandbox).
+3. Go back to step 1 with the new run.
+
+Repeat until every required check passes. Stop and ask the user only when blocked: the failure needs a product/architecture decision, is a flaky or infrastructure failure unrelated to the change that two reruns (`gh run rerun <run-id> --failed`) don't clear, needs secrets or permissions you lack, or the same check still fails after three distinct fix attempts. Report what you tried in that case.
+
+When all checks pass, suggest merging with the GitHub CLI and wait for the user to say yes:
 
 ```bash
 gh pr merge <pr-number> --squash
 ```
 
-- Do not poll in a loop. If checks are still running, report that and stop; the user can ask again later.
 - Do not log in to, configure, or call any merge-queue service. If `gh` is not authenticated, say so and stop.
 - Never pass `--admin` or `--auto` unless the user asks for it.
 
