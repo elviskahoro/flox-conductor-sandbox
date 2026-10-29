@@ -336,7 +336,7 @@ su - sandbox-user -c "
     fail \"core.hooksPath run did not write .roborev.toml directly\"
   grep -q 'agent = \"pi\"' /tmp/guard-repo/.roborev.toml ||
     fail \".roborev.toml is missing the agent line\"
-  grep -q 'model = \"fireworks/accounts/fireworks/models/glm-5p3\"' /tmp/guard-repo/.roborev.toml ||
+  grep -q 'model = \"fireworks/accounts/fireworks/models/glm-5p3-flash\"' /tmp/guard-repo/.roborev.toml ||
     fail \".roborev.toml is missing the model line\"
   [ ! -e ${GLOBAL_HOOKS}/post-commit ] ||
     fail \"core.hooksPath run wrote a hook into the machine-global dir\"
@@ -1002,7 +1002,7 @@ su - sandbox-user -c "
     fail \"pi-install run did not write .roborev.toml\"
   grep -q 'agent = \"pi\"' /tmp/pi-install-repo/.roborev.toml ||
     fail \".roborev.toml is missing the agent line\"
-  grep -q 'model = \"fireworks/accounts/fireworks/models/glm-5p3\"' /tmp/pi-install-repo/.roborev.toml ||
+  grep -q 'model = \"fireworks/accounts/fireworks/models/glm-5p3-flash\"' /tmp/pi-install-repo/.roborev.toml ||
     fail \".roborev.toml is missing the default model line\"
 " || fail "pi-install verification failed"
 
@@ -1576,7 +1576,7 @@ case "${RUN24_OUTPUT}" in *" | FAIL |"*) fail "find-repo run recorded FAIL row(s
 # cd'd into it — RUN 14's same row text confirms the script wrote
 # everything the with-worktree-from-cwd path would have.
 case "${RUN24_OUTPUT}" in
-*".roborev.toml written (agent: pi, model: fireworks/accounts/fireworks/models/glm-5p3)"*) ;;
+*".roborev.toml written (agent: pi, model: fireworks/accounts/fireworks/models/glm-5p3-flash)"*) ;;
 *) fail "find-repo run missing the .roborev.toml-written row in the discovered repo" ;;
 esac
 # The hook posture row must show too (PASS on a brand-new repo) —
@@ -1590,7 +1590,7 @@ su - sandbox-user -c "
     fail \"auto-discovery did not write .roborev.toml inside the discovered repo (cwd was /tmp — .roborev.toml.tmp cleanup would have masked it, but a missing file proves find_repo_root did not fire)\"
   grep -q 'agent = \"pi\"' /tmp/find-repo-home/repo/.roborev.toml ||
     fail \"auto-discovery wrote .roborev.toml without the agent line\"
-  grep -q 'model = \"fireworks/accounts/fireworks/models/glm-5p3\"' /tmp/find-repo-home/repo/.roborev.toml ||
+  grep -q 'model = \"fireworks/accounts/fireworks/models/glm-5p3-flash\"' /tmp/find-repo-home/repo/.roborev.toml ||
     fail \"auto-discovery wrote .roborev.toml without the Fireworks model line\"
 " || fail "find-repo verification failed"
 # Two worktrees at the top: ambiguity, find_repo_root must return 1
@@ -1627,7 +1627,7 @@ su - sandbox-user -c "
 RUN24C1_OUTPUT="$(su - sandbox-user -c "cd /tmp && HOME=/tmp/cwp-empty-home CONDUCTOR_WORKSPACE_PATH=/tmp/cwp-workspace/repo PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
   fail "cwp-straight run exited non-zero"
 case "${RUN24C1_OUTPUT}" in
-*".roborev.toml written (agent: pi, model: fireworks/accounts/fireworks/models/glm-5p3)"*) ;;
+*".roborev.toml written (agent: pi, model: fireworks/accounts/fireworks/models/glm-5p3-flash)"*) ;;
 *) fail "cwp-straight run missing the .roborev.toml-written row — CONDUCTOR_WORKSPACE_PATH was not used" ;;
 esac
 [ -f /tmp/cwp-workspace/repo/.roborev.toml ] ||
@@ -1658,7 +1658,7 @@ RUN24C2_OUTPUT="$(su - sandbox-user -c "cd /tmp && HOME=/tmp/cwp-precedence/home
 printf '%s' "${RUN24C2_OUTPUT}"
 case "${RUN24C2_OUTPUT}" in *" | FAIL |"*) fail "cwp-precedence run recorded FAIL row(s)" ;; esac
 case "${RUN24C2_OUTPUT}" in
-*".roborev.toml written (agent: pi, model: fireworks/accounts/fireworks/models/glm-5p3)"*) ;;
+*".roborev.toml written (agent: pi, model: fireworks/accounts/fireworks/models/glm-5p3-flash)"*) ;;
 *) fail "cwp-precedence run missing the .roborev.toml-written row — CONDUCTOR_WORKSPACE_PATH was not used" ;;
 esac
 [ -f /tmp/cwp-precedence/ws/.roborev.toml ] ||

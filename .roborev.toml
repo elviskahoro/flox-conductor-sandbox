@@ -14,4 +14,4 @@
 # `defaultProvider` does NOT fix it. FIREWORKS_API_KEY belongs in the
 # sandbox environment, not in this file.
 agent = "pi"
-model = "fireworks/accounts/fireworks/models/glm-5p3"
+model = "fireworks/accounts/fireworks/models/glm-5p3-flash"

@@ -175,7 +175,7 @@
 #                     agent that actually authenticates here).
 #   ROBOREV_MODEL     optional model override written into .roborev.toml
 #                     alongside `agent`. Defaults to
-#                     `fireworks/accounts/fireworks/models/glm-5p3` —
+#                     `fireworks/accounts/fireworks/models/glm-5p3-flash` —
 #                     issue #85's verified-working pair with Pi + Fireworks.
 #                     The default applies only when the agent is pi; other
 #                     agents get no model line unless this is set.
@@ -427,7 +427,7 @@ roborev_install() {
 # Pinned tarball + SRI sha512 (the same npm registry `dist.integrity` field).
 # Pi 0.73.1 lived under `@mariozechner/pi-coding-agent`; the package was
 # renamed to `@earendil-works/pi-coding-agent` after that release (the Earendil
-# Works handoff, see pi.dev changelog 2026-05). The pinned v1.3.0 is the
+# Works handoff, see pi.dev changelog 2026-05). The pinned v1.4.0 is the
 # continuation of that same line, not a fork. ROBOREV_AGENT=pi is the new
 # default review agent (issue #85's rollover from claude-code): claude-code
 # never reaches a Conductor cloud sandbox in practice and codex returns 401,
@@ -448,13 +448,13 @@ roborev_install() {
 # bringing in a Node toolchain. Consumers that want a different agent
 # (opencode — issue #85's stated fallback when Pi proves unworkable) can
 # override ROBOREV_AGENT for their own workspaces.
-PI_PIN="1.3.0"
+PI_PIN="1.4.0"
 # SRI base64 SHA512 of the registry tarball. The pair PI_PIN + PI_INTEGRITY
 # is the in-repo pin surface validate-pins.sh cross-checks against itself
 # (single-home, no Flox counterpart). Re-pin by running
 # `npm view @earendil-works/pi-coding-agent@<NEW_PIN> dist` and capturing
 # `integrity` verbatim — don't compute it locally.
-PI_INTEGRITY="sha512-V/WoCjA2hQSe3QLWIUB24cTRdtEdeLiIzkDqU5RMXV6VWuD+KGZnzVBMhglwdnQTySkehZsjt8a3g6Jd2g4nnw=="
+PI_INTEGRITY="sha512-Z41LpZ3yYHSC/UUps6Mr39UMFPwH8elhJBG9DY1P7kuzsE5qSK/6eMj2EHzO5evJRQWLbKSqUMw+4nCNtIyiQg=="
 PI_TARBALL_URL="https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-${PI_PIN}.tgz"
 # Node floor from the pinned package's `engines` field (major.minor). A
 # re-pin must re-check it with `npm view
@@ -464,7 +464,7 @@ PI_NODE_MIN="22.19"
 # The PI_PIN the floor above was read from; validate-pins.sh fails CI until
 # it matches PI_PIN, so a re-pin cannot leave the floor unchecked.
 # shellcheck disable=SC2034  # read by validate-pins.sh, not at runtime
-PI_NODE_MIN_PIN="1.3.0"
+PI_NODE_MIN_PIN="1.4.0"
 PI_NODE_MIN_MAJOR="${PI_NODE_MIN%%.*}"
 PI_NODE_MIN_MINOR="${PI_NODE_MIN#*.}"
 
@@ -1200,7 +1200,7 @@ ROBOREV_AGENT_DEFAULT="pi"
 # this surface (issue #85's gotcha). Empty string disables the line — roborev
 # then decides; the comment in the toml writer explains what each branch
 # means.
-ROBOREV_MODEL_DEFAULT="fireworks/accounts/fireworks/models/glm-5p3"
+ROBOREV_MODEL_DEFAULT="fireworks/accounts/fireworks/models/glm-5p3-flash"
 
 # roborev_quiet <args...>: a roborev CLI call whose output is discarded and
 # which may touch — or lazily start — the daemon. The daemon is long-lived,
