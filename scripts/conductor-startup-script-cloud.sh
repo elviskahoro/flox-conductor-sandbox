@@ -1350,8 +1350,27 @@ roborev_smoke_check() {
     fi
   fi
 }
+# roborev_isolate_daemon: give this sandbox's daemon its own unix socket
+# (issue #98). The default 127.0.0.1:7373 is machine-global, so one
+# sandbox's (or leftover) daemon would answer for every workspace and the
+# host. server_addr in the sandbox-HOME global config makes every roborev
+# call here — daemon, review, check-agents — use the private socket. The
+# socket path is short and keyed on HOME because unix socket paths are
+# capped at ~104 bytes. A server_addr already present is left alone.
+roborev_isolate_daemon() {
+  local cfg="${HOME}/.roborev/config.toml" key sock
+  if grep -qE '^[[:space:]]*server_addr[[:space:]]*=' "${cfg}" 2>/dev/null; then
+    return 0
+  fi
+  key="$(printf '%s' "${HOME}" | cksum | cut -d' ' -f1)"
+  sock="/tmp/roborev-$(id -u)-${key}.sock"
+  mkdir -p "${HOME}/.roborev" || return 1
+  printf 'server_addr = "unix://%s"\n' "${sock}" >>"${cfg}" || return 1
+}
+
 ensure_daemon() {
   local stage="$1"
+  roborev_isolate_daemon || record WARN "${stage}" "could not write server_addr to ${HOME}/.roborev/config.toml — daemon falls back to the machine-global 127.0.0.1:7373 (issue #98)"
   if roborev_quiet status; then
     record PASS "${stage}" "daemon running"
   elif roborev_quiet daemon start; then
