@@ -130,7 +130,7 @@ git push
 
 ### Resolve review comments you have addressed
 
-Review threads (especially from `pullfrog`, also roborev and humans) must not be left open once the issue they raise is fixed. A failing `pullfrog-approval` check means pullfrog's inline comments are unaddressed: fix AND resolve every one. After the fix is pushed:
+Review threads (especially from `pullfrog`, also roborev and humans) must not be left open once the issue they raise is fixed. A failing `pullfrog-approval` check means pullfrog's inline comments are unaddressed: fix every one, push (unpushed fixes don't count, and no need to ask first), AND resolve every one. After the fix is pushed:
 
 - List unresolved threads: `gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{author{login} body path}}}}}}}' -f o=<owner> -f r=<repo> -F n=<pr-number>`
 - For each thread whose concern is actually resolved by a pushed commit, reply briefly with the commit SHA, then resolve it: `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<thread-id>`
