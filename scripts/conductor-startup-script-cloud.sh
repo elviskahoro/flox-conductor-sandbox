@@ -164,10 +164,18 @@
 #                     is the semantic check. Defaults to pi — issue #85's
 #                     rollover from claude-code, because the sandbox's
 #                     pre-authenticated claude-code never reaches a sandbox
-#                     in practice and codex returns 401.
+#                     in practice and codex returns 401. Issue #101's
+#                     override guard: a claude-code or codex value is
+#                     recorded as a louder WARN that names the override and
+#                     points at the script's pi default — pi stays
+#                     uninstalled in that case, so reviews cannot run. Do
+#                     not set ROBOREV_AGENT=claude-code/codex without also
+#                     installing/authenticating the agent on the sandbox; a
+#                     workspace that needs to review must use pi (or an
+#                     agent that actually authenticates here).
 #   ROBOREV_MODEL     optional model override written into .roborev.toml
 #                     alongside `agent`. Defaults to
-#                     `fireworks/accounts/fireworks/models/glm-5p3` —
+#                     `fireworks/accounts/fireworks/models/glm-5p3-flash` —
 #                     issue #85's verified-working pair with Pi + Fireworks.
 #                     The default applies only when the agent is pi; other
 #                     agents get no model line unless this is set.
@@ -419,11 +427,18 @@ roborev_install() {
 # Pinned tarball + SRI sha512 (the same npm registry `dist.integrity` field).
 # Pi 0.73.1 lived under `@mariozechner/pi-coding-agent`; the package was
 # renamed to `@earendil-works/pi-coding-agent` after that release (the Earendil
-# Works handoff, see pi.dev changelog 2026-05). The pinned v1.3.0 is the
+# Works handoff, see pi.dev changelog 2026-05). The pinned v1.4.0 is the
 # continuation of that same line, not a fork. ROBOREV_AGENT=pi is the new
 # default review agent (issue #85's rollover from claude-code): claude-code
 # never reaches a Conductor cloud sandbox in practice and codex returns 401,
 # so roborev's `agent = ...` had no working default for cloud workspaces.
+# Issue #101 sharpens this: a claude-code or codex ROBOREV_AGENT override
+# is now recorded as WARN (not SKIP) so the operator sees it — those two
+# slugs are known-cloudsandbox-broken (issue #85's verified facts) and pi
+# stays uninstalled under the override. Other agent slugs keep the quiet
+# SKIP row because some future version may actually work. Cloud workspaces
+# that need to review must use pi (or an agent that actually authenticates
+# on the sandbox).
 #
 # Pi's engines field requires Node >=22.19.0. AL2023's stock nodejs is 18 and
 # amazon-linux-2023 extras do not carry a 22 — installing Node 22 from
@@ -433,13 +448,13 @@ roborev_install() {
 # bringing in a Node toolchain. Consumers that want a different agent
 # (opencode — issue #85's stated fallback when Pi proves unworkable) can
 # override ROBOREV_AGENT for their own workspaces.
-PI_PIN="1.3.0"
+PI_PIN="1.4.0"
 # SRI base64 SHA512 of the registry tarball. The pair PI_PIN + PI_INTEGRITY
 # is the in-repo pin surface validate-pins.sh cross-checks against itself
 # (single-home, no Flox counterpart). Re-pin by running
 # `npm view @earendil-works/pi-coding-agent@<NEW_PIN> dist` and capturing
 # `integrity` verbatim — don't compute it locally.
-PI_INTEGRITY="sha512-V/WoCjA2hQSe3QLWIUB24cTRdtEdeLiIzkDqU5RMXV6VWuD+KGZnzVBMhglwdnQTySkehZsjt8a3g6Jd2g4nnw=="
+PI_INTEGRITY="sha512-Z41LpZ3yYHSC/UUps6Mr39UMFPwH8elhJBG9DY1P7kuzsE5qSK/6eMj2EHzO5evJRQWLbKSqUMw+4nCNtIyiQg=="
 PI_TARBALL_URL="https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-${PI_PIN}.tgz"
 # Node floor from the pinned package's `engines` field (major.minor). A
 # re-pin must re-check it with `npm view
@@ -449,7 +464,7 @@ PI_NODE_MIN="22.19"
 # The PI_PIN the floor above was read from; validate-pins.sh fails CI until
 # it matches PI_PIN, so a re-pin cannot leave the floor unchecked.
 # shellcheck disable=SC2034  # read by validate-pins.sh, not at runtime
-PI_NODE_MIN_PIN="1.3.0"
+PI_NODE_MIN_PIN="1.4.0"
 PI_NODE_MIN_MAJOR="${PI_NODE_MIN%%.*}"
 PI_NODE_MIN_MINOR="${PI_NODE_MIN#*.}"
 
@@ -475,7 +490,34 @@ pi_install() {
   # so don't download or globally install an agent nobody will use. (A
   # malformed value falls back to pi in roborev_setup, so it still installs.)
   if [[ "${ROBOREV_AGENT:-}" =~ ^[a-z0-9][a-z0-9-]*$ && "${ROBOREV_AGENT}" != "pi" ]]; then
-    record SKIP pi "ROBOREV_AGENT=${ROBOREV_AGENT} selects another review agent — pi not installed"
+    # Issue #101: claude-code never reaches a Conductor cloud sandbox in
+    # practice and codex returns 401 (issue #85's verified facts). A SKIP
+    # row is easy to lose in a long summary when the override is the
+    # specific cause of an apparent hold-up — promote this case to a
+    # higher-severity WARN that names the override, points at issue #101,
+    # and tells the operator how to get reviews working (unset the override
+    # to let pi install). Other agent slugs keep the quiet SKIP because
+    # some future version may actually work.
+    if [[ "${ROBOREV_AGENT}" == "claude-code" || "${ROBOREV_AGENT}" == "codex" ]]; then
+      if command -v pi >/dev/null 2>&1; then
+        # pi is already installed from a prior run, but the override was
+        # since set (the operator's likely intent here: evaluate how the
+        # override behaves without disturbing a working config). The
+        # pi_install stage cannot tell from here whether a committed
+        # `.roborev.toml` exists for the current workspace — that check
+        # lives in roborev_setup, which runs after this — so speak only
+        # about what this stage CAN observe: pi is on PATH, but the
+        # override still drives what roborev_setup writes to a NEW
+        # `.roborev.toml` (a freshly-discovered repo under this override
+        # would land agent = "${ROBOREV_AGENT}" — known-broken here).
+        # The action is unchanged either way: unset the override.
+        record WARN pi "ROBOREV_AGENT=${ROBOREV_AGENT} is a known-cloudsandbox-broken review agent (issue #101): pi is already installed, but the override still drives NEW .roborev.toml writes (a fresh repo this run touches would land agent = \"${ROBOREV_AGENT}\") — unset the override (or set ROBOREV_AGENT=pi) to make pi the workspace-wide default"
+      else
+        record WARN pi "ROBOREV_AGENT=${ROBOREV_AGENT} points at a known-cloudsandbox-broken review agent (issue #101) — pi is not installed, reviews will not run; unset the override (or set ROBOREV_AGENT=pi) so the script's pi default installs"
+      fi
+    else
+      record SKIP pi "ROBOREV_AGENT=${ROBOREV_AGENT} selects another review agent — pi not installed"
+    fi
     return 0
   fi
   if command -v pi >/dev/null 2>&1; then
@@ -1158,7 +1200,7 @@ ROBOREV_AGENT_DEFAULT="pi"
 # this surface (issue #85's gotcha). Empty string disables the line — roborev
 # then decides; the comment in the toml writer explains what each branch
 # means.
-ROBOREV_MODEL_DEFAULT="fireworks/accounts/fireworks/models/glm-5p3"
+ROBOREV_MODEL_DEFAULT="fireworks/accounts/fireworks/models/glm-5p3-flash"
 
 # roborev_quiet <args...>: a roborev CLI call whose output is discarded and
 # which may touch — or lazily start — the daemon. The daemon is long-lived,
@@ -1182,6 +1224,132 @@ roborev_quiet() {
 # repo config) — kept as a helper so a future second caller cannot
 # copy-paste the failure handling into divergent variants (roborev
 # review finding).
+
+# find_repo_root: discover a git worktree when setup runs from a
+# non-worktree cwd (issue #101). Conductor cloud sandboxes run the
+# install script from $HOME — "/home/vercel-sandbox", NOT from inside
+# the cloned repo — so without help every roborev stage (the .roborev.toml
+# write and the hook posture that needs a .git dir) silently SKIPs and
+# a fresh workspace comes up "daemon live, no agent smoke check, no toml
+# written". Resolution order, conservative by design — auto-discovery
+# only fires when the result is unambiguous:
+#   1. CONDUCTOR_WORKSPACE_PATH, when set AND resolvable via `git -C <p>
+#      rev-parse --show-toplevel`. Conductor exposes this env var to its
+#      install scripts (the only place the script can know where the repo
+#      sits); operators in a non-Conductor setup can also set it by hand.
+#   2. A single git worktree directly under $HOME — the path Conductor
+#      clones into. Two or more worktrees at the top level is taken as
+#      ambiguous and we fall through (return 1), so a workspace that
+#      happens to have multiple clones under $HOME never gets the wrong
+#      repo's .roborev.toml silently.
+#   3. Otherwise return 1, and the roborev stage records a loud WARN
+#      naming the gap and still runs the daemon + smoke check (the parts
+#      that don't need a repo root).
+# Prints the toplevel on stdout; returns 0 on success, 1 otherwise.
+# Never writes anything; never changes cwd. No process substitution
+# (gtm-sdk#279: sandboxes can lack /dev/fd, and `set -e` then kills the
+# script silently — same rule as every sandbox-bound script in this repo).
+find_repo_root() {
+  local toplevel found=() dir
+  if [[ -n "${CONDUCTOR_WORKSPACE_PATH:-}" ]]; then
+    if toplevel="$(git -C "${CONDUCTOR_WORKSPACE_PATH}" rev-parse --show-toplevel 2>/dev/null)"; then
+      printf '%s\n' "${toplevel}"
+      return 0
+    fi
+  fi
+  # Plain unquoted glob — pathname expansion results are never re-split,
+  # so spaces in repo names survive. The path is required to end with a
+  # slash via `"${HOME}"/*/`, so plain files at $HOME's top level are
+  # skipped automatically (the glob doesn't match them); only directories
+  # make it through, then we still require a `.git` child to be a worktree.
+  for dir in "${HOME}"/*/; do
+    [[ -d "${dir%/}/.git" ]] || continue
+    if toplevel="$(git -C "${dir%/}" rev-parse --show-toplevel 2>/dev/null)"; then
+      found+=("${toplevel}")
+    fi
+  done
+  if [[ ${#found[@]} -eq 1 ]]; then
+    printf '%s\n' "${found[0]}"
+    return 0
+  fi
+  return 1
+}
+
+# roborev_smoke_check <agent> <repo_root>: verify the configured agent
+# actually answers a smoke prompt — this is what makes reviews work end
+# to end. Non-fatal: a wrong agent choice or a transient failure
+# shouldn't fail setup when roborev itself installed. <repo_root> is
+# empty in the no-worktree fallback (issue #101), in which case there's
+# no .roborev.toml to read the configured model from — fall back to a
+# best-guess assumption: if the agent is pi (the script's default and
+# the most common case), the ROBOREV_MODEL_DEFAULT below would have been
+# written to .roborev.toml in the with-worktree path, so treat the
+# fireworks_model flag as on so the WARN row points at FIREWORKS_API_KEY
+# rather than a generic "agent failed". For pi a generic FAIL row hides
+# the FIREWORKS_API_KEY root cause and the operator never fixes it —
+# RUN 18 captured that exact regression.
+#
+# The has_toml guard: today, has_toml=0 only fires on the no-worktree
+# fallback (repo_root="", the with-worktree path always writes a toml
+# or returns 1 before the smoke check). The -f check is defensive —
+# future call sites that pass a non-empty repo_root without a toml
+# would land here too, and the wording guards are correct either way.
+# In the empty/no-toml state the PASS row must NOT claim "reviews are
+# live" (roborev reads the toml from disk and none was written this
+# run), and the switch_hint must NOT point the operator at editing a
+# .roborev.toml that doesn't exist — same overclaim class commit
+# 244b3bf removed from pi_install's WARN. RUN 25's prefix assert plus
+# its positive/negative wording locks pin the no-toml shape; the
+# with-worktree running case goes through has_toml=1 unchanged.
+roborev_smoke_check() {
+  local agent="$1" repo_root="$2"
+  local has_toml=0
+  if [[ -n "${repo_root}" && -f "${repo_root}/.roborev.toml" ]]; then
+    has_toml=1
+  fi
+  local fireworks_model=0
+  if [[ "${has_toml}" == 1 ]]; then
+    if grep -q '^model = "fireworks/' "${repo_root}/.roborev.toml" 2>/dev/null; then
+      fireworks_model=1
+    fi
+  elif [[ "${agent}" == "pi" ]]; then
+    fireworks_model=1
+  fi
+  # .env.cloud ships a <fireworks-api-key> placeholder; an unreplaced
+  # one is as useless as an unset key, so name it rather than fall to
+  # the generic row.
+  local fireworks_key_state=""
+  if [[ -z "${FIREWORKS_API_KEY:-}" ]]; then
+    fireworks_key_state="is unset"
+  elif [[ "${FIREWORKS_API_KEY}" == "<"*">" ]]; then
+    fireworks_key_state="is still the .env.cloud placeholder"
+  fi
+  # .roborev.toml exists by now in the with-worktree path and is never
+  # rewritten, so ROBOREV_AGENT alone cannot change the agent on a
+  # re-run: say how to actually switch. Two shapes — the toml-editing
+  # pointer only makes sense when a toml is actually present.
+  local switch_hint
+  if [[ "${has_toml}" == 1 ]]; then
+    switch_hint="or switch agents by editing the agent line in .roborev.toml (it wins over ROBOREV_AGENT), or delete it, set ROBOREV_AGENT, and re-run setup"
+  else
+    switch_hint="or set ROBOREV_AGENT to a working agent and re-run setup from inside a discoverable repo (or set CONDUCTOR_WORKSPACE_PATH=/path/to/repo), so the next run writes a .roborev.toml"
+  fi
+  if roborev_quiet check-agents --agent "${agent}" --timeout 30; then
+    if [[ "${has_toml}" == 1 ]]; then
+      record PASS roborev-agent "${agent} answered a smoke prompt — reviews are live"
+    else
+      record PASS roborev-agent "${agent} answered a smoke prompt; no .roborev.toml was written this run, so reviews won't run end-to-end here — ${switch_hint}"
+    fi
+  else
+    if [[ "${agent}" == "pi" ]] && ! command -v pi >/dev/null 2>&1; then
+      record WARN roborev-agent "pi is not installed (see the pi row above) — install Node ${PI_NODE_MIN}+ and re-run setup, ${switch_hint}"
+    elif [[ "${agent}" == "pi" && "${fireworks_model}" == 1 && -n "${fireworks_key_state}" ]]; then
+      record WARN roborev-agent "${agent} smoke failed and FIREWORKS_API_KEY ${fireworks_key_state} — Pi + Fireworks cannot review without the key; export it in Conductor env vars (the script header documents it) and re-run setup, ${switch_hint}"
+    else
+      record WARN roborev-agent "${agent} failed its smoke check — reviews may not run; inspect with roborev check-agents, ${switch_hint}"
+    fi
+  fi
+}
 ensure_daemon() {
   local stage="$1"
   if roborev_quiet status; then
@@ -1195,7 +1363,7 @@ ensure_daemon() {
 }
 
 roborev_setup() {
-  local agent="${ROBOREV_AGENT:-${ROBOREV_AGENT_DEFAULT}}"
+  local agent="${ROBOREV_AGENT:-${ROBOREV_AGENT_DEFAULT}}" repo_root=""
   # ROBOREV_AGENT gets written into .roborev.toml, so gate it syntactically
   # (a lowercase slug: letters, digits, hyphens) — quotes, newlines, or
   # spaces would corrupt the TOML. Deliberately NOT a hard-coded agent
@@ -1218,12 +1386,37 @@ roborev_setup() {
     return 0
   fi
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    record WARN roborev-config "cwd is not a git worktree — skipping roborev setup; run it manually in the repo"
-    return 0
+    local discovered=""
+    # Issue #101: Conductor cloud sandboxes run setup from $HOME, not from
+    # inside the cloned repo, so without auto-discovery every roborev
+    # stage below (the .roborev.toml write + the hook posture that needs
+    # a .git dir) silently SKIPs and a fresh workspace comes up "daemon
+    # live, no agent smoke check, no toml written". Try find_repo_root:
+    # the daemon ensure still needs to run when cwd isn't a worktree, so
+    # even a discovery miss shouldn't bail us out before that. A short
+    # log line surfaces the auto-discovery — it doesn't earn a summary
+    # row because the later .roborev.toml-write or no-worktree-fallback
+    # rows already carry the result.
+    if discovered="$(find_repo_root)"; then
+      log "[context] roborev-config — cwd is not a worktree; using ${discovered} (issue #101, find_repo_root)"
+      cd "${discovered}"
+      repo_root="${discovered}"
+    else
+      # No worktree to write into. Run the parts that don't need one
+      # (the daemon and the smoke check — both daemon-side, neither
+      # touches the filesystem) and surface a single loud WARN naming
+      # the gap, so the operator knows .roborev.toml never landed and
+      # reviews can't read a committed agent.
+      record WARN roborev-config "cwd is not a git worktree and no repo found via CONDUCTOR_WORKSPACE_PATH or \$HOME (issue #101) — skipping .roborev.toml + hook posture; run setup from inside the repo, or set CONDUCTOR_WORKSPACE_PATH=/path/to/repo and re-run; daemon + smoke check still ran below"
+      mkdir -p "${HOME}/.roborev" 2>/dev/null || true
+      ensure_daemon roborev-daemon || return 1
+      roborev_smoke_check "${agent}" ""
+      return 0
+    fi
+  else
+    repo_root="$(git rev-parse --show-toplevel)"
+    cd "${repo_root}"
   fi
-  local repo_root
-  repo_root="$(git rev-parse --show-toplevel)"
-  cd "${repo_root}"
   # Hook posture FIRST: no roborev auto-review hook may survive — a
   # leftover from an older setup of this script (or a bare `roborev init`)
   # would keep enqueueing background reviews on every commit. Removal
@@ -1394,42 +1587,7 @@ roborev_setup() {
   # cheap insurance across roborev versions on the reuse path.
   mkdir -p "${HOME}/.roborev" 2>/dev/null || true
   ensure_daemon roborev-daemon || return 1
-  # Smoke-check that the review agent actually responds — this is what makes
-  # reviews work end to end. Non-fatal: a wrong agent choice or a transient
-  # failure shouldn't fail setup when roborev itself installed and the repo
-  # config was written. For the pi default (issue #85), the most common cause
-  # of failure on a fresh sandbox is a missing FIREWORKS_API_KEY (the agent
-  # is on disk but its model call needs the key) — surface that explicitly so
-  # the row points at the missing var, not a generic "agent failed". When pi
-  # never installed (the npm-absent SKIP), the key cannot help, so say that.
-  # The key hint also needs the configured model to route through Fireworks:
-  # check .roborev.toml so a committed copy counts too.
-  local fireworks_model=0
-  if grep -q '^model = "fireworks/' "${repo_root}/.roborev.toml" 2>/dev/null; then
-    fireworks_model=1
-  fi
-  # .env.cloud ships a <fireworks-api-key> placeholder; an unreplaced one is
-  # as useless as an unset key, so name it rather than fall to the generic row.
-  local fireworks_key_state=""
-  if [[ -z "${FIREWORKS_API_KEY:-}" ]]; then
-    fireworks_key_state="is unset"
-  elif [[ "${FIREWORKS_API_KEY}" == "<"*">" ]]; then
-    fireworks_key_state="is still the .env.cloud placeholder"
-  fi
-  # .roborev.toml exists by now and is never rewritten, so ROBOREV_AGENT
-  # alone cannot change the agent on a re-run: say how to actually switch.
-  local switch_hint="or switch agents by editing the agent line in .roborev.toml (it wins over ROBOREV_AGENT), or delete it, set ROBOREV_AGENT, and re-run setup"
-  if roborev_quiet check-agents --agent "${agent}" --timeout 30; then
-    record PASS roborev-agent "${agent} answered a smoke prompt — reviews are live"
-  else
-    if [[ "${agent}" == "pi" ]] && ! command -v pi >/dev/null 2>&1; then
-      record WARN roborev-agent "pi is not installed (see the pi row above) — install Node ${PI_NODE_MIN}+ and re-run setup, ${switch_hint}"
-    elif [[ "${agent}" == "pi" && "${fireworks_model}" == 1 && -n "${fireworks_key_state}" ]]; then
-      record WARN roborev-agent "${agent} smoke failed and FIREWORKS_API_KEY ${fireworks_key_state} — Pi + Fireworks cannot review without the key; export it in Conductor env vars (the script header documents it) and re-run setup, ${switch_hint}"
-    else
-      record WARN roborev-agent "${agent} failed its smoke check — reviews may not run; inspect with roborev check-agents, ${switch_hint}"
-    fi
-  fi
+  roborev_smoke_check "${agent}" "${repo_root}"
 }
 
 # --- run -------------------------------------------------------------------

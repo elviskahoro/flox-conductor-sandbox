@@ -136,7 +136,7 @@ line-continuations) that Conductor's TOML serialization requires, and
 and optionally `ROBOREV_AGENT` (default `pi`, issue #85's rollover from
 `claude-code`, which never reaches a Conductor cloud sandbox in practice
 and codex returns 401) plus `ROBOREV_MODEL`
-(`fireworks/accounts/fireworks/models/glm-5p3` by default when the agent
+(`fireworks/accounts/fireworks/models/glm-5p3-flash` by default when the agent
 is pi; the
 `fireworks/` provider prefix is required, see issue #85's gotcha) plus
 `FIREWORKS_API_KEY` (Pi + Fireworks cannot review without it; the smoke
