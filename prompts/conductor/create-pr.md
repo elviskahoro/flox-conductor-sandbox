@@ -280,7 +280,7 @@ gh issue comment <number> --repo <owner/repo> --body "Addressed in <PR URL from 
 
 ### Resolve review comments you have addressed
 
-Review threads (especially from `pullfrog`, also roborev and humans) must not be left open once the issue they raise is fixed. Whenever you push fixes to an existing PR (including updating one in this workflow):
+Review threads (especially from `pullfrog`, also roborev and humans) must not be left open once the issue they raise is fixed. **Unresolved threads block pullfrog's approval**, so fixing the code is only half the job: marking the thread resolved is part of the fix. Whenever you push fixes to an existing PR (including updating one in this workflow, and every time Step 13 pushes a fix), do this right after the push, then recheck for new threads until none you've addressed remain open:
 
 - List unresolved threads: `gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{author{login} body path}}}}}}}' -f o=<owner> -f r=<repo> -F n=<pr-number>`
 - For each thread whose concern is actually resolved by a pushed commit, reply briefly with the commit SHA, then resolve it: `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<thread-id>`
@@ -292,9 +292,10 @@ Merging is never automatic, but getting the checks green is part of creating the
 
 1. Wait for checks with `gh pr checks <pr-number> --watch --fail-fast` (or poll `gh pr checks <pr-number>` every 30–60s if `--watch` is unavailable). Treat "no checks reported yet" right after pushing as pending and retry for a couple of minutes before concluding there are none.
 2. If any check fails, read the failing logs (`gh run view <run-id> --log-failed`), reproduce locally where possible, fix the root cause, run the relevant local tests, commit, and push. The branch is now published: add follow-up commits, do not amend, rebase, or force-push. Rerun `roborev review --wait` if the fix is non-trivial (skip if unavailable in a cloud sandbox).
-3. Go back to step 1 with the new run.
+3. After each push, resolve the review threads your fix addressed (see "Resolve review comments you have addressed" above) and check for newly posted review comments; fix and resolve those too.
+4. Go back to step 1 with the new run.
 
-Repeat until every required check passes. Stop and ask the user only when blocked: the failure needs a product/architecture decision, is a flaky or infrastructure failure unrelated to the change that two reruns (`gh run rerun <run-id> --failed`) don't clear, needs secrets or permissions you lack, or the same check still fails after three distinct fix attempts. Report what you tried in that case.
+Repeat until every required check passes and no addressed review thread remains unresolved. Stop and ask the user only when blocked: the failure needs a product/architecture decision, is a flaky or infrastructure failure unrelated to the change that two reruns (`gh run rerun <run-id> --failed`) don't clear, needs secrets or permissions you lack, or the same check still fails after three distinct fix attempts. Report what you tried in that case.
 
 When all checks pass, suggest merging with the GitHub CLI and wait for the user to say yes:
 
