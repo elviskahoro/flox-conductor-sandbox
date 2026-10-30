@@ -485,6 +485,16 @@ sri_to_hex() {
   printf '%s' "${hex}"
 }
 
+# roborev_override_ignored: true when ROBOREV_AGENT names a review agent
+# that never authenticates in Conductor cloud sandboxes (claude-code,
+# codex — issues #85/#101) AND a usable Fireworks key means pi can review
+# instead. The agent running the PR workflow can't change Conductor's env,
+# so setup overrides the override (issue #113) and keeps a WARN row.
+roborev_override_ignored() {
+  [[ "${ROBOREV_AGENT:-}" == "claude-code" || "${ROBOREV_AGENT:-}" == "codex" ]] || return 1
+  [[ -n "${FIREWORKS_API_KEY:-}" && "${FIREWORKS_API_KEY}" != "<"*">" ]]
+}
+
 pi_install() {
   # An explicit, well-formed non-pi ROBOREV_AGENT opts out of the default,
   # so don't download or globally install an agent nobody will use. (A
@@ -498,7 +508,9 @@ pi_install() {
     # and tells the operator how to get reviews working (unset the override
     # to let pi install). Other agent slugs keep the quiet SKIP because
     # some future version may actually work.
-    if [[ "${ROBOREV_AGENT}" == "claude-code" || "${ROBOREV_AGENT}" == "codex" ]]; then
+    if roborev_override_ignored; then
+      record WARN pi "ROBOREV_AGENT=${ROBOREV_AGENT} is a known-cloudsandbox-broken review agent (issues #101, #113) — ignoring it and using pi (FIREWORKS_API_KEY is set); unset the override (or set ROBOREV_AGENT=pi) in Conductor env vars to silence this"
+    elif [[ "${ROBOREV_AGENT}" == "claude-code" || "${ROBOREV_AGENT}" == "codex" ]]; then
       if command -v pi >/dev/null 2>&1; then
         # pi is already installed from a prior run, but the override was
         # since set (the operator's likely intent here: evaluate how the
@@ -518,7 +530,7 @@ pi_install() {
     else
       record SKIP pi "ROBOREV_AGENT=${ROBOREV_AGENT} selects another review agent — pi not installed"
     fi
-    return 0
+    roborev_override_ignored || return 0
   fi
   if command -v pi >/dev/null 2>&1; then
     record PASS pi "reused $(command -v pi) ($(pi --version 2>&1 | head -1 || true))"
@@ -1263,7 +1275,7 @@ find_repo_root() {
   # skipped automatically (the glob doesn't match them); only directories
   # make it through, then we still require a `.git` child to be a worktree.
   for dir in "${HOME}"/*/; do
-    [[ -d "${dir%/}/.git" ]] || continue
+    [[ -e "${dir%/}/.git" ]] || continue
     if toplevel="$(git -C "${dir%/}" rev-parse --show-toplevel 2>/dev/null)"; then
       found+=("${toplevel}")
     fi
@@ -1395,6 +1407,10 @@ roborev_setup() {
     # newlines or control characters — exactly what this gate stops — would
     # split or spoof the multi-line setup summary.
     record WARN roborev-config "ROBOREV_AGENT is malformed (expected a lowercase agent slug like pi) — using ${ROBOREV_AGENT_DEFAULT}; check the environment variable"
+    agent="${ROBOREV_AGENT_DEFAULT}"
+  fi
+  # pi_install already recorded the WARN for this case (issue #113).
+  if roborev_override_ignored; then
     agent="${ROBOREV_AGENT_DEFAULT}"
   fi
   # `git roborev ...` (the push-gate spelling): native git-subcommand
