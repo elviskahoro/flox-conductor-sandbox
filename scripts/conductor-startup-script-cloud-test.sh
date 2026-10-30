@@ -1484,6 +1484,25 @@ case "${RUN23C_OUTPUT}" in
 *"pi | WARN | ROBOREV_AGENT=opencode"*) fail "opencode override run was promoted to WARN — only claude-code/codex should be promoted" ;;
 esac
 
+# RUN 23E (issue #113): with a usable FIREWORKS_API_KEY the broken
+# claude-code/codex override is ignored — pi installs, the WARN stays.
+rm -rf /tmp/pi-override-ignored-repo
+rm -f /usr/local/bin/pi
+su - sandbox-user -c "rm -f ~/.local/bin/pi; git init -q /tmp/pi-override-ignored-repo"
+RUN23E_OUTPUT="$(su - sandbox-user -c "cd /tmp/pi-override-ignored-repo && ROBOREV_AGENT=claude-code FIREWORKS_API_KEY=fw-test PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
+  fail "23E override-ignored run exited non-zero"
+printf '%s' "${RUN23E_OUTPUT}"
+case "${RUN23E_OUTPUT}" in
+*"pi | WARN | ROBOREV_AGENT=claude-code is a known-cloudsandbox-broken review agent (issues #101, #113) — ignoring it and using pi"*) ;;
+*) fail "23E missing the override-ignored WARN row" ;;
+esac
+case "${RUN23E_OUTPUT}" in
+*"pi | PASS |"*) ;;
+*) fail "23E did not install pi despite a usable FIREWORKS_API_KEY" ;;
+esac
+grep -q '^agent = "pi"' /tmp/pi-override-ignored-repo/.roborev.toml ||
+  fail "23E .roborev.toml did not get agent = pi"
+
 # RUN 23D: the tailored-WARN branch — pi is already installed from a
 # prior run, so the override's WARN must NOT say "pi is not installed"
 # (issue #101 followup finding: the original message was misleading on
