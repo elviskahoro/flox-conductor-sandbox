@@ -179,6 +179,9 @@ read too.
 | Log in to Entire from a workspace | [`entire-device-login`](skills/entire-device-login/SKILL.md) |
 | Re-run the Flox experiments | [`flox-sandbox-harness`](skills/flox-sandbox-harness/SKILL.md) |
 | Publish or consume private Flox packages | [`floxhub-auth`](skills/floxhub-auth/SKILL.md) |
+| Validate a change on RWX CI before opening a PR | [`rwx`](skills/rwx/SKILL.md) |
+| Migrate a GitHub Actions workflow to RWX | [`migrate-from-gha`](skills/migrate-from-gha/SKILL.md) |
+| Review an RWX config migrated from GitHub Actions | [`review-gha-migration`](skills/review-gha-migration/SKILL.md) |
 
 The experiment results are in [`findings/`](findings/README.md), and
 [issue #16](https://github.com/elviskahoro/flox-conductor-sandbox/issues/16)
