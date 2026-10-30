@@ -130,9 +130,9 @@
 # filter is what surfaces it). Re-pin runbook: bump CQ_PIN, then download
 # the four release tarballs from
 # https://github.com/mozilla-ai/cq/releases/download/cli/v${CQ_PIN}/cq_<platform>.tar.gz
-# and update the four CQ_SHA256_* constants in the same commit (no
-# checksums file is published alongside the release — hand-hash the
-# downloaded bytes, the same method used for roborev/rwx/entire).
+# and update the four CQ_SHA256_* constants in the same commit; the release
+# also publishes a checksums.txt asset (cq_<Platform>_<arch>.tar.gz names) —
+# cross-check the constants against it.
 #
 # Paste-safety constraints (load-bearing for consumer 2, because Conductor
 # serializes the GUI setup field into a TOML multiline string): NO
@@ -156,7 +156,9 @@
 # tool stages (roborev/trunk/rwx install, rwx auth, roborev
 # config/daemon) record
 # their FAIL rows but do not fail the run (the pi stage never fails it under
-# either posture: a failed install is a WARN row and pi stays uninstalled), and only a Python 3.11 failure
+# either posture: a failed install is a WARN row and pi stays uninstalled; likewise the cq and cq-env stages are WARN-only
+# under both postures — the shared knowledge store is optional tooling; the
+# entire stage records FAIL rows like the other tool stages), and only a Python 3.11 failure
 # on the AL2023 target class (the stated >=3.11 requirement) or a
 # pytools-stage failure when STARTUP_PY_DEV_TOOLS=1 requested them
 # (issue #44: a requested tool that cannot be provisioned must never
@@ -764,9 +766,9 @@ CQ_PIN="0.18.0"
 # #96 recipe's `awk '$1 ~ /^cli\//'` filter is what surfaces the right
 # one). Re-pin runbook: bump CQ_PIN, then `curl -fsSLo <out>
 # https://github.com/mozilla-ai/cq/releases/download/cli/v${CQ_PIN}/cq_<platform>.tar.gz`
-# and `sha256sum <out>` — no checksums file is published alongside the
-# release (same as roborev/rwx), so the four CQ_SHA256_* constants are
-# hand-computed once per pin.
+# and `sha256sum <out>`, or copy the four lines from the release's
+# checksums.txt asset (names are cq_Linux_x86_64.tar.gz etc.), so the four
+# CQ_SHA256_* constants are cross-checked once per pin.
 CQ_SHA256_LINUX_AMD64="27787adbe5ac2ab8daab833033f1c37ea3b0e8fa3b8a8b39db15e9a2aba3dc2c"
 CQ_SHA256_LINUX_ARM64="bcff3c53a0307adf402a3526658fbdd300c4277f6f98fe10753fe169db60c85f"
 CQ_SHA256_DARWIN_AMD64="8c25bbe46f7f14d5d618ac7830a2065b36270a98036391e076d56695b710365b"
@@ -1767,6 +1769,7 @@ cq_env() {
   {
     if [[ -f "${rc}" ]]; then cat "${rc}"; fi
     echo "${CQ_ADDR_BLOCK_BEGIN}"
+    # shellcheck disable=SC2016  # intentional: ${CQ_ADDR:=...} must expand when ~/.bashrc is sourced, not here
     echo ': "${CQ_ADDR:=https://cq.exchange}"'
     echo "export CQ_ADDR"
     echo "${CQ_ADDR_BLOCK_END}"

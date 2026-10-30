@@ -11,13 +11,13 @@ Upstream's full protocol text: `cq prompt skill`. This file adds the sandbox-spe
 
 ## Setup (once per sandbox)
 
-`CQ_API_KEY` is pre-set in the environment. **Never print, log or commit it.** Do not run `env`, `printenv` or `echo $CQ_API_KEY`; test presence with `[ -n "$CQ_API_KEY" ]`.
+`CQ_API_KEY` comes from the workspace's Conductor environment variables (`.env.cloud` lists the `CQ_API_KEY` placeholder; the real key is never committed). **Never print, log or commit it.** Do not run `env`, `printenv` or `echo $CQ_API_KEY`; test presence with `[ -n "$CQ_API_KEY" ]`.
 
 The workspace startup script (`scripts/conductor-startup-script-cloud.sh`, run by `.conductor/settings.toml`) installs the cq CLI at a pinned version and writes a `CQ_ADDR=https://cq.exchange` block to `~/.bashrc` so later shells reach the remote store. A fresh shell needs nothing else:
 
 ```bash
 cq --version          # sanity-check the install — expect `cq v<pin> (…)`
-cq status             # must show `By tier: public N` with N > 0 (the remote store)
+cq status             # with CQ_API_KEY: `By tier: public N`, N > 0. Without it: a `401 missing_api_key` warning plus `Knowledge units: 0` (the warning proves CQ_ADDR reached the remote; keyless `cq query` still works). Zeros with NO warning = CQ_ADDR unset (local SQLite)
 ```
 
 Register the MCP tools with the harness you're running in this session (CLI equivalent — `cq install` registers MCP tools that appear in a NEW agent session after registration):

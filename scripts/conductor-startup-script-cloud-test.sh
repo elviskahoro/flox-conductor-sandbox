@@ -159,7 +159,7 @@
 #     pi, and a failing check-agents stub.
 #   - RUN 26/27/28 (issue #96): cq cold install via the same fixture-driven
 #     patch-and-stub pattern RUN 22 uses for entire — deterministic tarball
-#     body → sha256 → patch CQ_SHA256_LINUX_AMD64 in a sandbox copy →
+#     body → sha256 → patch the host-arch CQ_SHA256_LINUX_* constant in a sandbox copy →
 #     stubbed curl serves the prepped tar for the cq URL — followed by the
 #     idempotent re-run (REUSE row) and the integrity-mismatch WARN branches
 #     under BOTH STARTUP_BEST_EFFORT=1 and the default strict posture. The
@@ -1801,7 +1801,7 @@ su - sandbox-user -c "cd /tmp && unset ROBOREV_MODEL && HOME=/tmp/isolate-home P
 echo "=== RUN 26: cq install via stubbed curl; replay the SUM script's per-platform pin path ==="
 # Issue #96 install path with the same fixture-driven pattern RUN 22 uses
 # for entire: deterministic binary fixture → tar the binary + README/etc →
-# sha256 → patch CQ_SHA256_LINUX_AMD64 in a sandbox copy → stubbed curl
+# sha256 → patch the host-arch CQ_SHA256_LINUX_* constant in a sandbox copy → stubbed curl
 # serves the prepped tar for the cq URL. The cq stage is WARN-only under
 # both postures (knowledge-store access is optional tooling, never fatal
 # to set up), so under the DEFAULT posture the run still exits 0 — only
@@ -1814,7 +1814,7 @@ echo "=== RUN 26: cq install via stubbed curl; replay the SUM script's per-platf
 # take the pinned CQ_PIN off the LIVE script, (3) substitute the
 # placeholder with that pin (so `cq --version` after install reports it),
 # (4) tar the binary, (5) sha256 the tar, (6) patch the script's
-# CQ_SHA256_LINUX_AMD64 constant to match, (7) stub curl serves the
+# host-arch CQ_SHA256_LINUX_* constant to match, (7) stub curl serves the
 # prepped tar for the cq URL. This keeps the integrity constant in
 # lock-step with the served tar, the same proven-shape pattern
 # gtm-sdk#619 and RUN 14/22 use.
@@ -1835,8 +1835,8 @@ sed -i.bak "s|@CQ_PIN_VALUE@|${LIVE_CQ_PIN_VALUE}|g" /tmp/cq-fixture/cq
 tar -czf /tmp/cq-fixture-tar -C /tmp/cq-fixture cq
 CQ_FIXTURE_SHA256_HEX="$(sha256sum /tmp/cq-fixture-tar | awk '{print $1}')"
 echo "cq fixture tar sha256: ${CQ_FIXTURE_SHA256_HEX}"
-# Sandbox copy of the startup script with CQ_SHA256_LINUX_AMD64 rewritten
-# to match the test fixture's actual tar file. The live CQ_SHA256_LINUX_AMD64
+# Sandbox copy of the startup script with the host-arch CQ_SHA256_LINUX_* rewritten
+# to match the test fixture's actual tar file. The live CQ_SHA256_LINUX_*
 # stays in scripts/conductor-startup-script-cloud.sh; the rewrite happens
 # ONLY on this /tmp copy. The pin, the runtime case branch, the install_bin
 # call, and the version accept check all stay as the production script has
@@ -1915,7 +1915,7 @@ su - sandbox-user -c "
 echo "=== RUN 27: cq reused on idempotent re-run ==="
 # Cold-install via RUN 26 left /usr/local/bin/cq for sandbox-user; a re-run
 # must take the reuse row, not re-download, AND must still record the
-# cq-env PASS row (the ~/.bashrc CQ_ADDR block from RN 23 is still there,
+# cq-env PASS row (the ~/.bashrc CQ_ADDR block from RUN 26 is still there,
 # so the cq-env PASS is the 'reused PASS').
 RUN27_OUTPUT="$(su - sandbox-user -c "cd /tmp/cq-install-repo && PATH=/tmp/cq-install-stubs:/usr/local/bin:\$PATH bash /tmp/cq-startup.sh")" ||
   fail "cq-reuse run exited non-zero"
