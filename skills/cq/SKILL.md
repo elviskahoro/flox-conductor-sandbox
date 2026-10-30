@@ -16,7 +16,7 @@ Upstream's full protocol text: `cq prompt skill`. This file adds the sandbox-spe
 The workspace startup script (`scripts/conductor-startup-script-cloud.sh`, run by `.conductor/settings.toml`) installs the cq CLI at a pinned version and writes a `CQ_ADDR=https://cq.exchange` block to `~/.bashrc` so later shells reach the remote store. A fresh shell needs nothing else:
 
 ```bash
-cq --version          # sanity-check the install — expect CQ CLI <pin>
+cq --version          # sanity-check the install — expect `cq v<pin> (…)`
 cq status             # must show `By tier: public N` with N > 0 (the remote store)
 ```
 

@@ -843,7 +843,7 @@ cq_install() {
     log "error: cq installed at ${path} but not on PATH"
     return 1
   fi
-  # cq --version reports CQ CLI x.y.z; pin check is the structural
+  # cq --version reports cq vX.Y.Z (...); pin check is the structural
   # acceptance surface — a present-but-broken binary (e.g. the wrong
   # platform asset landed) would still record a re-use PASS and silently
   # never reach the remote store, so reject it here on the cold path.

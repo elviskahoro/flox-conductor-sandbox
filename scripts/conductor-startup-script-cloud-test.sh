@@ -1828,7 +1828,7 @@ mkdir -p /tmp/cq-install-stubs /tmp/cq-fixture
 # in the version line lets us sed in the live CQ_PIN before tarring —
 # exactly the same shape gtm-sdk#619 used for the pytools fixtures.
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in --version) echo "CQ CLI @CQ_PIN_VALUE@ - shared knowledge store CLI";; --help) exit 0;; *) exit 1;; esac\n' > /tmp/cq-fixture/cq
+printf '#!/bin/sh\ncase "$1" in --version) echo "cq v@CQ_PIN_VALUE@ (stub)";; --help) exit 0;; *) exit 1;; esac\n' > /tmp/cq-fixture/cq
 chmod 755 /tmp/cq-fixture/cq
 LIVE_CQ_PIN_VALUE="$(sed -n 's/^CQ_PIN="\([^"]*\)".*/\1/p' "${STARTUP_SCRIPT}")"
 sed -i.bak "s|@CQ_PIN_VALUE@|${LIVE_CQ_PIN_VALUE}|g" /tmp/cq-fixture/cq
@@ -1841,13 +1841,19 @@ echo "cq fixture tar sha256: ${CQ_FIXTURE_SHA256_HEX}"
 # ONLY on this /tmp copy. The pin, the runtime case branch, the install_bin
 # call, and the version accept check all stay as the production script has
 # them.
-sed "s|^CQ_SHA256_LINUX_AMD64=.*|CQ_SHA256_LINUX_AMD64=\"${CQ_FIXTURE_SHA256_HEX}\"|" \
+# Host-arch aware: the script picks the asset/constant by `uname -m`, so an
+# arm64 docker host (Apple Silicon) must patch and serve the arm64 pair.
+case "$(uname -m)" in
+aarch64 | arm64) CQ_SHA_VAR="CQ_SHA256_LINUX_ARM64"; CQ_ASSET="cq_Linux_arm64.tar.gz" ;;
+*) CQ_SHA_VAR="CQ_SHA256_LINUX_AMD64"; CQ_ASSET="cq_Linux_x86_64.tar.gz" ;;
+esac
+sed "s|^${CQ_SHA_VAR}=.*|${CQ_SHA_VAR}=\"${CQ_FIXTURE_SHA256_HEX}\"|" \
   "${STARTUP_SCRIPT}" > /tmp/cq-startup.sh
-grep -qxF "CQ_SHA256_LINUX_AMD64=\"${CQ_FIXTURE_SHA256_HEX}\"" /tmp/cq-startup.sh ||
-  fail "CQ_SHA256_LINUX_AMD64 patch did not apply to /tmp/cq-startup.sh"
+grep -qxF "${CQ_SHA_VAR}=\"${CQ_FIXTURE_SHA256_HEX}\"" /tmp/cq-startup.sh ||
+  fail "${CQ_SHA_VAR} patch did not apply to /tmp/cq-startup.sh"
 chmod 755 /tmp/cq-startup.sh
 CQ_PIN_VALUE="${LIVE_CQ_PIN_VALUE}"
-CQ_STUB_URL="https://github.com/mozilla-ai/cq/releases/download/cli/v${CQ_PIN_VALUE}/cq_Linux_x86_64.tar.gz"
+CQ_STUB_URL="https://github.com/mozilla-ai/cq/releases/download/cli/v${CQ_PIN_VALUE}/${CQ_ASSET}"
 # Stub curl with the same parser shape as RUN 14's pi stub / RUN 22's entire
 # stub: -fsSLo <path> in one or two args, OR the split -o <path> form. The
 # cq tarball URL yields the prepped tarball (so the integrity verify
@@ -1902,7 +1908,7 @@ su - sandbox-user -c "
   [ -x /usr/local/bin/cq ] ||
     fail \"cq-install run did not place the cq binary under /usr/local/bin\"
   cq_version_out=\"\$(cq --version 2>&1)\" || true
-  printf '%s' \"\${cq_version_out}\" | grep -q \"CQ CLI ${CQ_PIN_VALUE}\" ||
+  printf '%s' \"\${cq_version_out}\" | grep -q \"cq v${CQ_PIN_VALUE}\" ||
     fail \"installed cq --version does not report the pin \${CQ_PIN_VALUE}: \${cq_version_out}\"
 " || fail "cq-install verification failed"
 
