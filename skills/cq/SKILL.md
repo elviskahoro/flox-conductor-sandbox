@@ -45,7 +45,7 @@ For experiments, point `CQ_LOCAL_DB_PATH` at a temp file so you don't pollute th
 
 ### confirm / flag: feedback on a KU
 - `cq confirm <unit_id>`: +confidence (0.5 -> 60% observed).
-- `cq flag <unit_id> --reason duplicate|incorrect|stale [--detail text] [--duplicate-of <id>]`: lowers confidence (60% -> 45% observed). `--reason` required.
+- `cq flag <unit_id> --reason incorrect|stale [--detail text]` or `cq flag <unit_id> --reason duplicate --duplicate-of <id> [--detail text]`: lowers confidence (60% -> 45% observed). `--reason` is required; `duplicate` without `--duplicate-of` fails with `duplicate requires WithDuplicateOf option` (exit 1).
 - Units whose tier is `private`/remote need a configured remote, otherwise: `knowledge unit X has tier private but no remote API is configured` (exit 1).
 
 ### status
@@ -55,7 +55,7 @@ For experiments, point `CQ_LOCAL_DB_PATH` at a temp file so you don't pollute th
 `cq drain [--dry-run] [--format json]`: push local KUs to the remote and delete the pushed ones locally. Requires `CQ_ADDR`, else `no remote API configured` (exit 1). Use `--dry-run` first.
 
 ### auth
-`cq auth login <provider> | logout | status | providers | key`: interactive OIDC sign-in to the cq platform (control plane). All need `CQ_ADDR` (`providers` errors `no platform address configured` without it). `status` when signed out exits 1 with `credstore: no credentials stored`. Not exercised beyond that (needs a platform).
+`cq auth login <provider> | logout | status | providers | key`: interactive OIDC sign-in to the cq platform (control plane). `login`, `key` and `providers` need `CQ_ADDR` (`providers` errors `no platform address configured` without it). `logout` and `status` work without it: `logout` prints `Signed out (local credentials cleared).` (exit 0); `status` when signed out exits 1 with `credstore: no credentials stored`. `login`/`key` not exercised (need a platform).
 
 ### install: wire cq into an agent host
 `cq install --target <host>... [--dry-run] [--project DIR] [--uninstall]`
@@ -84,4 +84,5 @@ For experiments, point `CQ_LOCAL_DB_PATH` at a temp file so you don't pollute th
 - `--format json` on query/propose/status/drain gives machine-readable output; confirm/flag print text only.
 - Error output goes with `Error:` prefix; `auth status` prints a hint and an error line.
 - Local-only mode needs no config; remote features (drain, private-tier confirm/flag, auth) all require `CQ_ADDR`.
+- Remote mode (reported by a PR reviewer from earlier sandbox runs against the shared store; not re-verified here): a `propose` the remote rejects (missing/invalid `CQ_API_KEY`) still exits 0 with a stderr warning and keeps the unit locally; only `confirm`/`flag` hard-fail. Newly proposed units are pending/private, invisible to `query`, and 404 on `confirm`/`flag`, so a 404 right after a successful propose is expected.
 - Not verified: real remote server, `auth login`, `auth key`, `drain` without `--dry-run`, actually running `install` (only dry-run).
