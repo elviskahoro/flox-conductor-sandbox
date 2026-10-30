@@ -1,88 +1,131 @@
 ---
 name: cq
-description: Use the `cq` CLI (mozilla-ai/cq), a shared knowledge store for coding agents. Use when installing cq, querying/proposing/confirming/flagging knowledge units (KUs), configuring local vs remote stores (CQ_ADDR, CQ_API_KEY, CQ_LOCAL_DB_PATH), installing cq into agent hosts, running the cq MCP server, or debugging cq errors.
+description: Use when starting a task in this repo's Conductor cloud sandboxes, when hitting a non-obvious error or tool quirk, or when asked to install, query, propose to, confirm or flag cq (mozilla-ai shared knowledge store) knowledge units via the `cq` CLI or its MCP tools.
 ---
 
-# cq CLI
+# Using cq in Conductor sandboxes
 
-`cq` stores short "knowledge units" (KUs): insights about pitfalls, stale versions, and quirks that agents hit. Agents query before acting and propose after discovering something non-obvious. It works fully offline against a local SQLite DB; a remote store is optional. Verified against cq v0.18.0 (Linux x86_64).
+cq is a shared knowledge store for coding agents (<https://docs.mozilla.ai/cq>). The store is **public and shared across orgs**: everything you `propose` is visible to others. Query before acting, propose what you learn, confirm or flag what you used.
 
-## Install
+Upstream's full protocol text: `cq prompt skill`. This file adds the sandbox-specific setup, CLI usage and gotchas.
 
-- Go: `go install github.com/mozilla-ai/cq/cli@latest`
-- Release binary (no Go needed): releases tagged `cli/vX.Y.Z` at github.com/mozilla-ai/cq. Assets: `cq_{Linux,Darwin,Windows}_{x86_64,arm64}`, plus `checksums.txt`.
-  ```bash
-  gh release download cli/v0.18.0 -R mozilla-ai/cq -p cq_Linux_x86_64.tar.gz -p checksums.txt
-  sha256sum -c checksums.txt --ignore-missing
-  tar -xzf cq_Linux_x86_64.tar.gz && cp cq ~/.local/bin/
-  ```
-- Not the PyPI/npm package named `cq`; those are unrelated projects.
-- Check: `cq --version` -> `cq v0.18.0 (<sha>), built <date>`.
+## Setup (once per sandbox)
 
-## Global flags / env (every command)
+`CQ_API_KEY` comes from the workspace's Conductor environment variables (`.env.cloud` lists the `CQ_API_KEY` placeholder; the real key is never committed). **Never print, log or commit it.** Do not run `env`, `printenv` or `echo $CQ_API_KEY`; test presence with `[ -n "$CQ_API_KEY" ]`.
 
-| Flag | Env | Meaning |
-|---|---|---|
-| `--db-path` | `CQ_LOCAL_DB_PATH` | Local SQLite path. Default `~/.local/share/cq/local.db` |
-| `--addr` | `CQ_ADDR` | Remote API address (unset = local-only) |
-| `--api-key` | `CQ_API_KEY` | Remote data-plane key (never stored by `cq auth`) |
-| `--timeout` | `CQ_TIMEOUT` (seconds) | Operation timeout, default 30s |
+The workspace startup script (`scripts/conductor-startup-script-cloud.sh`, run by `.conductor/settings.toml`) installs the cq CLI at a pinned version and writes a `CQ_ADDR=https://cq.exchange` block to `~/.bashrc` so later shells reach the remote store. A fresh shell needs nothing else:
 
-For experiments, point `CQ_LOCAL_DB_PATH` at a temp file so you don't pollute the real store.
+```bash
+cq --version          # sanity-check the install — expect `cq v<pin> (…)`
+cq status             # with CQ_API_KEY: `By tier: public N`, N > 0. Without it: a `401 missing_api_key` warning plus `Knowledge units: 0` (the warning proves CQ_ADDR reached the remote; keyless `cq query` still works). Zeros with NO warning = CQ_ADDR unset (local SQLite)
+```
+
+Register the MCP tools with the harness you're running in this session (CLI equivalent — `cq install` registers MCP tools that appear in a NEW agent session after registration):
+
+```bash
+cq install --target claude        # also: codex, copilot, cursor, devin-desktop, opencode, pi
+```
+
+- Use `brew install mozilla-ai/tap/cq` if brew exists (it does not on the AL2023 sandboxes) — the startup script already handles the brew-absent case via the GitHub release archive pinned in `CQ_PIN`/`CQ_SHA256_LINUX_AMD64` (and the other three platforms).
+- Only `cli/vX.Y.Z` release tags are the CLI; `plugin/`, `sdk/python/`, `docs/` are not. The startup script's URL is `https://github.com/mozilla-ai/cq/releases/download/cli/v${CQ_PIN}/cq_<platform>.tar.gz`.
+- **`CQ_ADDR` must be set, or cq silently uses an empty local SQLite store** (`~/.local/share/cq/local.db`), despite `--help` showing `https://cq.exchange` as the default (verified 2026-10-25, v0.18.0: unset gives `Knowledge units: 0` and empty queries; set gives 94 units and results). The startup script persists the address in `~/.bashrc` (the `${CQ_ADDR:=...}` form, so a self-hosted URL the workspace sets still wins) but only shells that source `~/.bashrc` will pick it up. In any other shell, export it yourself: `export CQ_ADDR=https://cq.exchange` (or your self-hosted URL). Tool calls that don't share a shell need it per command, e.g. `CQ_ADDR=https://cq.exchange cq query ...`. `cq drain` pushes local units to the remote.
+- The key is required for `propose`, `confirm`, `flag`; optional for `query`, `status`.
+- Other `--target` values: `codex`, `copilot`, `cursor`, `devin-desktop`, `opencode`, `pi`.
+
+If `cq --version` is missing on a fresh sandbox, the startup script's install row was a WARN (the network or GitHub rate-limit failed). The by-hand fallback:
+
+```bash
+d=$(mktemp -d) && cd "$d"
+curl -fsSLo cq_Linux_x86_64.tar.gz https://github.com/mozilla-ai/cq/releases/download/cli/v0.18.0/cq_Linux_x86_64.tar.gz   # cq_Linux_arm64.tar.gz on arm64
+mkdir x && tar xzf cq_Linux_x86_64.tar.gz -C x
+mkdir -p ~/.local/bin && install x/cq ~/.local/bin/cq   # sudo install -m 755 x/cq /usr/local/bin/cq if writable
+export CQ_ADDR=https://cq.exchange                      # or your self-hosted URL
+```
+
+## The loop
+
+1. **Query before acting** on anything involving external services, unfamiliar libraries/tools, CI/CD or infra config, or an error you're about to retry. Skip for routine edits in code you've already been working in, and for topics already queried this session.
+2. **Apply, but verify.** Use the unit's `action` as a starting point. Confidence is a social signal, not freshness. If it helps, `confirm` immediately.
+3. **Propose when an insight stabilizes** (not at end of session): something non-obvious you had to dig for, a surprising tool behavior, an error whose cause wasn't evident.
+4. **Before saying "done":** confirm what proved right, flag what was wrong or stale.
 
 ## Commands
 
-### query: search before acting
-`cq query --domain <tag>... [--language L] [--framework F] [--pattern P] [--limit 5] [--format text|json]`
-- `--domain` required, repeatable. Language/framework filters repeatable.
-- No match prints `No matching knowledge units found.` and exits 0.
+MCP tools (`query`, `propose`, `confirm`, `flag`, `status`) are preferred when available; the CLI is equivalent.
 
-### propose: add a KU
-`cq propose --summary S --detail D --action A --domain tag... [--language L] [--framework F] [--pattern P] [--format json]`
-- Required: `--summary`, `--detail`, `--action`, `--domain`. Missing -> `Error: required flag(s) ... not set`, exit 1.
-- Returns an id like `ku_<32hex>`, starting confidence 0.5, tier `local`.
-- Strip project-specific details and secrets first; proposals may be shared.
+Check you're on the remote first: `cq status` should show `By tier: public` with a non-zero count. `Knowledge units: 0` and no tiers means local SQLite (see `CQ_ADDR` above).
 
-### confirm / flag: feedback on a KU
-- `cq confirm <unit_id>`: +confidence (0.5 -> 60% observed).
-- `cq flag <unit_id> --reason incorrect|stale [--detail text]` or `cq flag <unit_id> --reason duplicate --duplicate-of <id> [--detail text]`: lowers confidence (60% -> 45% observed). `--reason` is required; `duplicate` without `--duplicate-of` fails with `duplicate requires WithDuplicateOf option` (exit 1).
-- Units whose tier is `private`/remote need a configured remote, otherwise: `knowledge unit X has tier private but no remote API is configured` (exit 1).
+```bash
+cq status
+cq query --domain ci --domain github-actions --language python --limit 10 [--framework X] [--pattern P] [--format json]
+cq propose --summary "..." --detail "..." --action "..." --domain D [--domain D2] [--language L] [--framework F] [--pattern P]
+cq confirm <unit_id>
+cq flag <unit_id> --reason stale|incorrect|duplicate [--detail "..."] [--duplicate-of <id>]
+```
 
-### status
-`cq status [--format json]`: total count, per-domain counts, recent units, confidence histogram (buckets 0.0-0.3, 0.3-0.5, 0.5-0.7, 0.7-1.0), tier counts.
+`--domain` is required for `query` and `propose` and is repeatable. Put each term in one field only:
 
-### drain
-`cq drain [--dry-run] [--format json]`: push local KUs to the remote and delete the pushed ones locally. Requires `CQ_ADDR`, else `no remote API configured` (exit 1). Use `--dry-run` first.
+| Field | Holds | Examples |
+| --- | --- | --- |
+| domain | subject area (not "gotchas"/"tips") | `ci`, `http`, `shell`, `snapshot-build` |
+| language | programming language | `python`, `bash` |
+| framework | library, runtime or platform | `fastapi`, `flox`, `conductor`, `vercel-sandbox` |
+| pattern | optional cross-cutting concern | `shell-quoting` |
 
-### auth
-`cq auth login <provider> | logout | status | providers | key`: interactive OIDC sign-in to the cq platform (control plane). `login`, `key` and `providers` need `CQ_ADDR` (`providers` errors `no platform address configured` without it). `logout` and `status` work without it: `logout` prints `Signed out (local credentials cleared).` (exit 0); `status` when signed out exits 1 with `credstore: no credentials stored`. `login`/`key` not exercised (need a platform).
+Tag where the insight *applies*, not where you observed it. Don't tag with this repo's name. Multiple `--domain` values broaden or narrow results unpredictably; if a query is empty, retry with fewer tags (one domain, then add `--language`).
 
-### install: wire cq into an agent host
-`cq install --target <host>... [--dry-run] [--project DIR] [--uninstall]`
-- Hosts: claude, codex, copilot, cursor, devin-desktop, opencode, pi. Idempotent.
-- Always `--dry-run` first. Observed plans: `claude` -> adds the claude marketplace/plugin; `codex` -> `~/.agents/skills`, `~/.codex/config.toml`, `~/.codex/AGENTS.md`; `pi` -> `~/.agents/skills`, `~/.pi/agent/prompts`, `~/.pi/agent/AGENTS.md`.
-- `--project` is not supported by every host (`host claude does not support project installs`).
-- Claude Code alternative: `claude plugin marketplace add mozilla-ai/cq && claude plugin install cq`.
+Confidence: new units start at 0.5; each confirm +0.1; each flag -0.15. Treat >0.7 as well-confirmed, <0.5 as possibly stale.
 
-### mcp
-`cq mcp`: MCP server on stdio. Verified tools: `query`, `propose`, `confirm`, `flag`, `status` (server name `cq`).
+## Presenting results
 
-### prompt
-`cq prompt skill|reflect|status`: print the canonical agent skill / `/cq:reflect` / `/cq:status` prompts for hosts without the plugin. `cq prompt skill` is the authoritative agent-behavior spec (query-first loop, VIBE√ safety check before propose, confirm/flag etiquette).
+After a query that returns units, show the user a table with the **full** unit ID (never truncated), confidence %, and summary. No table if nothing returned.
 
-### completion / help
-`cq completion <shell>`, `cq help <cmd>`.
+## Proposing: the safety gate
 
-## Agent workflow (from `cq prompt skill`)
-1. Before non-trivial work (external APIs, new libs, CI/infra, errors): `query` with domain tags.
-2. If guidance helps, `confirm` it right away; if wrong/stale, `flag` with reason.
-3. When you learn something non-obvious, draft a KU, show the user, and `propose` only after approval (unattended runs follow the headless rules in the prompt).
-4. Before finishing: confirm used KUs, flag bad ones.
+Units go to a shared store others can read once approved. Before proposing:
 
-## Gotchas
-- Exit codes: 0 success (including empty query), 1 for any error (missing flags, no remote, not signed in).
-- `--format json` on query/propose/status/drain gives machine-readable output; confirm/flag print text only.
-- Error output goes with `Error:` prefix; `auth status` prints a hint and an error line.
-- Local-only mode needs no config; remote features (drain, private-tier confirm/flag, auth) all require `CQ_ADDR`.
-- Remote mode (reported by a PR reviewer from earlier sandbox runs against the shared store; not re-verified here): a `propose` the remote rejects (missing/invalid `CQ_API_KEY`) still exits 0 with a stderr warning and keeps the unit locally; only `confirm`/`flag` hard-fail. Newly proposed units are pending/private, invisible to `query`, and 404 on `confirm`/`flag`, so a 404 right after a successful propose is expected.
-- Not verified: real remote server, `auth login`, `auth key`, `drain` without `--dry-run`, actually running `install` (only dry-run).
+- **Get user approval** for the exact text, unless the run is unattended with no user to ask (then propose only if the insight is clearly generic and clean; otherwise record it as a GitHub issue per the general prompt). The workspace owner has said writing to the shared store is fine; the approval step is still about content safety.
+- **Strip**: secrets, tokens, API keys, internal URLs/hostnames, usernames, emails, customer or org names, private repo names/paths, proprietary code. Generalize to portable terms.
+- **Keep**: tool/version, symptom (exact error text if generic), root cause, concrete fix, and "Verified YYYY-MM" with the context it was verified in.
+- Propose only what is non-obvious, verified, and reusable. Not task logs, opinions, or things the docs state plainly.
+- `summary`: one-line finding. `detail`: symptom + cause + context. `action`: imperative instruction.
+- No AI attribution text in units. Don't propose placeholder or "smoke test" units; use `cq status` and `cq query` to check connectivity.
+
+## Verified behavior (cq v0.18.0, remote mode, tested 2026-10-25)
+
+| Behavior | Detail |
+| --- | --- |
+| `CQ_ADDR` unset | Uses local SQLite: `cq status` says `Knowledge units: 0`, all queries empty. `--help` claims a default but it is not applied. The startup script writes a `CQ_ADDR` block to `~/.bashrc` (the `${CQ_ADDR:=...}` form, so a workspace-set URL still wins); in shells that don't source it, export it yourself (`export CQ_ADDR=https://cq.exchange` or your self-hosted URL). |
+| `cq status` on remote | `Knowledge units: N` and `By tier: public N`. The confidence histogram "excludes public commons", so it shows zeros for a public-only view; that's normal. |
+| `propose` | Succeeds and returns `ku_<32 hex>` (use `--format json` to get the full record). The unit comes back with `"tier": "private"`, confidence 0.5. |
+| New unit visibility | A private unit does **not** appear in `cq query` (even with its exact domains) and `confirm`/`flag` on its id return `404 Knowledge unit not found`. Treat a 404 right after `propose` as expected, not a failure; don't loop. Queries return only `public` tier units. |
+| `confirm <public id>` | Works: `Confirmed ku_... (confidence: N%)`. Only confirm after you actually verified the guidance. |
+| `flag` | Needs `--reason` in `duplicate`, `incorrect`, `stale`; anything else is rejected client-side. Unknown or private id gives 404. |
+| No `CQ_API_KEY` | Writes fail with `401 missing_api_key`. Reads still work. |
+| Missing flags | `propose` requires `--summary`, `--detail`, `--action` and at least one `--domain`; `query` requires `--domain`. |
+| Multiple `--domain` | Behaves as OR/overlap, not strict AND: `--domain cq --domain nonexistent-zzz` still returned the `cq` unit. A single unmatched domain returns nothing. More tags widen results and add noise; prefer 1-2 specific domains plus `--language`/`--framework`. |
+| `--format json` | Gives full records: `id`, `domains`, `insight.{summary,detail,action}`, `context`, `evidence.{confidence,confirmations,last_confirmed}`, `tier`, `flags`. Use it to build the results table. |
+| `cq drain --dry-run` | `Would push N unit(s) to remote.` Only relevant if units were written while on the local store. |
+
+## Reconciling conflicting guidance
+
+Units can disagree (e.g. "pin Actions to a full commit SHA" vs "pin setup-uv to an exact version"). Prefer the stricter one that satisfies both (pin the SHA and note the version in a comment), verify against current docs, and `flag` the one that is wrong or stale.
+
+## Other gotchas
+
+- `cq install` registers MCP tools only for new agent sessions; restart the session to use them.
+- `cq drain` removes units from local storage once pushed; use `--dry-run` first.
+- Query returns 5 results by default; raise `--limit` for exploratory searches.
+- If `cq` fails with auth errors, say so and stop; don't hunt for other credentials.
+
+## Other commands and flags (from main's CLI reference)
+
+Global flags (every command): `--db-path`/`CQ_LOCAL_DB_PATH` (local SQLite, default `~/.local/share/cq/local.db`), `--addr`/`CQ_ADDR`, `--api-key`/`CQ_API_KEY`, `--timeout`/`CQ_TIMEOUT` (seconds, default 30). For experiments, point `CQ_LOCAL_DB_PATH` at a temp file so you don't pollute the real store.
+
+- `cq install --target <host>... [--dry-run] [--project DIR] [--uninstall]`: idempotent; run `--dry-run` first. `--project` is not supported by every host (e.g. claude). Claude Code alternative: `claude plugin marketplace add mozilla-ai/cq && claude plugin install cq`.
+- `cq mcp`: MCP server on stdio (tools `query`, `propose`, `confirm`, `flag`, `status`).
+- `cq prompt skill|reflect|status`: print the canonical agent prompts; `cq prompt skill` is the authoritative behavior spec.
+- `cq auth login|logout|status|providers|key`: OIDC sign-in to the cq platform. `login`, `key`, `providers` need `CQ_ADDR`; `auth status` exits 1 with `credstore: no credentials stored` when signed out. Not exercised against a real platform.
+- `cq status --format json` gives per-domain counts, recent units, a confidence histogram and tier counts.
+- Exit codes: 0 on success (including empty query), 1 on any error. `confirm`/`flag` print text only; `--format json` applies to query/propose/status/drain.
+- A `propose` the remote rejects (bad or missing `CQ_API_KEY`) may exit 0 with a stderr warning and keep the unit locally (reported by a reviewer, not re-verified); `confirm`/`flag` hard-fail.

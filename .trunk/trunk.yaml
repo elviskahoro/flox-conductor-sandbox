@@ -258,6 +258,14 @@ lint:
       paths:
         - .trunk/**
 
+    # shfmt rewrites the double-quoted `su - sandbox-user -c "...$PATH..."`
+    # strings to single quotes, which trips SC2016 in CI's shellcheck gate
+    # (0.9.0). The committed 2-space/double-quote style wins; shellcheck is
+    # the only gated check for these scripts.
+    - linters: [shfmt]
+      paths:
+        - scripts/conductor-startup-script-cloud*.sh
+
   exported_configs:
     - plugin_id: oss-linter-trunk
       configs:

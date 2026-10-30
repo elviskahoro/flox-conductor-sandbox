@@ -43,6 +43,10 @@
 #      ENTIRE_SHA256_<platform> constants must all be present and hex-64; a
 #      missing constant makes the runtime install fail closed on that
 #      platform, so the CI check is presence-and-shape, not cross-check.
+#  10. CQ_PIN (issue #96): exactly x.y.z, symmetric to ENTIRE_PIN. The four
+#      CQ_SHA256_<platform> constants must all be present and hex-64; the
+#      cli/v${CQ_PIN} tarball URL is derived inline, so a re-pin lands in
+#      the right URL by construction — no separate constant to drift.
 #
 # The former checks that cross-compared two in-repo scripts
 # (conductor-cloud-install.sh vs conductor-startup-script.sh, before they
@@ -250,6 +254,30 @@ for plat in LINUX_AMD64 LINUX_ARM64 DARWIN_AMD64 DARWIN_ARM64; do
     fail "ENTIRE_SHA256_${plat}" "not a 64-char lowercase hex sha256: ${hash_value}"
   else
     pass "ENTIRE_SHA256_${plat}" "pinned (${hash_value:0:12}...)"
+  fi
+done
+
+# 10. CQ_PIN + CQ_SHA256_* (issue #96). Symmetric to the ENTIRE check above:
+# CQ_PIN must be an exact x.y.z (the cli/vX.Y.Z release tag) and the four
+# per-platform CQ_SHA256_<PLATFORM> constants must each be a 64-char
+# lowercase hex sha256 of the corresponding release tarball. The runtime
+# install fails closed on any missing entry, so the CI check just catches
+# that case earlier. The tarball URL is derived inline from CQ_PIN (no
+# separate constant to drift), so it stays in sync by construction.
+CQ_PIN_VALUE="$(sed -n 's/^CQ_PIN="\([^"]*\)".*/\1/p' "${STARTUP}")"
+if ! [[ "${CQ_PIN_VALUE}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  fail "CQ_PIN" "missing or not an exact x.y.z pin: ${CQ_PIN_VALUE:-<missing>}"
+else
+  pass "CQ_PIN" "exact pin ${CQ_PIN_VALUE}"
+fi
+for plat in LINUX_AMD64 LINUX_ARM64 DARWIN_AMD64 DARWIN_ARM64; do
+  hash_value="$(sed -n "s/^CQ_SHA256_${plat}=\"\([0-9a-f]*\)\".*/\1/p" "${STARTUP}")"
+  if [[ -z "${hash_value}" ]]; then
+    fail "CQ_SHA256_${plat}" "missing — required for issue #96's cq install on platform ${plat,,}"
+  elif ! [[ "${hash_value}" =~ ^[0-9a-f]{64}$ ]]; then
+    fail "CQ_SHA256_${plat}" "not a 64-char lowercase hex sha256: ${hash_value}"
+  else
+    pass "CQ_SHA256_${plat}" "pinned (${hash_value:0:12}...)"
   fi
 done
 
