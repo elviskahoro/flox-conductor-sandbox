@@ -1779,7 +1779,7 @@ for pass in 1 2; do
 done
 ISOLATE_CFG=/tmp/isolate-home/.roborev/config.toml
 [[ -f "${ISOLATE_CFG}" ]] || fail "daemon isolation did not write ${ISOLATE_CFG}"
-[[ "$(grep -c '^server_addr = "unix:///tmp/roborev-[0-9]*-[0-9]*\.sock"$' "${ISOLATE_CFG}")" == 1 ]] ||
+[[ "$(grep -c '^server_addr = "unix:///tmp/isolate-home/\.roborev/run/d\.sock"$' "${ISOLATE_CFG}")" == 1 ]] ||
   fail "expected exactly one unix-socket server_addr after two runs, got: $(cat "${ISOLATE_CFG}")"
 # A pre-set server_addr must never be overridden.
 printf 'server_addr = "127.0.0.1:9999"\n' > "${ISOLATE_CFG}"

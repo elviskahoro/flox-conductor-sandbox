@@ -1366,29 +1366,47 @@ roborev_smoke_check() {
 # (issue #98). The default 127.0.0.1:7373 is machine-global, so one
 # sandbox's (or leftover) daemon would answer for every workspace and the
 # host. server_addr in the sandbox-HOME global config makes every roborev
-# call here — daemon, review, check-agents — use the private socket. The
-# socket path is short and keyed on HOME because unix socket paths are
-# capped at ~104 bytes. A server_addr already present is left alone.
+# call here — daemon, review, check-agents — use the private socket.
+# The socket lives in a 0700 dir under HOME, NOT /tmp: roborev refuses a
+# socket directory that is group/world accessible and Conductor sandboxes
+# have /tmp at mode 777 (issue #118; `daemon start` only times out, the
+# real error shows under `daemon run`). Unix socket paths are capped at
+# ~104 bytes, so an over-long HOME falls back to a short 0700 dir under /tmp
+# keyed on HOME. A server_addr already present is left alone, except a
+# stale unix:///tmp/ one written by an earlier version, which is replaced.
 roborev_isolate_daemon() {
-  local cfg="${HOME}/.roborev/config.toml" key sock
+  local cfg="${HOME}/.roborev/config.toml" key dir sock
   if grep -qE '^[[:space:]]*server_addr[[:space:]]*=' "${cfg}" 2>/dev/null; then
-    return 0
+    if grep -qE '^[[:space:]]*server_addr[[:space:]]*=[[:space:]]*"unix:///tmp/roborev-[0-9]+-[0-9]+\.sock"' "${cfg}"; then
+      sed -i.bak -E '/^[[:space:]]*server_addr[[:space:]]*=[[:space:]]*"unix:\/\/\/tmp\/roborev-[0-9]+-[0-9]+\.sock"/d' "${cfg}" && rm -f "${cfg}.bak" || return 1
+    else
+      return 0
+    fi
   fi
-  key="$(printf '%s' "${HOME}" | cksum | cut -d' ' -f1)"
-  sock="/tmp/roborev-$(id -u)-${key}.sock"
   mkdir -p "${HOME}/.roborev" || return 1
+  dir="${HOME}/.roborev/run"
+  sock="${dir}/d.sock"
+  if [[ ${#sock} -gt 100 ]]; then
+    key="$(printf '%s' "${HOME}" | cksum | cut -d' ' -f1)"
+    dir="/tmp/roborev-$(id -u)-${key}"
+    sock="${dir}/d.sock"
+  fi
+  mkdir -p "${dir}" && chmod 700 "${dir}" || return 1
   printf 'server_addr = "unix://%s"\n' "${sock}" >>"${cfg}" || return 1
 }
 
 ensure_daemon() {
-  local stage="$1"
+  local stage="$1" err
   roborev_isolate_daemon || record WARN "${stage}" "could not write server_addr to ${HOME}/.roborev/config.toml — daemon falls back to the machine-global 127.0.0.1:7373 (issue #98)"
   if roborev_quiet status; then
     record PASS "${stage}" "daemon running"
   elif roborev_quiet daemon start; then
     record PASS "${stage}" "daemon revived"
   else
-    record FAIL "${stage}" "daemon not running and 'roborev daemon start' failed"
+    # `daemon start` hides the cause behind a generic timeout (issue #118);
+    # `daemon run` prints the real error (e.g. unsafe socket-dir perms).
+    err="$(timeout 5 roborev daemon run 2>&1 </dev/null | head -3 | tr '\n' ' ' || true)"
+    record FAIL "${stage}" "daemon not running and 'roborev daemon start' failed${err:+ — daemon run says: ${err}}"
     return 1
   fi
 }
