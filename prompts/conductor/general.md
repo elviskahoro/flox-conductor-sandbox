@@ -97,6 +97,7 @@ Apply these steps when asked to inspect queue or PR status in a repository that 
 - Reference code as `path/to/file.py:123` so it's clickable.
 - For multi-step work, give a brief final summary: what changed and why, how it was verified, what's left or deferred (with issue links).
 - Surface decisions and risks the user should weigh in on. Don't bury them, and don't ask about things with an obvious default.
+- **Never suggest merging, by any method, unless every check is confirmed passing.** Unchecked, pending, or failing checks mean no merge suggestion. Do not suggest `trunk merge` until Trunk's new CLI is released.
 - Plain, specific language. No filler, hype, or boilerplate ("This PR makes some improvements to ...").
 
 ## Prompt helpers
