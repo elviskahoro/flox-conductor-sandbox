@@ -1889,13 +1889,13 @@ printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; s
 chmod 755 /tmp/cq-install-stubs/roborev
 rm -f /usr/local/bin/cq
 su - sandbox-user -c "git init -q /tmp/cq-install-repo"
-RUN23_OUTPUT="$(su - sandbox-user -c "cd /tmp/cq-install-repo && PATH=/tmp/cq-install-stubs:/usr/local/bin:\$PATH bash /tmp/cq-startup.sh")" ||
+RUN26_OUTPUT="$(su - sandbox-user -c "cd /tmp/cq-install-repo && PATH=/tmp/cq-install-stubs:/usr/local/bin:\$PATH bash /tmp/cq-startup.sh")" ||
   fail "cq-install run exited non-zero"
-printf '%s' "${RUN23_OUTPUT}"
-case "${RUN23_OUTPUT}" in *" | FAIL |"*) fail "cq-install run recorded FAIL row(s)" ;; esac
-case "${RUN23_OUTPUT}" in *"cq | PASS"*) ;; *) fail "cq-install run missing the cq PASS row" ;;
+printf '%s' "${RUN26_OUTPUT}"
+case "${RUN26_OUTPUT}" in *" | FAIL |"*) fail "cq-install run recorded FAIL row(s)" ;; esac
+case "${RUN26_OUTPUT}" in *"cq | PASS"*) ;; *) fail "cq-install run missing the cq PASS row" ;;
 esac
-case "${RUN23_OUTPUT}" in *"(/usr/local/bin/cq)"*) ;; *) fail "cq-install run PASS row did not name the /usr/local/bin path" ;; esac
+case "${RUN26_OUTPUT}" in *"(/usr/local/bin/cq)"*) ;; *) fail "cq-install run PASS row did not name the /usr/local/bin path" ;; esac
 su - sandbox-user -c "
   set -e
   fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
@@ -1911,11 +1911,11 @@ echo "=== RUN 27: cq reused on idempotent re-run ==="
 # must take the reuse row, not re-download, AND must still record the
 # cq-env PASS row (the ~/.bashrc CQ_ADDR block from RN 23 is still there,
 # so the cq-env PASS is the 'reused PASS').
-RUN24_OUTPUT="$(su - sandbox-user -c "cd /tmp/cq-install-repo && PATH=/tmp/cq-install-stubs:/usr/local/bin:\$PATH bash /tmp/cq-startup.sh")" ||
+RUN27_OUTPUT="$(su - sandbox-user -c "cd /tmp/cq-install-repo && PATH=/tmp/cq-install-stubs:/usr/local/bin:\$PATH bash /tmp/cq-startup.sh")" ||
   fail "cq-reuse run exited non-zero"
-printf '%s' "${RUN24_OUTPUT}"
-case "${RUN24_OUTPUT}" in *" | FAIL |"*) fail "cq-reuse run recorded FAIL row(s)" ;; esac
-case "${RUN24_OUTPUT}" in *"cq | PASS | reused /usr/local/bin/cq"*) ;; *) fail "cq-reuse run missing the reused cq PASS row" ;; esac
+printf '%s' "${RUN27_OUTPUT}"
+case "${RUN27_OUTPUT}" in *" | FAIL |"*) fail "cq-reuse run recorded FAIL row(s)" ;; esac
+case "${RUN27_OUTPUT}" in *"cq | PASS | reused /usr/local/bin/cq"*) ;; *) fail "cq-reuse run missing the reused cq PASS row" ;; esac
 
 echo "=== RUN 28: cq integrity mismatch leaves cq uninstalled, setup passes ==="
 # The fail-closed posture under both default and STARTUP_BEST_EFFORT=1:
