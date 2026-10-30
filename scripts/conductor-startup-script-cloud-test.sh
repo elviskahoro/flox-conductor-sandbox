@@ -1788,4 +1788,87 @@ su - sandbox-user -c "cd /tmp && unset ROBOREV_MODEL && HOME=/tmp/isolate-home P
 [[ "$(cat "${ISOLATE_CFG}")" == 'server_addr = "127.0.0.1:9999"' ]] ||
   fail "daemon isolation overwrote a pre-set server_addr: $(cat "${ISOLATE_CFG}")"
 
+# --- RUN 27-31 (issues #98/#118): socket-dir placement + daemon failures ---
+SU_RUN() { # SU_RUN <home> <stubdir> -> runs the startup script, prints output
+  su - sandbox-user -c "cd /tmp && unset ROBOREV_MODEL && HOME=$1 PATH=$2:/usr/local/bin:\$PATH bash /tmp/local-startup.sh" 2>&1
+}
+ISO_FN=/tmp/isolate-fn.sh
+sed -n '/^roborev_isolate_daemon() {/,/^}/p' scripts/conductor-startup-script-cloud.sh > "${ISO_FN}"
+[[ -s "${ISO_FN}" ]] || fail "could not extract roborev_isolate_daemon"
+chmod 755 "${ISO_FN}"
+
+# RUN 27: a stale unix:///tmp/ server_addr from an older setup (rejected by
+# roborev when /tmp is 777, issue #118) is migrated; unrelated config lines
+# survive; the socket dir is 0700 under HOME, never /tmp.
+chmod 777 /tmp
+rm -rf /tmp/stale-home; su - sandbox-user -c "mkdir -p /tmp/stale-home/.roborev"
+printf 'foo = "bar"\nserver_addr = "unix:///tmp/roborev-1000-123.sock"\n[x]\ny = 1\n' > /tmp/stale-home/.roborev/config.toml
+chown -R sandbox-user /tmp/stale-home
+SU_RUN /tmp/stale-home /tmp/nowork-stubs-fail >/dev/null || fail "stale-migration run exited non-zero"
+STALE_CFG=/tmp/stale-home/.roborev/config.toml
+grep -q 'roborev-1000-123' "${STALE_CFG}" && fail "stale /tmp socket address not removed: $(cat "${STALE_CFG}")"
+[[ "$(grep -c '^server_addr = "unix:///tmp/stale-home/\.roborev/run/d\.sock"$' "${STALE_CFG}")" == 1 ]] || fail "migrated server_addr wrong: $(cat "${STALE_CFG}")"
+grep -q '^foo = "bar"$' "${STALE_CFG}" && grep -q '^y = 1$' "${STALE_CFG}" || fail "migration dropped unrelated config lines: $(cat "${STALE_CFG}")"
+[[ "$(stat -c %a /tmp/stale-home/.roborev/run)" == 700 ]] || fail "socket dir is not 0700"
+# A non-/tmp unix server_addr and a TCP one must both be left alone.
+printf 'server_addr = "unix:///var/run/custom.sock"\n' > "${STALE_CFG}"
+SU_RUN /tmp/stale-home /tmp/nowork-stubs-fail >/dev/null || fail "custom-unix run exited non-zero"
+[[ "$(cat "${STALE_CFG}")" == 'server_addr = "unix:///var/run/custom.sock"' ]] || fail "custom unix server_addr was modified"
+
+# RUN 28: two sandboxes (distinct HOMEs) never share a socket.
+for h in iso-a iso-b; do rm -rf /tmp/${h}; su - sandbox-user -c "mkdir -p /tmp/${h}"; SU_RUN /tmp/${h} /tmp/nowork-stubs-fail >/dev/null || fail "${h} run failed"; done
+A="$(grep '^server_addr' /tmp/iso-a/.roborev/config.toml)"; B="$(grep '^server_addr' /tmp/iso-b/.roborev/config.toml)"
+[[ -n "${A}" && -n "${B}" && "${A}" != "${B}" ]] || fail "sandboxes share a socket: '${A}' vs '${B}'"
+
+# RUN 29: over-long HOME (unix socket paths cap at ~104 bytes) falls back
+# to a short 0700 dir, still not world-accessible.
+LONGH="/tmp/$(printf 'l%.0s' $(seq 1 90))"
+rm -rf "${LONGH}"; su - sandbox-user -c "mkdir -p ${LONGH}"
+su - sandbox-user -c "HOME=${LONGH} bash -c '. ${ISO_FN}; roborev_isolate_daemon'" || fail "long-HOME isolate failed"
+LSOCK="$(sed -n 's/^server_addr = "unix:\/\/\(.*\)"$/\1/p' "${LONGH}/.roborev/config.toml")"
+[[ -n "${LSOCK}" && ${#LSOCK} -le 100 ]] || fail "long-HOME socket path missing or too long (${#LSOCK}): ${LSOCK}"
+[[ "$(stat -c %a "$(dirname "${LSOCK}")")" == 700 ]] || fail "long-HOME fallback socket dir is not 0700"
+
+# RUN 30: when the daemon can't start, the FAIL row carries the real
+# `daemon run` error instead of just a generic start failure (issue #118).
+rm -rf /tmp/nowork-stubs-dead; mkdir -p /tmp/nowork-stubs-dead; cp -r /tmp/nowork-stubs/. /tmp/nowork-stubs-dead/
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; status) exit 1;; daemon) if [ "$2" = run ]; then echo "Error: socket directory /tmp has unsafe permissions 777" >&2; fi; exit 1;; check-agents) exit 1;; esac\nexit 0\n' > /tmp/nowork-stubs-dead/roborev
+chmod 755 /tmp/nowork-stubs-dead/roborev
+rm -rf /tmp/dead-home; su - sandbox-user -c "mkdir -p /tmp/dead-home"
+DEAD_OUT="$(SU_RUN /tmp/dead-home /tmp/nowork-stubs-dead || true)"
+case "${DEAD_OUT}" in
+*"roborev-daemon | FAIL | daemon not running and 'roborev daemon start' failed — daemon run says: Error: socket directory /tmp has unsafe permissions 777"*) ;;
+*) printf '%s\n' "${DEAD_OUT}" | grep roborev-daemon; fail "daemon FAIL row lacks the 'daemon run' error" ;;
+esac
+
+# RUN 31: REAL roborev binary (installed by RUN 1) with /tmp at 777 — the
+# actual #118 environment. Old behavior (unix:///tmp socket) must fail, the
+# script's behavior must bring up a healthy daemon, and nothing may bind the
+# machine-global TCP 7373. The `roborev-daemon | PASS` row alone proves
+# little: real `roborev status` exits 0 even when it prints "Daemon: not
+# running" (verified on v0.63.0 with the old unix:///tmp layout under a 777
+# /tmp), so `Health: OK` and the private socket are the real assertions.
+REAL=/usr/local/bin/roborev
+if [[ -x "${REAL}" ]] && "${REAL}" version 2>&1 | grep -qv stub; then
+  chmod 777 /tmp
+  rm -rf /tmp/real-old /tmp/real-new; su - sandbox-user -c "mkdir -p /tmp/real-old/.roborev /tmp/real-new"
+  printf 'server_addr = "unix:///tmp/roborev-1000-9.sock"\n' > /tmp/real-old/.roborev/config.toml; chown -R sandbox-user /tmp/real-old
+  OLD_ERR="$(su - sandbox-user -c "HOME=/tmp/real-old timeout 8 ${REAL} daemon run 2>&1" || true)"
+  case "${OLD_ERR}" in *"unsafe permissions 777"*) ;; *) fail "real roborev no longer rejects a /tmp socket with 777 /tmp (premise changed): ${OLD_ERR}" ;; esac
+  REAL_OUT="$(su - sandbox-user -c "cd /tmp && unset ROBOREV_MODEL && HOME=/tmp/real-new PATH=/usr/local/bin:\$PATH bash /tmp/local-startup.sh" 2>&1 || true)"
+  case "${REAL_OUT}" in *"roborev-daemon | PASS"*) ;; *) printf '%s\n' "${REAL_OUT}" | grep roborev; fail "real roborev daemon did not come up under 777 /tmp" ;; esac
+  su - sandbox-user -c "HOME=/tmp/real-new ${REAL} status" 2>&1 | grep -q 'Health: OK' || fail "real daemon unhealthy"
+  [[ -S /tmp/real-new/.roborev/run/d.sock ]] || fail "real daemon socket missing at the private path"
+  if (exec 3<>/dev/tcp/127.0.0.1/7373) 2>/dev/null; then fail "something is listening on machine-global 127.0.0.1:7373"; fi
+  su - sandbox-user -c "HOME=/tmp/real-new ${REAL} daemon stop" >/dev/null 2>&1 || true
+  # NOT `roborev status` here: in v0.63.0 it auto-starts a daemon when none
+  # is running, so it can't tell "stopped" from "revived". The private socket
+  # vanishing is the observable signal that the daemon is gone.
+  for _ in 1 2 3 4 5; do [[ -S /tmp/real-new/.roborev/run/d.sock ]] || break; sleep 1; done
+  [[ ! -S /tmp/real-new/.roborev/run/d.sock ]] || fail "RUN 31 left a real roborev daemon running after 'daemon stop'"
+else
+  echo "RUN 31 SKIPPED: real roborev not at ${REAL}"
+fi
+chmod 1777 /tmp # RUN 27-31 widened it to 777; restore the stock mode
+
 echo "=== ALL CHECKS PASSED ==="
