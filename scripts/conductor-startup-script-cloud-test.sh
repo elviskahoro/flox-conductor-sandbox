@@ -1748,4 +1748,25 @@ case "${RUN25B_OUTPUT}" in
 *"roborev-agent | WARN | pi failed its smoke check"*) fail "no-worktree-fireworks-key run fell through to the generic smoke WARN row" ;;
 esac
 
+# RUN 26 (issue #98): daemon isolation. The default roborev address
+# 127.0.0.1:7373 is machine-global, so every sandbox must get its own unix
+# socket via server_addr in its HOME's global config. Reuses the RUN 25B
+# stubs (ensure_daemon runs on the no-worktree path) with a fresh HOME.
+rm -rf /tmp/isolate-home
+su - sandbox-user -c "mkdir -p /tmp/isolate-home"
+for pass in 1 2; do
+  su - sandbox-user -c "cd /tmp && unset ROBOREV_MODEL && HOME=/tmp/isolate-home PATH=/tmp/nowork-stubs-fail:/usr/local/bin:\$PATH bash /tmp/local-startup.sh" >/dev/null ||
+    fail "daemon-isolation run ${pass} exited non-zero"
+done
+ISOLATE_CFG=/tmp/isolate-home/.roborev/config.toml
+[[ -f "${ISOLATE_CFG}" ]] || fail "daemon isolation did not write ${ISOLATE_CFG}"
+[[ "$(grep -c '^server_addr = "unix:///tmp/roborev-[0-9]*-[0-9]*\.sock"$' "${ISOLATE_CFG}")" == 1 ]] ||
+  fail "expected exactly one unix-socket server_addr after two runs, got: $(cat "${ISOLATE_CFG}")"
+# A pre-set server_addr must never be overridden.
+printf 'server_addr = "127.0.0.1:9999"\n' > "${ISOLATE_CFG}"
+su - sandbox-user -c "cd /tmp && unset ROBOREV_MODEL && HOME=/tmp/isolate-home PATH=/tmp/nowork-stubs-fail:/usr/local/bin:\$PATH bash /tmp/local-startup.sh" >/dev/null ||
+  fail "daemon-isolation preset run exited non-zero"
+[[ "$(cat "${ISOLATE_CFG}")" == 'server_addr = "127.0.0.1:9999"' ]] ||
+  fail "daemon isolation overwrote a pre-set server_addr: $(cat "${ISOLATE_CFG}")"
+
 echo "=== ALL CHECKS PASSED ==="
