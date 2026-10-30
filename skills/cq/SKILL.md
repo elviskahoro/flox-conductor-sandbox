@@ -117,3 +117,15 @@ Units can disagree (e.g. "pin Actions to a full commit SHA" vs "pin setup-uv to 
 - `cq drain` removes units from local storage once pushed; use `--dry-run` first.
 - Query returns 5 results by default; raise `--limit` for exploratory searches.
 - If `cq` fails with auth errors, say so and stop; don't hunt for other credentials.
+
+## Other commands and flags (from main's CLI reference)
+
+Global flags (every command): `--db-path`/`CQ_LOCAL_DB_PATH` (local SQLite, default `~/.local/share/cq/local.db`), `--addr`/`CQ_ADDR`, `--api-key`/`CQ_API_KEY`, `--timeout`/`CQ_TIMEOUT` (seconds, default 30). For experiments, point `CQ_LOCAL_DB_PATH` at a temp file so you don't pollute the real store.
+
+- `cq install --target <host>... [--dry-run] [--project DIR] [--uninstall]`: idempotent; run `--dry-run` first. `--project` is not supported by every host (e.g. claude). Claude Code alternative: `claude plugin marketplace add mozilla-ai/cq && claude plugin install cq`.
+- `cq mcp`: MCP server on stdio (tools `query`, `propose`, `confirm`, `flag`, `status`).
+- `cq prompt skill|reflect|status`: print the canonical agent prompts; `cq prompt skill` is the authoritative behavior spec.
+- `cq auth login|logout|status|providers|key`: OIDC sign-in to the cq platform. `login`, `key`, `providers` need `CQ_ADDR`; `auth status` exits 1 with `credstore: no credentials stored` when signed out. Not exercised against a real platform.
+- `cq status --format json` gives per-domain counts, recent units, a confidence histogram and tier counts.
+- Exit codes: 0 on success (including empty query), 1 on any error. `confirm`/`flag` print text only; `--format json` applies to query/propose/status/drain.
+- A `propose` the remote rejects (bad or missing `CQ_API_KEY`) may exit 0 with a stderr warning and keep the unit locally (reported by a reviewer, not re-verified); `confirm`/`flag` hard-fail.
