@@ -433,7 +433,7 @@ Review threads (especially from `pullfrog`, also roborev and humans) must not be
 - For each thread whose concern is actually resolved by a pushed commit, reply briefly with the commit SHA, then resolve it: `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<thread-id>`
 - Leave a thread open, with a reply explaining why, if the concern was declined, deferred, or only partly fixed. Never resolve a thread whose issue is still present.
 
-### Step 13: Watch CI and fix failures until green, then suggest the merge
+### Step 13: Watch CI and fix failures until green, then report status
 
 Merging is never automatic, but getting the checks green is part of creating the PR — don't hand back a PR with red or pending CI and wait to be told to fix it. After the PR is open, loop:
 
@@ -444,12 +444,13 @@ Merging is never automatic, but getting the checks green is part of creating the
 
 Repeat until every required check passes and no addressed review thread remains unresolved. Stop and ask the user only when blocked: the failure needs a product/architecture decision, is a flaky or infrastructure failure (never `pullfrog-approval`) unrelated to the change that two reruns (`gh run rerun <run-id> --failed`) don't clear, needs secrets or permissions you lack, or the same check still fails after three distinct fix attempts. Report what you tried in that case.
 
-When all checks pass, suggest merging with the GitHub CLI and wait for the user to say yes:
+Suggest a merge only when every check is confirmed passing (`gh pr checks` shows all green, with none pending, unchecked, or failing) and no addressed review thread remains open. Otherwise omit any merge suggestion and list what is pending, failing, or unverified. When it is confirmed, suggest merging with the GitHub CLI and wait for the user to say yes:
 
 ```bash
 gh pr merge <pr-number> --squash
 ```
 
+- Never suggest `trunk merge` until Trunk's new CLI is released; revisit then.
 - Do not log in to, configure, or call any merge-queue service. If `gh` is not authenticated, say so and stop.
 - Never pass `--admin` or `--auto` unless the user asks for it.
 
@@ -905,6 +906,7 @@ Apply these steps when asked to inspect queue or PR status in a repository that 
 - Reference code as `path/to/file.py:123` so it's clickable.
 - For multi-step work, give a brief final summary: what changed and why, how it was verified, what's left or deferred (with issue links).
 - Surface decisions and risks the user should weigh in on. Don't bury them, and don't ask about things with an obvious default.
+- **Never suggest merging, by any method, unless every check is confirmed passing.** Unchecked, pending, or failing checks mean no merge suggestion. Do not suggest `trunk merge` until Trunk's new CLI is released.
 - Plain, specific language. No filler, hype, or boilerplate ("This PR makes some improvements to ...").
 
 ## Prompt helpers
