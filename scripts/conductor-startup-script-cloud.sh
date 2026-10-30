@@ -97,18 +97,18 @@
 #            provision must fail setup loudly, never leave a workspace
 #            that appears ready but lacks them.
 #
-# Pins: ROBOREV_PIN/RWX_PIN/UV_PIN/PYTEST_PIN/REFLEX_PIN/ENTIRE_PIN and every sha256
-# below are the single in-repo home of those constants. The roborev pin is
-# kept in sync with envs/repackage/.flox/env/manifest.toml's [build.roborev]
-# and envs/floxhub-provision's roborev.version; the uv pin is kept in sync
-# with envs/prebuilt and envs/floxhub-provision's uv.version —
-# scripts/validate-pins.sh cross-checks both families in CI. Bump runbooks:
-# roborev: new pin + sha256s from the release's checksums file, then
-# republish the FloxHub package — don't hand-edit any lock. uv: new pin +
-# sha256s (hand-hash the release tarballs), then bump both Flox manifests
-# and re-lock their envs together. pytest/reflex: no Flox counterpart —
-# the pins live only here, and validate-pins.sh asserts they stay exact
-# x.y.z pins. (The rwx block's former sibling copy in gtm-sdk's
+# Pins: ROBOREV_PIN/RWX_PIN/UV_PIN/PYTEST_PIN/REFLEX_PIN/ENTIRE_PIN/CQ_PIN
+# and every sha256 below are the single in-repo home of those constants. The
+# roborev pin is kept in sync with envs/repackage/.flox/env/manifest.toml's
+# [build.roborev] and envs/floxhub-provision's roborev.version; the uv pin
+# is kept in sync with envs/prebuilt and envs/floxhub-provision's
+# uv.version — scripts/validate-pins.sh cross-checks both families in CI.
+# Bump runbooks: roborev: new pin + sha256s from the release's checksums
+# file, then republish the FloxHub package — don't hand-edit any lock. uv:
+# new pin + sha256s (hand-hash the release tarballs), then bump both Flox
+# manifests and re-lock their envs together. pytest/reflex: no Flox
+# counterpart — the pins live only here, and validate-pins.sh asserts they
+# stay exact x.y.z pins. (The rwx block's former sibling copy in gtm-sdk's
 # conductor-workspace-setup.sh went away when that repo retired the script,
 # gtm-sdk#944 — this file is now the pin's only executable home.) ENTIRE_PIN
 # + the four ENTIRE_SHA256_* constants are single-home pins with no Flox
@@ -120,7 +120,19 @@
 # https://install.entire.com/v${ENTIRE_PIN}/entire_<platform>.tar.gz (which
 # mirrors what GitHub releases also publish; both URLs produce byte-identical
 # content, hand-checked at the original pin) and update the four
-# ENTIRE_SHA256_* constants in the same commit.
+# ENTIRE_SHA256_* constants in the same commit. CQ_PIN + the four
+# CQ_SHA256_* constants are also single-home pins (issue #96): the cq CLI is
+# a Go release archive with no manifest build, so the only sync surface is
+# here — validate-pins.sh asserts CQ_PIN stays an exact x.y.z AND that every
+# supported platform has a sha256 constant set. The release tag is
+# `cli/vX.Y.Z` (other tags — plugin/vX.Y.Z, sdk/python/vX.Y.Z — are NOT the
+# CLI; the issue #96 recipe's `gh release list ... | awk '$1 ~ /^cli\\//'`
+# filter is what surfaces it). Re-pin runbook: bump CQ_PIN, then download
+# the four release tarballs from
+# https://github.com/mozilla-ai/cq/releases/download/cli/v${CQ_PIN}/cq_<platform>.tar.gz
+# and update the four CQ_SHA256_* constants in the same commit; the release
+# also publishes a checksums.txt asset (cq_<Platform>_<arch>.tar.gz names) —
+# cross-check the constants against it.
 #
 # Paste-safety constraints (load-bearing for consumer 2, because Conductor
 # serializes the GUI setup field into a TOML multiline string): NO
@@ -144,7 +156,9 @@
 # tool stages (roborev/trunk/rwx install, rwx auth, roborev
 # config/daemon) record
 # their FAIL rows but do not fail the run (the pi stage never fails it under
-# either posture: a failed install is a WARN row and pi stays uninstalled), and only a Python 3.11 failure
+# either posture: a failed install is a WARN row and pi stays uninstalled; likewise the cq and cq-env stages are WARN-only
+# under both postures — the shared knowledge store is optional tooling; the
+# entire stage records FAIL rows like the other tool stages), and only a Python 3.11 failure
 # on the AL2023 target class (the stated >=3.11 requirement) or a
 # pytools-stage failure when STARTUP_PY_DEV_TOOLS=1 requested them
 # (issue #44: a requested tool that cannot be provisioned must never
@@ -735,6 +749,114 @@ ENTIRE_SHA256_LINUX_AMD64="15645d3c41cd91e3e3dc42f91a92f02739f57c3f31233236f8f4d
 ENTIRE_SHA256_LINUX_ARM64="371ad9a35665887bb8bff64b57cf358dfca649ceb75da545ba3f4d9ec5a4cac6"
 ENTIRE_SHA256_DARWIN_AMD64="c7adf5a3e91320c81685eb3491f8a91d2551f36208ba6f82f6673a9c28ffd360"
 ENTIRE_SHA256_DARWIN_ARM64="77f1a9174fd9b503f0503e776f2fa1e913cda1eba2a37772d3a6b97ad67edfb1"
+
+# --- cq (mozilla-ai shared knowledge store) ---------------------------------
+# Pinned release archive (Go binary, statically linked) under the
+# `cli/vX.Y.Z` tag. Use it instead of `brew install mozilla-ai/tap/cq`
+# because AL2023 sandboxes don't ship brew — install_entire, install_rw,
+# --target conftest the same failure class. The archive extracts to four
+# files: cq (the CLI), LICENSE, NOTICE, README.md. Only the cq binary is
+# installed (README/LICENSE/NOTICE are documentation, not operational
+# artifacts; the skill covers runbook use).
+CQ_PIN="0.18.0"
+# Per-platform sha256 of cq_<platform>.tar.gz from
+# https://github.com/mozilla-ai/cq/releases/download/cli/v${CQ_PIN}/ — same
+# release-tag/hand-hashed pair as ENTIRE_SHA256_*. Only `cli/vX.Y.Z` tags
+# are the CLI; plugin/vX.Y.Z, sdk/python/vX.Y.Z, etc. are not (the issue
+# #96 recipe's `awk '$1 ~ /^cli\//'` filter is what surfaces the right
+# one). Re-pin runbook: bump CQ_PIN, then `curl -fsSLo <out>
+# https://github.com/mozilla-ai/cq/releases/download/cli/v${CQ_PIN}/cq_<platform>.tar.gz`
+# and `sha256sum <out>`, or copy the four lines from the release's
+# checksums.txt asset (names are cq_Linux_x86_64.tar.gz etc.), so the four
+# CQ_SHA256_* constants are cross-checked once per pin.
+CQ_SHA256_LINUX_AMD64="27787adbe5ac2ab8daab833033f1c37ea3b0e8fa3b8a8b39db15e9a2aba3dc2c"
+CQ_SHA256_LINUX_ARM64="bcff3c53a0307adf402a3526658fbdd300c4277f6f98fe10753fe169db60c85f"
+CQ_SHA256_DARWIN_AMD64="8c25bbe46f7f14d5d618ac7830a2065b36270a98036391e076d56695b710365b"
+CQ_SHA256_DARWIN_ARM64="865dc6d33a71328b27cd25c165d09b07edab5959bdc01f82b8e151bcfae97a66"
+
+# cq is OPTIONAL tooling — knowledge-store access, not a code-editing
+# requirement — so a provisioning failure is never fatal: WARN under both
+# default and STARTUP_BEST_EFFORT=1. Same posture as pi. The reason for
+# the WARN-not-halt posture: cq's value is in agent consultation of the
+# shared store, not in blocking the workspace from doing its job; the
+# skill tells operators to install by hand if the script can't reach
+# github/mozilla-ai/cq, and `cq --version` will still surface from the
+# reuse path on a re-run after the network/credentials are fixed.
+cq_install() {
+  if command -v cq >/dev/null 2>&1; then
+    record PASS cq "reused $(command -v cq) ($(cq --version 2>&1 | head -1 || true))"
+    return 0
+  fi
+  local platform asset sha256
+  case "$(uname -s)-$(uname -m)" in
+  Linux-x86_64)
+    platform="linux_amd64"
+    asset="cq_Linux_x86_64.tar.gz"
+    sha256="${CQ_SHA256_LINUX_AMD64:-}"
+    ;;
+  Linux-aarch64)
+    platform="linux_arm64"
+    asset="cq_Linux_arm64.tar.gz"
+    sha256="${CQ_SHA256_LINUX_ARM64:-}"
+    ;;
+  Darwin-x86_64)
+    platform="darwin_amd64"
+    asset="cq_Darwin_x86_64.tar.gz"
+    sha256="${CQ_SHA256_DARWIN_AMD64:-}"
+    ;;
+  Darwin-arm64)
+    platform="darwin_arm64"
+    asset="cq_Darwin_arm64.tar.gz"
+    sha256="${CQ_SHA256_DARWIN_ARM64:-}"
+    ;;
+  *)
+    log "error: no pinned cq asset for $(uname -s)-$(uname -m)"
+    return 1
+    ;;
+  esac
+  if [[ -z "${sha256}" ]]; then
+    log "error: missing pinned cq sha256 for ${platform} (set CQ_SHA256_${platform^^} in the pins block)"
+    return 1
+  fi
+  local url="https://github.com/mozilla-ai/cq/releases/download/cli/v${CQ_PIN}/${asset}"
+  local dir="${WORK}/cq"
+  mkdir -p "${dir}"
+  if ! curl -fsSLo "${dir}/${asset}" "${url}"; then
+    log "error: cq download failed — ${url}"
+    return 1
+  fi
+  if ! checksum_verify "${sha256}" "${dir}/${asset}"; then
+    log "error: cq integrity mismatch — ${url} (expected sha256 ${sha256})"
+    return 1
+  fi
+  if ! tar -xzf "${dir}/${asset}" -C "${dir}" || [[ ! -x "${dir}/cq" ]]; then
+    log "error: cq tarball did not yield an executable ./cq"
+    return 1
+  fi
+  local path
+  path="$(install_bin "${dir}/cq" cq || true)"
+  if [[ -z "${path}" ]]; then
+    log "error: could not place the cq binary in a bin directory"
+    return 1
+  fi
+  note_placement "${path}"
+  hash -r 2>/dev/null || true
+  if ! command -v cq >/dev/null 2>&1; then
+    log "error: cq installed at ${path} but not on PATH"
+    return 1
+  fi
+  # cq --version reports cq vX.Y.Z (...); pin check is the structural
+  # acceptance surface — a present-but-broken binary (e.g. the wrong
+  # platform asset landed) would still record a re-use PASS and silently
+  # never reach the remote store, so reject it here on the cold path.
+  local version_out
+  version_out="$(cq --version 2>&1 | head -1 || true)"
+  if [[ "${version_out}" != *"${CQ_PIN}"* ]]; then
+    log "error: cq --version did not report ${CQ_PIN}: ${version_out:-<none>}"
+    return 1
+  fi
+  record PASS cq "v${CQ_PIN} (${path})"
+}
 
 entire_install() {
   # Reuse requires BOTH binaries: this stage's contract is entire plus its
@@ -1625,6 +1747,36 @@ roborev_setup() {
   roborev_smoke_check "${agent}" "${repo_root}"
 }
 
+# --- cq environment ----------------------------------------------------------
+# cq (mozilla-ai's shared knowledge store) falls back to an EMPTY local
+# SQLite store when CQ_ADDR is unset, even though `cq --help` advertises
+# https://cq.exchange as the default (verified with cq v0.18.0: unset gives
+# zero units and empty queries; set gives the remote store). Persist the
+# address in ~/.bashrc so every later agent shell reaches the remote. Only
+# the address — never CQ_API_KEY, which stays in the Conductor environment.
+# The `:=` form keeps a CQ_ADDR the workspace already sets (e.g. a
+# self-hosted server). Idempotent: one marker-delimited block, replaced on
+# re-run. A failure is a WARN, never fatal: cq is optional.
+CQ_ADDR_BLOCK_BEGIN="# >>> conductor cq >>>"
+CQ_ADDR_BLOCK_END="# <<< conductor cq <<<"
+
+cq_env() {
+  local rc="${HOME}/.bashrc" tmp="${WORK}/bashrc.cq"
+  if [[ -f "${rc}" ]] && grep -qF "${CQ_ADDR_BLOCK_BEGIN}" "${rc}"; then
+    record PASS cq-env "CQ_ADDR block already in ~/.bashrc"
+    return 0
+  fi
+  {
+    if [[ -f "${rc}" ]]; then cat "${rc}"; fi
+    echo "${CQ_ADDR_BLOCK_BEGIN}"
+    # shellcheck disable=SC2016  # intentional: ${CQ_ADDR:=...} must expand when ~/.bashrc is sourced, not here
+    echo ': "${CQ_ADDR:=https://cq.exchange}"'
+    echo "export CQ_ADDR"
+    echo "${CQ_ADDR_BLOCK_END}"
+  } > "${tmp}" && cat "${tmp}" > "${rc}" || return 1
+  record PASS cq-env "CQ_ADDR defaulted to https://cq.exchange via ~/.bashrc"
+}
+
 # --- run -------------------------------------------------------------------
 # STARTUP_BEST_EFFORT=1 (exported by this repo's settings.toml) keeps the
 # former cloud-install contract: tool-stage failures are recorded but do
@@ -1669,6 +1821,15 @@ if pi_install; then :; else record WARN pi "install failed — pi was not instal
 if python311_stage; then :; else FAILED=1; record FAIL python3.11 "provisioning failed — see messages above"; fi
 if pytools_stage; then :; else FAILED=1; record FAIL pytools "provisioning failed — see the rows above"; fi
 if rwx_auth; then :; else maybe_fail; fi
+# cq (mozilla-ai's shared knowledge store) installs the binary first — so a
+# later agent shell has `cq --version` / `cq status` available — and only
+# then persists CQ_ADDR to ~/.bashrc so the next shell reaches the remote
+# store. Both stages are WARN-only: cq is optional tooling (where pi is the
+# review-agent analogue), never fatal under either posture. The SKIP row is
+# how a future re-run reports an already-installed/cq_env-d state without
+# re-downloading or rewriting ~/.bashrc.
+if cq_install; then :; else record WARN cq "install failed — cq was not installed (see messages above); the cq skill's Setup section documents the by-hand recipe if the network is the problem; export CQ_API_KEY in Conductor env vars and re-run setup, or run the install one-liner yourself"; fi
+if cq_env; then :; else record WARN cq-env "could not persist CQ_ADDR to ~/.bashrc — cq will use an empty local store; export CQ_ADDR=https://cq.exchange"; fi
 if roborev_setup; then :; else maybe_fail; fi
 
 log ""

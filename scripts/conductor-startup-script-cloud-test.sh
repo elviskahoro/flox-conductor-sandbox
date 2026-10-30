@@ -157,6 +157,16 @@
 #     row point at FIREWORKS_API_KEY rather than a generic "agent failed"
 #     — RUN 25B asserts that hint by combining an unset key, an installed
 #     pi, and a failing check-agents stub.
+#   - RUN 26/27/28 (issue #96): cq cold install via the same fixture-driven
+#     patch-and-stub pattern RUN 22 uses for entire — deterministic tarball
+#     body → sha256 → patch the host-arch CQ_SHA256_LINUX_* constant in a sandbox copy →
+#     stubbed curl serves the prepped tar for the cq URL — followed by the
+#     idempotent re-run (REUSE row) and the integrity-mismatch WARN branches
+#     under BOTH STARTUP_BEST_EFFORT=1 and the default strict posture. The
+#     cq stage is WARN-only under both postures (knowledge-store access is
+#     optional tooling, never fatal to set up), so a failed install only
+#     checks the row text and the setup-log error line — never the run's
+#     exit code.
 # Exits non-zero on the first broken assertion.
 set -euo pipefail
 
@@ -1787,5 +1797,181 @@ su - sandbox-user -c "cd /tmp && unset ROBOREV_MODEL && HOME=/tmp/isolate-home P
   fail "daemon-isolation preset run exited non-zero"
 [[ "$(cat "${ISOLATE_CFG}")" == 'server_addr = "127.0.0.1:9999"' ]] ||
   fail "daemon isolation overwrote a pre-set server_addr: $(cat "${ISOLATE_CFG}")"
+
+echo "=== RUN 26: cq install via stubbed curl; replay the SUM script's per-platform pin path ==="
+# Issue #96 install path with the same fixture-driven pattern RUN 22 uses
+# for entire: deterministic binary fixture → tar the binary + README/etc →
+# sha256 → patch the host-arch CQ_SHA256_LINUX_* constant in a sandbox copy → stubbed curl
+# serves the prepped tar for the cq URL. The cq stage is WARN-only under
+# both postures (knowledge-store access is optional tooling, never fatal
+# to set up), so under the DEFAULT posture the run still exits 0 — only
+# the row text proves the install happened. RUN 26 covers fresh install +
+# the version-check accept branch (the cq --version output must contain
+# CQ_PIN, the same structural acceptance surface pi_install uses for its
+# --version row).
+#
+# Sequence: (1) write stub cq binary with a placeholder for the pin, (2)
+# take the pinned CQ_PIN off the LIVE script, (3) substitute the
+# placeholder with that pin (so `cq --version` after install reports it),
+# (4) tar the binary, (5) sha256 the tar, (6) patch the script's
+# host-arch CQ_SHA256_LINUX_* constant to match, (7) stub curl serves the
+# prepped tar for the cq URL. This keeps the integrity constant in
+# lock-step with the served tar, the same proven-shape pattern
+# gtm-sdk#619 and RUN 14/22 use.
+rm -rf /tmp/cq-install-repo /tmp/cq-install-stubs /tmp/cq-startup.sh /tmp/cq-fixture /tmp/cq-fixture-tar
+mkdir -p /tmp/cq-install-stubs /tmp/cq-fixture
+# A stub cq binary: --version prints the pinned x.y.z, --help exits 0, all
+# other commands (status, query, propose, confirm, flag, install) exit 1.
+# The script's version check only fires `cq --version`; --help is NOT
+# invoked, but defining it keeps the stub a runnable Go-shaped binary for
+# manual sanity checks outside the test. The placeholder ${CQ_PIN_VALUE}
+# in the version line lets us sed in the live CQ_PIN before tarring —
+# exactly the same shape gtm-sdk#619 used for the pytools fixtures.
+# shellcheck disable=SC2016
+printf '#!/bin/sh\ncase "$1" in --version) echo "cq v@CQ_PIN_VALUE@ (stub)";; --help) exit 0;; *) exit 1;; esac\n' > /tmp/cq-fixture/cq
+chmod 755 /tmp/cq-fixture/cq
+LIVE_CQ_PIN_VALUE="$(sed -n 's/^CQ_PIN="\([^"]*\)".*/\1/p' "${STARTUP_SCRIPT}")"
+sed -i.bak "s|@CQ_PIN_VALUE@|${LIVE_CQ_PIN_VALUE}|g" /tmp/cq-fixture/cq
+tar -czf /tmp/cq-fixture-tar -C /tmp/cq-fixture cq
+CQ_FIXTURE_SHA256_HEX="$(sha256sum /tmp/cq-fixture-tar | awk '{print $1}')"
+echo "cq fixture tar sha256: ${CQ_FIXTURE_SHA256_HEX}"
+# Sandbox copy of the startup script with the host-arch CQ_SHA256_LINUX_* rewritten
+# to match the test fixture's actual tar file. The live CQ_SHA256_LINUX_*
+# stays in scripts/conductor-startup-script-cloud.sh; the rewrite happens
+# ONLY on this /tmp copy. The pin, the runtime case branch, the install_bin
+# call, and the version accept check all stay as the production script has
+# them.
+# Host-arch aware: the script picks the asset/constant by `uname -m`, so an
+# arm64 docker host (Apple Silicon) must patch and serve the arm64 pair.
+case "$(uname -m)" in
+aarch64 | arm64) CQ_SHA_VAR="CQ_SHA256_LINUX_ARM64"; CQ_ASSET="cq_Linux_arm64.tar.gz" ;;
+*) CQ_SHA_VAR="CQ_SHA256_LINUX_AMD64"; CQ_ASSET="cq_Linux_x86_64.tar.gz" ;;
+esac
+sed "s|^${CQ_SHA_VAR}=.*|${CQ_SHA_VAR}=\"${CQ_FIXTURE_SHA256_HEX}\"|" \
+  "${STARTUP_SCRIPT}" > /tmp/cq-startup.sh
+grep -qxF "${CQ_SHA_VAR}=\"${CQ_FIXTURE_SHA256_HEX}\"" /tmp/cq-startup.sh ||
+  fail "${CQ_SHA_VAR} patch did not apply to /tmp/cq-startup.sh"
+chmod 755 /tmp/cq-startup.sh
+CQ_PIN_VALUE="${LIVE_CQ_PIN_VALUE}"
+CQ_STUB_URL="https://github.com/mozilla-ai/cq/releases/download/cli/v${CQ_PIN_VALUE}/${CQ_ASSET}"
+# Stub curl with the same parser shape as RUN 14's pi stub / RUN 22's entire
+# stub: -fsSLo <path> in one or two args, OR the split -o <path> form. The
+# cq tarball URL yields the prepped tarball (so the integrity verify
+# matches what we just rewrote, then `tar -xzf` succeeds); other paths fall
+# through to the host curl so roborev/trunk/rwx/entire/pi in the same
+# script are unaffected.
+# shellcheck disable=SC2016
+{
+  printf '#!/bin/sh\n'
+  printf 'url=""\noutput=""\nprev=""\n'
+  printf 'for a in "$@"; do\n'
+  printf '  case "$prev" in\n'
+  printf '    -o|-fsSLo|-fsLo|-fLo|-fo) output="$a" ;;\n'
+  printf '  esac\n'
+  printf '  case "$a" in\n'
+  printf '    http://*|https://*) url="$a" ;;\n'
+  printf '    -o|-fsSLo|-fsLo|-fLo|-fo) prev="$a"; continue ;;\n'
+  printf '  esac\n'
+  printf '  prev=""\n'
+  printf 'done\n'
+  printf 'case "$url" in\n'
+  printf '  %s)\n' "${CQ_STUB_URL}"
+  printf '    if [ -n "$output" ]; then\n'
+  printf '      cp /tmp/cq-fixture-tar "$output"\n'
+  printf '    else\n'
+  printf '      cat /tmp/cq-fixture-tar\n'
+  printf '    fi\n'
+  printf '    exit 0;;\n'
+  printf '  *) exec /usr/bin/curl "$@";;\n'
+  printf 'esac\n'
+} > /tmp/cq-install-stubs/curl
+chmod 755 /tmp/cq-install-stubs/curl
+# Stub roborev so the roborev_setup stage can complete (the cq stage runs
+# independently of roborev, but every cold run in this suite stubs
+# roborev so the test isolates the cq behavior under examination). Same
+# shape as RUN 14/22.
+# shellcheck disable=SC2016
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; status) exit 0;; daemon) exit 0;; check-agents) exit 0;; uninstall-hook|init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/cq-install-stubs/roborev
+chmod 755 /tmp/cq-install-stubs/roborev
+rm -f /usr/local/bin/cq
+su - sandbox-user -c "git init -q /tmp/cq-install-repo"
+RUN26_OUTPUT="$(su - sandbox-user -c "cd /tmp/cq-install-repo && PATH=/tmp/cq-install-stubs:/usr/local/bin:\$PATH bash /tmp/cq-startup.sh")" ||
+  fail "cq-install run exited non-zero"
+printf '%s' "${RUN26_OUTPUT}"
+case "${RUN26_OUTPUT}" in *" | FAIL |"*) fail "cq-install run recorded FAIL row(s)" ;; esac
+case "${RUN26_OUTPUT}" in *"cq | PASS"*) ;; *) fail "cq-install run missing the cq PASS row" ;;
+esac
+case "${RUN26_OUTPUT}" in *"(/usr/local/bin/cq)"*) ;; *) fail "cq-install run PASS row did not name the /usr/local/bin path" ;; esac
+su - sandbox-user -c "
+  set -e
+  fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
+  [ -x /usr/local/bin/cq ] ||
+    fail \"cq-install run did not place the cq binary under /usr/local/bin\"
+  cq_version_out=\"\$(cq --version 2>&1)\" || true
+  printf '%s' \"\${cq_version_out}\" | grep -q \"cq v${CQ_PIN_VALUE}\" ||
+    fail \"installed cq --version does not report the pin \${CQ_PIN_VALUE}: \${cq_version_out}\"
+" || fail "cq-install verification failed"
+
+echo "=== RUN 27: cq reused on idempotent re-run ==="
+# Cold-install via RUN 26 left /usr/local/bin/cq for sandbox-user; a re-run
+# must take the reuse row, not re-download, AND must still record the
+# cq-env PASS row (the ~/.bashrc CQ_ADDR block from RUN 26 is still there,
+# so the cq-env PASS is the 'reused PASS').
+RUN27_OUTPUT="$(su - sandbox-user -c "cd /tmp/cq-install-repo && PATH=/tmp/cq-install-stubs:/usr/local/bin:\$PATH bash /tmp/cq-startup.sh")" ||
+  fail "cq-reuse run exited non-zero"
+printf '%s' "${RUN27_OUTPUT}"
+case "${RUN27_OUTPUT}" in *" | FAIL |"*) fail "cq-reuse run recorded FAIL row(s)" ;; esac
+case "${RUN27_OUTPUT}" in *"cq | PASS | reused /usr/local/bin/cq"*) ;; *) fail "cq-reuse run missing the reused cq PASS row" ;; esac
+
+echo "=== RUN 28: cq integrity mismatch leaves cq uninstalled, setup passes ==="
+# The fail-closed posture under both default and STARTUP_BEST_EFFORT=1:
+# the stub serves the bare fixture body string instead of the prepped
+# tarball, so the runtime sha256 verify fails closed. cq is WARN-only and
+# never fatal — BOTH postures still exit 0; the WARN row + the setup-log
+# "error: cq ..." line are the signal. RUN 27 left /usr/local/bin/cq
+# present, so this RUN explicitly removes it (at the outer root level —
+# sandbox-user cannot delete a root-owned /usr/local/bin/cq without
+# sudo) to start from a no-cq state.
+cq_install_subtest() { # <name> <env-prefix> — runs the cold-mismatch install
+  local name="$1" prefix="$2"
+  local log_before stubdir stub repo outfile
+  log_before="$(wc -l < /home/sandbox-user/.conductor-setup.log)"
+  # A directory on PATH, not a file — shells only search directories.
+  # RUN 22B's `DEGRADED_STUB` mktemp-as-file bug was the same issue;
+  # this one puts the patched curl into a fresh dir before prepending.
+  stubdir="$(mktemp -d /tmp/cq-install-stubs/degraded.XXXXXX)"
+  stub="${stubdir}/curl"
+  sed "s|cp /tmp/cq-fixture-tar \"\\\$output\"|printf 'cq-mismatch-fixture-not-a-real-tar' > \"\$output\"|" /tmp/cq-install-stubs/curl > "${stub}"
+  sed -i.bak "s|cat /tmp/cq-fixture-tar|printf 'cq-mismatch-fixture-not-a-real-tar'|" "${stub}"
+  chmod 755 "${stub}"
+  repo="/tmp/cq-mismatch-${name}"
+  rm -rf "${repo}"
+  # Outer root-level: /usr/local/bin/cq is owned by root (install_bin put
+  # it there with sudo), and a sandbox-user `rm` on a root-owned file is
+  # an operation that bugs silently through the next gate.
+  rm -f /usr/local/bin/cq
+  su - sandbox-user -c "git init -q ${repo}"
+  outfile="${repo}.out"
+  # Prefix goes inside the -c string so a login su doesn't drop it
+  # (su - resets env, so a STARTUP_BEST_EFFORT=1 su -c -c form wouldn't
+  # carry through). The cmd exits 0 under both postures (cq is
+  # WARN-only), so the `if !` is what fails on a regression.
+  if ! su - sandbox-user -c "cd ${repo} && ${prefix} PATH=${stubdir}:/usr/local/bin:/usr/bin:/bin bash /tmp/cq-startup.sh" >"${outfile}" 2>&1; then
+    cat "${outfile}"
+    fail "cq-mismatch ${name} run exited non-zero (expected: setup script exits 0 under both STARTUP_BEST_EFFORT=1 and the default posture — cq failures must NOT halt setup). Re-read the saved output above for the real exit reason."
+  fi
+  printf '%s' "$(cat "${outfile}")"
+  case "$(cat "${outfile}")" in *" | FAIL |"*) fail "cq-mismatch ${name} run recorded FAIL row(s) — cq must never FAIL the run" ;; esac
+  case "$(cat "${outfile}")" in *"cq | WARN | install failed"*) ;; *) fail "cq-mismatch ${name} run missing the cq install-failed WARN row" ;; esac
+  [[ ! -e /usr/local/bin/cq ]] ||
+    fail "cq-mismatch ${name} run placed cq in /usr/local/bin despite the integrity mismatch"
+  tail -n "+$((log_before + 1))" /home/sandbox-user/.conductor-setup.log | grep -qF "error: cq" ||
+    fail "cq-mismatch ${name} run setup log missing the cq integrity-mismatch error"
+  rm -rf "${stubdir}" "${outfile}"
+}
+# Both postures — the cq WARN-only contract, symmetric to pi_install's
+# pi WARN-only contract (RUN 20 codifies the same matrix for pi).
+cq_install_subtest "best-effort" "STARTUP_BEST_EFFORT=1"
+cq_install_subtest "strict-posture" ""
 
 echo "=== ALL CHECKS PASSED ==="
