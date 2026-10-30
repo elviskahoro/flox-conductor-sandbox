@@ -14,7 +14,7 @@ timestamp:
 - `full-log-<STAMP>.txt` — the complete raw transcript. Only dig in here if
   the report's excerpt isn't enough to understand a result.
 
-See the top-level [README](../README.md) for what the hypotheses (H1-H4)
+See [the flox-sandbox-harness skill](../skills/flox-sandbox-harness/SKILL.md) for what the hypotheses (H1-H4)
 and stages mean, and how to produce a new run.
 
 ## Additional reports
@@ -177,7 +177,7 @@ analysis lives, not in the generated report files themselves.
 
 ## If you're about to add another run
 
-- Read the top-level README's "Running" section first.
+- Read the "Running" section of [the flox-sandbox-harness skill](../skills/flox-sandbox-harness/SKILL.md) first.
 - **Before trusting the run's Stage 4 row, grep its full log for
   `You are logged in as elvis on https://hub.flox.dev/`.** Stage 4 has no auth
   precondition, so on an already-authenticated machine it records a PASS reading
@@ -191,4 +191,4 @@ analysis lives, not in the generated report files themselves.
 - Update the table above with the new run.
 - If you run Stage 5 (`FLAKE_REPRO=1`), check for and remove any
   `envs/flake-repro/.flox/env/manifest.lock` it leaves behind — that env is
-  deliberately kept lockless (see top-level README).
+  deliberately kept lockless (see the flox-sandbox-harness skill).

@@ -13,7 +13,7 @@
 # Usage:
 #   FLOXHUB_TOKEN=<token> bash scripts/floxhub-login.sh
 #
-# See README.md's "Running" section for how to obtain and hand off a token.
+# See skills/floxhub-auth/SKILL.md for how to obtain and hand off a token.
 set -euo pipefail
 
 if [[ -z "${FLOXHUB_TOKEN:-}" ]]; then

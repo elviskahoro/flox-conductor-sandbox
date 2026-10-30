@@ -1,605 +1,185 @@
 # flox-conductor-sandbox
 
-Minimal-scope test bed for [elviskahoro/gtm-sdk#445](https://github.com/elviskahoro/gtm-sdk/issues/445):
-*"Publish bd/roborev to FloxHub as prebuilt binaries — flake source builds
-break on Vercel sandbox."*
-
-This repo isolates the load-bearing unknowns of that issue's plan into the
-smallest possible harness, so a fresh Conductor cloud sandbox can answer
-"is the proposed fix even possible?" in one provisioning run — before any
-real FloxHub publishing work is invested in gtm-sdk itself.
-
-## Current status
-
-> **Start here: [issue #16](https://github.com/elviskahoro/flox-conductor-sandbox/issues/16)**
-> — the single source of truth for gtm-sdk#445 Phase A. It carries the verdict, the
-> full evidence index (including which runs are contaminated), the traps not to
-> re-derive, and what's still open. It supersedes issues #4, #5, and #11, whose
-> bodies contain instructions that later work falsified.
-
-On the actual target sandbox class (Amazon Linux 2023 / Vercel / Conductor
-cloud), flox bootstraps cleanly, **H1 and H3 both PASS**, and **H2's control
-repro also PASSes** — confirming this sandbox genuinely has the defect #445
-describes, which is what makes the H1/H3 passes real evidence rather than an
-artifact of an easier environment. **H4 was run on a genuinely fresh,
-never-authenticated sandbox and came back SKIP, not PASS/FAIL**: the
-published package is confirmed to exist, but `flox show` itself fails
-unauthenticated, so the harness never reaches the `flox install` step.
-**Resolved (issue #11): SKIP is the correct, expected result.**
-`flox publish` (no `--org`) always publishes to the publisher's private
-catalog — there is no flag to make a package publicly fetchable, per `flox
-publish --help` and https://flox.dev/docs/concepts/publishing/. Phase D'
-(FloxHub auth-token plumbing, §6) **is needed** for any real unauthenticated
-consumption of a FloxHub-hosted package.
-
-14 runs exist so far across three environment classes (a non-target
-container, macOS, and the target sandbox class). For the full run-by-run
-breakdown, see [`findings/README.md`](findings/README.md) — that table is the
-definitive count, not this sentence; for the narrative writeup, see
-[PR #3](https://github.com/elviskahoro/flox-conductor-sandbox/pull/3).
-
-## Hypotheses under test
-
-| Stage | Hypothesis | Maps to #445 | Result |
-|---|---|---|---|
-| 1 | Flox itself bootstraps on this sandbox class (rpm/deb install, `/dev/fd` shim, hand-started `nix-daemon`) | precondition for everything | **PASS** on target class |
-| 2 | **H1 (core):** a manifest containing *only* prebuilt catalog packages (`pkg-path`) — the exact five gtm-sdk uses (`uv` pinned 0.11.26, `dolt`, `infisical`, `gh`, `git`) — materializes cleanly via one atomic `flox activate`, with every tool resolving under `.flox/run/.../bin` | "Why this should fix dolt/infisical/gh/git provisioning too" | **PASS** — all 3 environments tested |
-| 3 | **H3:** `flox build` manifest builds work here — a trivial no-network build, then the real Option-A shape: repackage pinned, checksum-verified `bd` and Hookdeck upstream release binaries into `$out/bin`; verify the `bd` CLI flag surface the gtm-sdk setup script depends on | Phase B "Option 1" + Phase C flag-surface check | **PASS** on target class (2 non-target environments hit unrelated, environment-specific issues) |
-| 4 | **H4 (the fork in the road):** an unauthenticated sandbox can fetch a package from a project-controlled FloxHub catalog (`flox install <owner>/<pkg>`) | Phase A preflight — decides whether token plumbing (§6) is needed | **SKIP** — resolved (#11): expected. Bare `flox publish` is private-by-default; §6 token plumbing is needed |
-| 5 | **H2 (control, opt-in):** the `bd.flake = "github:gastownhall/beads/v1.1.0"` source build reproduces the `/homeless-shelter` purity failure on this sandbox, confirming root-cause attribution | "Problem" section repro | **PASS** — target class confirmed to share the defect |
-| 6 | **Phase D' prototype (opt-in):** an authenticated sandbox (`scripts/floxhub-login.sh`) can `flox activate` a manifest whose `[install]` references the published `pkg-path` (`envs/floxhub-consume`) — the real gtm-sdk consumption pattern, not Stage 4's ad hoc `flox install` | #445 §6 — proves the auth-token recipe before porting it to gtm-sdk | opt-in, not yet run by default |
-| 7 | **Phase D MVP (opt-in):** `scripts/floxhub-provision.sh` (Infisical-or-env `FLOXHUB_TOKEN` → `FLOX_FLOXHUB_TOKEN` env → `flox activate`, flox's documented CI pattern — no `flox auth login`, no keyring state) against `envs/floxhub-provision`, a *combined* manifest — the same 5 catalog tools plus real `elvis/bd`/`elvis/roborev` packages published from `envs/repackage`, not Stage 6's trivial smoke package | #445 §9 / issue #40 — the executable reference for the startup script's deferred flox stages, proven here first | opt-in, PASS on `aarch64-darwin` and on `x86_64-linux` (GHA staging check, 2026-08-05); `aarch64-linux` out of scope (see [Known scope reductions](#known-scope-reductions)) |
-
-## Layout
-
-```
-envs/prebuilt/        H1: gtm-sdk's five catalog packages, zero flake pins
-envs/repackage/       H3: [build.conductor-workspace-floxhub-01] + [build.bd] (upstream-binary repackage)
-envs/flake-repro/     H2: the failing bd flake pin, nothing else (opt-in stage)
-envs/floxhub-consume/ Phase D' prototype: [install] pkg-path = "elvis/conductor-workspace-floxhub-01" (opt-in stage 6, needs auth)
-envs/floxhub-provision/ Phase D MVP: [install] the 5 catalog tools + elvis/bd + elvis/roborev (opt-in stage 7, needs auth)
-scripts/sandbox-test.sh   the harness — runs all stages, never hard-fails
-scripts/floxhub-provision.sh  Phase D MVP setup-script recipe (token → FLOX_FLOXHUB_TOKEN env → `flox activate`; the activated manifest defaults to envs/floxhub-provision and is redirectable via FLOXHUB_ACTIVATE_DIR to any repo's committed .flox env)
-scripts/conductor-startup-script-cloud.sh  the single workspace startup script: pinned roborev/trunk/rwx/entire + python3.11 for the AL2023 class + opt-in uv/pytest/reflex (issue #44) + rwx auth + roborev config/daemon (reviews on demand with --wait, never a background auto-review hook) — wired into this repo's setup, and paste-ready for other repos' workspaces
-scripts/validate-pins.sh  pin-drift check: roborev/trunk pins vs the Flox manifests and the trunk preflight (CI)
-scripts/conductor-startup-script-cloud-test.sh  codified amazonlinux:2023 container verification of conductor-startup-script-cloud.sh (CI)
-prompts/conductor/   canonical cross-repo Conductor prompts (general, create-pr, fix-errors, resolve-merge-conflicts)
-                    — see prompts/README.md; installed into .conductor/settings.toml
-                    by scripts/install-conductor-prompts.py, drift-checked in CI
-scripts/conductor-prompts/  helper scripts the prompts call instead of inlining shell (pr-preflight, push, pr-submit, pr-context, conflict-context, conflict-check); `self-test.sh` runs in CI
-findings/          harness output: report-*.md (summary + evidence) and full-log-*.txt
-                   — see findings/README.md for a run-by-run index
-```
-
-Each env is a self-contained Flox environment (own `.flox/env.json` +
-`manifest.toml`) so stages are isolated: a failing stage cannot poison the
-others the way the atomic activation in gtm-sdk does today.
-
-`manifest.lock` files for `envs/prebuilt` and `envs/repackage` are committed
-(generated by the first smoke run), matching gtm-sdk's lock-committed flow —
-so Stage 2 tests exactly what a fresh gtm-sdk sandbox would do: materialize
-from a lock. In-sandbox resolution *without* a lock was already validated in
-the first smoke run (32s including locking; see
-`findings/report-20260801-021231Z.md`). `envs/flake-repro` stays lockless —
-locking a flake pin requires fetching/evaluating the flake, which is the very
-thing under test there.
-
-## Running
-
-A Conductor sandbox runs everything automatically via
-`.conductor/settings.toml` → `scripts/sandbox-test.sh`, logging to
-`$HOME/.conductor-setup.log`. Manually:
-
-```bash
-bash scripts/sandbox-test.sh                      # stages 0–4
-FLAKE_REPRO=1 bash scripts/sandbox-test.sh        # also run the H2 failure repro (slow: real Go build attempt)
-FLOXHUB_TEST_PKG=elvis/conductor-workspace-floxhub-01 bash scripts/sandbox-test.sh  # (default shown)
-TEST_AUTH_PLUMBING=1 FLOXHUB_TOKEN=<token> bash scripts/sandbox-test.sh  # opt-in Phase D' prototype (stage 6) — permanently authenticates this sandbox
-TEST_FLOXHUB_PROVISION=1 FLOXHUB_TOKEN=<token> bash scripts/sandbox-test.sh  # opt-in Phase D MVP (stage 7) — permanently authenticates this sandbox
-```
-
-### The startup script — this repo's setup, paste-ready for other repos
-
-`scripts/conductor-startup-script-cloud.sh` is the single provisioning
-script (it replaced the former conductor-cloud-install.sh +
-conductor-startup-script.sh pair, whose duplicated pins were exactly the
-drift class `scripts/validate-pins.sh` was built to catch): the pinned,
-checksum-verified roborev, trunk, and rwx binaries, Python 3.11 on the
-AL2023 sandbox class (whose system python3 is 3.9 while pyproject.toml
-requires >=3.11; reuse-if-present and SKIP elsewhere, so pasting it into a
-repo that needs neither costs nothing), plus the pieces that make the
-tools work rather than merely exist — `RWX_ACCESS_TOKEN` validated before
-it is atomically persisted to `~/.config/rwx/accesstoken` (a bad token
-never overwrites a good one), roborev repo config written directly plus
-an ensured daemon and an agent smoke check. Reviews in a provisioned
-workspace are **on demand and blocking** — the push gate the repo's agent
-instructions and the create-pr prompt define is `roborev review --wait` —
-so the script **never installs a post-commit auto-review hook**: `roborev
-init` is never run (it installs the post-commit/post-rewrite hooks and
-has no flag to suppress that), `.roborev.toml` is written directly, a
-leftover roborev hook from an older setup (or a bare `roborev init`) is
-actively removed, and when `core.hooksPath` points at a machine-global
-hooks dir nothing is ever written there (a WARN tells the user to remove
-any roborev hook found in it by hand; a foreign hook is never replaced).
-The reasoning: roborev's post-commit entry point can only enqueue a
-background daemon job — it has no blocking form — so an auto-review hook
-means reviews drift out of the caller's hands and findings surface after
-the fact, while the gate treats "enqueued" as *not passed*. This repo's
-`.conductor/settings.toml` runs it directly as its setup's provisioning
-step. For repos without a committed `.conductor/settings.toml` setup,
-paste the file's contents into the setup-script field in the Conductor
-GUI (stored as `scripts.setup`) — Conductor exposes no API for setting
-that field, so the GUI paste is the only mechanism; the file keeps the
-paste-safety constraints (no triple-double-quotes, no backslash
-line-continuations) that Conductor's TOML serialization requires, and
-`scripts/validate-pins.sh` enforces them in CI. Set `RWX_ACCESS_TOKEN` —
-and optionally `ROBOREV_AGENT` (default `pi`, issue #85's rollover from
-`claude-code`, which never reaches a Conductor cloud sandbox in practice
-and codex returns 401) plus `ROBOREV_MODEL`
-(`fireworks/accounts/fireworks/models/glm-5p3-flash` by default when the agent
-is pi; the
-`fireworks/` provider prefix is required, see issue #85's gotcha) plus
-`FIREWORKS_API_KEY` (Pi + Fireworks cannot review without it; the smoke
-check WARNs when missing) — in the same settings' environment variables,
-never inline in the script. (The rwx
-pin's former sibling copy in gtm-sdk's conductor-workspace-setup.sh went
-away when that repo retired the script — this repo's startup script is now
-the pin's only executable home.)
-
-**Where provisioning fixes land: here, never in the consuming repo.**
-Cloud provisioning for every repo — gtm-sdk included — is this repo's
-startup script and nothing else. This repo's own workspaces run it
-through the committed `.conductor/settings.toml`; every other repo's
-cloud workspaces get the identical provisioning only by the operator
-pasting this file into that repo's Conductor setup field. gtm-sdk
-deliberately carries no provisioning of its own (gtm-sdk#944 retired its
-script) and must never regain any. A workspace that comes up missing
-tools is always a problem on THIS side of the paste: the setup field
-holds a hand-pasted snapshot that does not track this repo's main, and
-the opt-in stages need env vars set in the consuming repo's Conductor
-settings. The remedy is a change here plus a fresh paste (or setting the
-missing env var) — never a setup script in gtm-sdk. Issue #50 — a fresh
-gtm-sdk cloud workspace where the agent found neither uv nor trunk — is
-exactly this failure mode; this paragraph exists so the next agent reads
-it as a paste/env-var problem instead of a gtm-sdk gap.
-
-### Deferred startup-script stages (issue #40): recipes and helpers
-
-Issue #40 consolidated the remaining gtm-sdk provisioning work
-(gtm-sdk#506 + #702) here; the recipes below are proven and their
-executable references live in this repo, but they are deliberately **not
-wired into `conductor-startup-script-cloud.sh` yet** — wiring them in is
-the tracked follow-up (issue #40), deferred by operator decision. gtm-sdk
-carries none of this: it deleted its own `conductor-workspace-setup.sh`
-entirely (gtm-sdk#944), consumes no copy of this repo's script, and must
-stay that way — its workspaces provision via the paste-ready startup
-script above under the where-fixes-land rule, and its Infisical project
-stores the two secrets these stages read.
-
-| Deferred stage | What it does | Proven recipe / executable reference |
-|---|---|---|
-| Flox bootstrap (Linux) | Install the flox rpm via dnf, create `/dev/fd`, hand-start `nix-daemon` (no systemd in these sandboxes) + a `~/.bashrc` self-heal guard | `scripts/sandbox-test.sh` Stage 1 (the harness form); the container form is `scripts/dagger_provision_test.py`'s `FLOX_BOOTSTRAP_CMD` |
-| FloxHub token | Resolve `FLOXHUB_TOKEN` (environment first, then Infisical — with a best-effort standalone infisical CLI install on dnf hosts, because auth must precede the activation that would otherwise provide infisical) and export it as `FLOX_FLOXHUB_TOKEN` — Flox's documented CI pattern; no `flox auth login`, no keyring write, so a sandbox is never persistently authenticated | `scripts/floxhub-provision.sh` (Stage 7, PASS on both supported systems) |
-| Host-repo Flox env | `flox activate --mode run` against the host repo's committed `.flox/env/manifest.toml`, putting its `bin/` on PATH for the session — private-catalog manifests (e.g. gtm-sdk's `elvis/roborev` pin) resolve through the token above | `scripts/floxhub-provision.sh` with `FLOXHUB_ACTIVATE_DIR=<repo>` (validated against a gtm-sdk checkout's `^0.63.0` manifest) |
-
-Until the wiring lands, a workspace that needs the full surface runs the
-helpers by hand after the startup script (or an operator pastes the
-startup script plus the helper invocations into the setup field).
-
-### Entire.io CLI (opt-in to enable, issue #91)
-
-Issue #91 added the [Entire.io CLI](https://docs.entire.io/) (`entire`) to
-the startup script alongside roborev/trunk/rwx. Every fresh workspace
-local or cloud gets `entire` on PATH plus the bundled `git-remote-entire`
-(needed for `entire://` URLs, e.g. via `entire repo clone`). It is pinned
-the same way as the other tools (`ENTIRE_PIN="0.12.1"` in the startup
-script) and downloaded+checksum-verified from
-`https://install.entire.com/v${ENTIRE_PIN}/entire_<platform>.tar.gz`
-(the canonical CDN the upstream `install.sh` script uses; the GitHub
-release is a documented fallback, and both URLs serve byte-identical
-content). Failures follow the roborev/trunk/rwx tool-stage contract, not
-pi's: a FAIL row is fatal by default, recorded-but-non-fatal under
-`STARTUP_BEST_EFFORT=1`. `scripts/validate-pins.sh` enforces the pin as
-an exact x.y.z and asserts every supported platform has an
-`ENTIRE_SHA256_<platform>` constant set — re-pin runbook in the
-script's pins block.
-
-The startup script does **not** auto-run `entire enable`: that operator
-action is what writes `.entire/settings.json` and installs agent hook
-files, and committing them is a per-repo decision. To query trails and
-gates on a PR, run in any later shell:
-
-```bash
-entire status                    # repo-local enable status (noop if not enabled)
-entire checkpoint list           # checkpoints the local branch holds
-entire trail list --project gh/<owner>/<repo>
-entire trail show <trail>        # intent + linked changes for one trail
-entire review --list             # configured review profiles
-```
-
-The run-time install is the only state the script mutates; the
-script never touches `~/.config/entire` or `.entire/`. If your operator
-setup wants the project enabled, run `entire enable --agent <agent>`
-once and commit the resulting `.entire/settings.json` / `.entire/.gitignore`
-back to the repo. Same model as `roborev`: the binary lands on PATH, the
-repo-level config stays a per-repo operator decision.
-
-### Python dev tools: uv, pytest, Reflex (opt-in, issue #44)
-
-A fresh Conductor cloud workspace has Python but not the Python dev
-tools agents need: `uv` and `reflex` are not on PATH (the Flox manifests'
-uv is process-scoped — activation-only), and `python3 -m pytest` fails
-with `No module named pytest`. The startup script therefore carries an
-opt-in stage, enabled by `STARTUP_PY_DEV_TOOLS=1`, which this repo's
-`.conductor/settings.toml` exports. Pasted standalone (or in a repo that
-sets only its own flags) the stage records a SKIP row and the surface is
-unchanged.
-
-That gate has an operational consequence for pasted workspaces: the
-consuming repo gets uv/pytest/reflex only if its own Conductor
-environment variables ALSO set `STARTUP_PY_DEV_TOOLS=1` — this repo's
-settings export it for this repo's workspaces, but each consuming repo's
-settings must set it separately; pasting the script alone never turns the
-stage on. The committed `.env.cloud` template carries this flag (plus the
-`RWX_ACCESS_TOKEN` placeholder) — fill it in and copy the values into the
-consuming repo's Conductor env-var settings. The resulting diagnostic for
-a sick pasted workspace: `trunk` and `roborev` resolve but `uv` does not
-means the flag is unset, and nothing at all resolving means the paste
-itself is stale or missing. Both are fixed on this side — set the env
-var, re-paste the current script — never by adding provisioning to the
-consuming repo.
-
-What it provisions:
-
-- **uv** — the pinned, checksum-verified release binary
-  (`UV_PIN="0.11.26"` in the startup script, deliberately the same
-  version `envs/prebuilt` and `envs/floxhub-provision` pin;
-  `scripts/validate-pins.sh` cross-checks all three in CI), placed in
-  `/usr/local/bin` like every other persistent tool, with the same
-  `~/.local/bin` no-sudo fallback.
-- **pytest + Reflex** — exact-pinned Python packages (`PYTEST_PIN="9.1.1"`,
-  `REFLEX_PIN="0.9.12"`, single-homed in the startup script and
-  shape-checked by `scripts/validate-pins.sh`) installed into one
-  uv-managed venv at `~/.conductor-pytools`, Python 3.11 — the system 3.11
-  the startup script installs on the AL2023 class, or a uv-managed
-  CPython 3.11 download elsewhere. The console scripts are symlinked into
-  the same bin dirs, so later agent shells get `pytest` and `reflex` as
-  commands.
-
-That venv is the intended Python environment for the two packages (the
-issue's managed-environment allowance), so the supported invocations are:
-
-```bash
-pytest --version                                   # command form
-reflex --version
-~/.conductor-pytools/bin/python -m pytest ...       # module form
-~/.conductor-pytools/bin/python -c 'import reflex'
-```
-
-Bare `python3 -m pytest` in an arbitrary later shell is not one of them —
-the system python3's site-packages stay clean; use the venv's interpreter
-(or activate `~/.conductor-pytools`) instead. The stage provisions the
-Reflex *package* (`reflex --version`, `import reflex`); Reflex's frontend
-toolchain (bun/node, needed by `reflex init`/`reflex run`) is out of
-scope.
-
-Availability and version policy: every run records each tool's resolved
-version and path in the startup summary (and `~/.conductor-setup.log`).
-Re-running setup reuses what is already functional, with the split the
-stage body documents: uv is reused as-is when functional — the same
-reuse-if-present contract as roborev/trunk/rwx, with the resolved version
-recorded in its row — so a `UV_PIN` bump applies to fresh installs (and
-to re-running after removing a stale binary), while
-`scripts/validate-pins.sh` guards the file-level drift against the Flox
-manifests; the pytest/reflex pins are satisfied in place — left untouched
-when they already match, upgraded or healed in place when stale — so the
-venv never accumulates duplicate or competing installs. Every run
-re-proves the commands, the module invocation, and the import, so a
-reused install is verified, not presumed. A provisioning failure is fatal
-under both failure postures (default and `STARTUP_BEST_EFFORT=1`): the
-stage only runs when the workspace explicitly requested these tools, and
-a requested tool that cannot be provisioned must fail setup loudly, never
-leave a workspace that appears ready but lacks them. Pin bumps: uv must
-be bumped in the startup script and both Flox manifests (and their locks)
-together; pytest/reflex live only in the startup script.
-
-### Standardized Conductor prompts for other repos' workspaces
-
-`prompts/conductor/` is the canonical home for Conductor prompts shared
-across repos (ported from gtm-sdk's `prompts/conductor/create-pr.md`). The
-same drift class `scripts/validate-pins.sh` guards against applies here:
-Conductor only reads prompts from each repo's `.conductor` settings TOML,
-and gtm-sdk's hand-maintained inline copy drifted from its `.md` source (the
-TOML still said `git roborev` after gtm-sdk#921 fixed the `.md`). So the
-`.md` files are the single source of truth and
-`scripts/install-conductor-prompts.py` is the only way they get into a
-repo's settings — preserving comments and unrelated keys, idempotent, with
-a `--self-test` behavior matrix and `--check` drift guard both wired into
-the `conductor-startup-script-cloud checks` workflow for this repo, and available
-to any consuming repo:
-
-```bash
-# from inside the target repo — script path must be absolute (uv run
-# resolves it against cwd, not --project); --no-project --with tomlkit
-# skips the full dependency sync
-uv run --no-project --with "tomlkit>=0.15.1" \
-    /path/to/flox-conductor-sandbox/scripts/install-conductor-prompts.py --check
-```
-
-See [`prompts/README.md`](prompts/README.md) for the slot mapping, the
-`--local`/`--print` variants, and exactly what was standardized from
-gtm-sdk's version.
-
-### Pulling Beads tickets from DoltHub
-
-This repository can initialize and refresh its Beads database from the
-private DoltHub remote `dolthub://elviskahoro/gtm-sdk`. Pulling is
-manual only (#45 removed the automatic startup pull along with the rest
-of Beads from the Conductor setup path) — run the script below by hand
-when you want a refresh.
-
-DoltHub remotes authenticate with a Dolt credential JWK, rather than a
-generic API token. On an authenticated machine, create or select a credential
-with `dolt creds new` (or `dolt login`), register its public key in DoltHub,
-and store the private JWK contents in Infisical as
-`DOLTHUB_DOLT_CREDENTIAL_JWK`. The secret must be the JWK JSON itself; do not
-commit it or put it in a repository config file.
-
-For a manual pull, or to refresh outside workspace setup, run this with
-`INFISICAL_TOKEN` and `INFISICAL_PROJECT_ID` available in the shell:
-
-```bash
-bash scripts/beads-dolthub-pull.sh
-bd ready --json
-bd list --json
-bd show <bead-id>
-```
-
-The script imports the JWK into a temporary Dolt credential directory and
-removes that directory on exit. The local `.beads` database and remote
-configuration are retained for subsequent pulls. Override the defaults when
-needed with `BEADS_DOLTHUB_REMOTE` and
-`DOLTHUB_DOLT_CREDENTIAL_SECRET_NAME`; use `INFISICAL_ENV` for a non-`dev`
-Infisical environment.
-
-The harness writes `findings/report-<UTC timestamp>.md` with a PASS/FAIL/SKIP
-table plus evidence, and a full transcript alongside. Commit the findings back
-(or paste the report into #445).
-
-### Pulling Linear AI issues into local Beads
-
-This repository also includes an opt-in Linear intake pilot. It creates a
-separate stealth `.beads` database in the workspace and pulls issues from the
-Linear **AI** team. Linear remains authoritative: the workflow is pull-only,
-does not configure a DoltHub remote, and is never run automatically by
-Conductor setup.
-
-The script reads `LINEAR_API_KEY` from Infisical using the existing
-`INFISICAL_TOKEN` and `INFISICAL_PROJECT_ID` environment variables. The API key
-is held only in the process environment and is not written to the repository:
-
-```bash
-bash scripts/beads-linear-pull.sh --dry-run  # preview the first pull
-bash scripts/beads-linear-pull.sh             # import/update local issues
-bd ready --json
-bd list --json
-bd linear status --json
-```
-
-For an already initialized pilot database, the equivalent explicit pull is:
-
-```bash
-LINEAR_API_KEY="$(infisical secrets get LINEAR_API_KEY --env=dev \
-  --projectId "$INFISICAL_PROJECT_ID" --plain)" \
-  bd linear sync --pull --relations
-```
-
-The Linear script refuses to reuse a `.beads` database that already has a
-configured Dolt remote, preventing this pilot from mixing with the separate
-DoltHub-backed Beads workflow above. It is safe to run repeatedly; existing
-Linear references are updated rather than duplicated.
-
-### Authenticating a publisher sandbox
-
-Stage 4 (H4) only means anything if the sandbox running it has *never*
-authenticated to FloxHub. Publishing a package (`flox publish`, needed for
-Phase A3 / #445 §6 preflight) requires the opposite: an authenticated
-sandbox. `scripts/floxhub-login.sh` bridges that gap non-interactively.
-
-**As of PR #23/#25, `.conductor/settings.toml`'s `scripts.setup` now calls
-`flox auth login` automatically whenever `FLOXHUB_TOKEN` is present in the
-sandbox's environment** (see the setup script for the exact guard). This is
-a deliberate, accepted tradeoff: any sandbox provisioned with
-`FLOXHUB_TOKEN` set is permanently authenticated and **cannot** be used as
-the never-authenticated Stage 4 tester. If you need to re-run Stage 4, use
-a sandbox/workspace that deliberately does not have `FLOXHUB_TOKEN` set —
-e.g. don't set it at the Conductor user level for that workspace, or run
-Stage 4 before ever setting the token on that machine.
-
-flox 1.14.0+ supports non-interactive login via `flox auth login
---token-file=PATH` and `flox auth token` (prints the current token on an
-already-authenticated machine). flox 1.13.2 has neither. To turn a sandbox
-into a publisher:
-
-1. On an already-authenticated machine, run `flox auth token` to print a
-   token.
-2. Hand it to the target sandbox. Conductor's `.conductor/settings.toml`
-   schema has an `environment_variables` facility (with `local`/`cloud`
-   scoping) and `environment_variable_files`, but no dedicated secrets table —
-   values there are plain strings with no masking/encryption. Prefer whatever
-   secret-safe channel your operator setup already uses over hardcoding a
-   token in that file.
-3. With `FLOXHUB_TOKEN` set in the target sandbox's environment, run:
-   ```bash
-   FLOXHUB_TOKEN=<token> bash scripts/floxhub-login.sh
-   ```
-   The script fails loudly if `FLOXHUB_TOKEN` is unset (no silent fallback to
-   interactive login) and never persists the token anywhere but a
-   `mktemp`/`umask 077` tempfile, shredded on exit.
-4. A sandbox that runs this script is now authenticated and permanently
-   disqualified from ever being the unauthenticated Stage 4 tester — use a
-   separate, never-touched sandbox for that.
-
-### Prototyping the consumer side (Phase D', opt-in, manual only)
-
-Once Stage 4 confirms (as it now has, per issue #11) that the catalog is
-private, the actual question for gtm-sdk#445 §6 is whether a sandbox can
-authenticate *and then consume* the package the way gtm-sdk really would —
-via a `pkg-path` in `[install]`, materialized by `flox activate`, not an
-ad hoc `flox install`. `envs/floxhub-consume/.flox/env/manifest.toml`
-exists for exactly this and Stage 6 of `scripts/sandbox-test.sh` tests it,
-opt-in only (same reasoning as `floxhub-login.sh` above — running this on
-the sandbox you also want to use for Stage 4 disqualifies it):
-
-```bash
-TOKEN="$(flox auth token)"   # run on an already-authenticated machine
-TEST_AUTH_PLUMBING=1 FLOXHUB_TOKEN="${TOKEN}" bash scripts/sandbox-test.sh
-```
-
-Stage 6 reuses `scripts/floxhub-login.sh` verbatim to authenticate, then
-`flox activate --dir envs/floxhub-consume --mode run -- true` and checks
-the binary resolves under `.flox/run/.../bin`, mirroring Stage 2's
-verification. A PASS here is the auth-token recipe the startup script's
-deferred flox stages absorb (issue #40): obtain a token (from Infisical via
-`infisical secrets get`, not a hand-copied value — see this repo's parent
-secrets-management convention) → export `FLOX_FLOXHUB_TOKEN` (the modern
-form floxhub-provision.sh uses; Stage 6 originally proved it as
-`flox auth login --token-file`) → `flox activate` against a manifest that
-lists the FloxHub `pkg-path`.
-
-### Prototyping the full MVP (Phase D, opt-in, manual only)
-
-Stage 6 proves the auth-token *mechanism* with a single trivial package.
-Issue #16 §9's Phase D MVP goes one step further: prove the *actual*
-recipe the startup script's deferred flox stages need (issue #40) — the 5
-catalog tools plus real `bd`/`roborev` packages, obtained via one script
-rather than assembled by hand in the harness. `scripts/floxhub-provision.sh`
-is that script (token → `flox activate` against `envs/floxhub-provision`),
-and Stage 7 of `scripts/sandbox-test.sh` runs it and verifies all 7 tools,
-opt-in only, same reasoning as Stage 6:
-
-```bash
-TOKEN="$(flox auth token)"   # run on an already-authenticated machine
-TEST_FLOXHUB_PROVISION=1 FLOXHUB_TOKEN="${TOKEN}" bash scripts/sandbox-test.sh
-# or, standalone, without the harness:
-FLOXHUB_TOKEN="${TOKEN}" bash scripts/floxhub-provision.sh
-```
-
-`scripts/floxhub-provision.sh` tries Infisical first (`infisical secrets
-get FLOXHUB_TOKEN --plain`, secret name overridable via
-`FLOXHUB_TOKEN_SECRET_NAME`) before falling back to a `FLOXHUB_TOKEN` env
-var already set — no interactive fallback either way. The resolved token is
-exported as `FLOX_FLOXHUB_TOKEN` and read directly by `flox activate` —
-Flox's own documented CI pattern
-([flox.dev/docs/tutorials/ci-cd](https://flox.dev/docs/tutorials/ci-cd)).
-No `flox auth login` step, no credential written to the keyring or to disk:
-confirmed working from a completely fresh, never-authenticated `$HOME`.
-Flox's docs recommend backing this with a dedicated low-privilege FloxHub
-service account rather than a real person's token, to keep CI blast radius
-scoped to read/install only. **Known gap:** `elvis/bd`/`elvis/roborev` are
-so far only published for `aarch64-darwin` and `x86_64-linux` (see [Known
-scope reductions](#known-scope-reductions)); Stage 7 doesn't yet PASS on
-`aarch64-linux`; that platform is intentionally out of scope because it is
-not a Conductor target and the published `bd`/`roborev` packages do not cover
-it.
-
-### Staging check: the provisioning recipe in a disposable container (Dagger)
-
-Stage 7 above proves the recipe by authenticating *this* sandbox — which is
-exactly the trade-off issue #16 trap 5 warns against (an authenticated
-sandbox can never again serve as the Stage 4/H4 unauthenticated tester).
-`scripts/dagger_provision_test.py` gets the same proof without that cost: it
-spins up a throwaway `amazonlinux:2023` container (matching the real target
-class), bootstraps `flox` the same way Stage 1 does, runs
-`scripts/floxhub-provision.sh` unmodified inside it, and verifies all 7 tools
-resolve — then the container is discarded. This workspace's own Flox auth
-state never changes.
-
-```bash
-TOKEN="$(flox auth token)"   # run on an already-authenticated machine
-FLOXHUB_TOKEN="${TOKEN}" uv run dagger run python scripts/dagger_provision_test.py
-```
-
-Unlike `scripts/floxhub-provision.sh`'s own Infisical-first lookup, this
-pipeline always takes `FLOXHUB_TOKEN` directly from the environment — no
-Infisical fallback for this particular token, by deliberate choice: Infisical
-is for downstream/consumed secrets, not for FloxHub's own bootstrap
-credential here. The script fails fast (no silent unauthenticated fallback)
-if `FLOXHUB_TOKEN` is unset. Requires `uv` and the `dagger` CLI on `PATH`
-locally. Same opt-in-only rule as Stage 6/7: never wire this into
-`.conductor/settings.toml` or `scripts/sandbox-test.sh`'s default path.
-
-**Cannot be run from a Conductor cloud workspace itself** — it's already a
-nested container, and Dagger's engine needs cgroups/overlayfs access that
-isn't available there. For a real, non-emulated `x86_64-linux` run (the
-actual target class, and the only way to get the full 7/7 check including
-`bd`/`roborev`), use the manual GitHub Actions workflow instead:
-[`.github/workflows/floxhub-provision-check.yml`](.github/workflows/floxhub-provision-check.yml),
-triggered via `workflow_dispatch` (Actions tab, or
-`gh workflow run floxhub-provision-check.yml`). It reads `FLOXHUB_TOKEN` from
-a repo secret of the same name.
-
-## Interpreting outcomes
-
-- **Stage 2 PASS** → #445's central claim holds: remove the flake pins and the
-  whole gtm-sdk manifest materializes; the curl fallbacks stop firing.
-- **Stage 3 PASS** → the Option-A `[build]` shape (repackage upstream release
-  binaries) is viable as the publish source, and bd v1.1.2's flag surface
-  was compatible with gtm-sdk's (since-retired) setup script.
-- **Stage 4** — run on a genuinely fresh, never-authenticated sandbox
-  (`20260801-160419Z`): result is **SKIP, not PASS/FAIL**.
-  `elvis/conductor-workspace-floxhub-01` is confirmed published for both
-  `aarch64-darwin` and `x86_64-linux` (see
-  `findings/floxhub-x86_64-linux-publish-20260801.md`), but `flox show`
-  itself fails to find it unauthenticated — the harness never reaches the
-  `flox install` step PASS/FAIL depends on. **Resolved (issue #11):** this
-  is expected, not a misconfiguration. `flox publish` (the bare form used in
-  PR #7/#8, no `-o`/`--org`) always lands in the publisher's **private**
-  catalog — per `flox publish --help` and
-  https://flox.dev/docs/concepts/publishing/, "individual users will not be
-  able to share packages they've published with other users," and the only
-  visibility knob (`--org`) is a paid feature that shares with an
-  organization, never the general public. There is no way to make a
-  `flox publish`-ed package fetchable unauthenticated. Phase D' (#445 §6
-  token plumbing) **is required** for real unauthenticated/CI usage. (A
-  later, uncommitted-until-now run, `20260801-201328Z`, logged this stage as
-  PASS with a "no token plumbing needed" conclusion — that run's own log
-  shows it executed on an already-authenticated machine, so its PASS does
-  not test unauthenticated access and that conclusion is superseded by the
-  above.)
-- **Stage 5 PASS (opt-in)** = the repro fails with `/homeless-shelter`,
-  confirming this sandbox has the same single-user/no-sandbox Nix defect the
-  issue describes. If it *succeeds*, this sandbox class differs from the one
-  in #445 and Stage 2's PASS is weaker evidence.
-- **Stage 6 PASS (opt-in)** = the Phase D' auth-token recipe works
-  end-to-end (`flox auth login --token-file` then `flox activate` against a
-  `pkg-path` manifest) — this is the concrete mechanism the startup
-  script's deferred flox stages absorb (issue #40). A FAIL here means the
-  recipe itself needs rework before porting, not just the visibility
-  conclusion from Stage 4.
-- **Stage 7 PASS (opt-in)** = the Phase D MVP setup script
-  (`scripts/floxhub-provision.sh`) works end-to-end against the *combined*
-  manifest (5 catalog tools + real `elvis/bd`/`elvis/roborev`), not just
-  Stage 6's single trivial package — this is the actual recipe issue #16 §9
-  scoped for gtm-sdk's (since-retired) setup script; the executable
-  reference now lives here for the deferred startup-script stages. It is expected
-  to PASS on both supported systems, `aarch64-darwin` and `x86_64-linux`;
-  `aarch64-linux` is intentionally outside the Conductor support policy.
-
-## Known scope reductions
-
-- **`elvis/bd@1.1.2` and `elvis/roborev@0.63.0` are published for both
-  supported systems**, `aarch64-darwin` and `x86_64-linux`. The manifest pins
-  those versions and excludes `aarch64-linux`, which is not a Conductor target.
-- No DoltHub/beads-DB bootstrap, no uv sync — tool *provisioning* is the
-  main thing under test (Stage 7 does exercise real Infisical-first token
-  acquisition in `scripts/floxhub-provision.sh`, but doesn't bootstrap any
-  Infisical secrets beyond that one lookup). The startup script does
-  provision the uv binary itself in the persistent environment when
-  `STARTUP_PY_DEV_TOOLS=1` is set (issue #44), but it never syncs this
-  repo's own Python project environment.
-- The repackage env carries `curl`/`gnutar`/`gzip`/`coreutils`/`cacert` as
-  build-time deps because `sandbox = "off"` builds run inside the activated
-  env. If gtm-sdk adopts this shape, those deps land in whatever env hosts
-  the `[build]` sections (or the builds move to a dedicated publish env) —
-  a real tradeoff this test is meant to surface.
+Lightweight software for a developer who works alone and runs a lot of AI
+coding agents at once.
+
+## Why this exists
+
+When you build software alone, you do every job yourself. You write the code,
+review it, run the infrastructure, triage the bugs, and ship the releases. AI
+coding agents change that. You can now hand work to five or ten agents at
+once, each in its own cloud workspace. But each of those workspaces starts as
+a blank machine, and each agent starts with no memory of what the others
+learned. Without some structure, you end up as the glue: relaying CI logs,
+re-explaining the same pitfalls, and checking whether each workspace has the
+right tools.
+
+Larger teams have people whose whole job is keeping all of this consistent.
+A solo developer doesn't, and shouldn't need them. This repo is the small,
+boring layer that takes on that role. Every workspace starts the same way,
+every change gets reviewed, and what one agent learns is there for the next
+one. That way your attention goes to the work instead of the plumbing.
+
+## How a change moves through it
+
+Each step exists to take one job off your plate.
+
+1. **[Detail](https://detail.dev) finds the bugs.** It clones the repo into
+   its own sandbox, exercises the code, and keeps only the small share of
+   findings most worth caring about. Each one comes back as a pull request
+   with a fix, or as a ticket. Bugs get found without depending on you, a
+   user, or production noticing them first.
+2. **An agent works on it in a
+   [Conductor cloud workspace](https://www.conductor.build/docs/cloud).**
+   Every task gets its own Linux sandbox, built from one shared setup, with
+   its own branch, terminal, and diff. Ten agents can work in parallel
+   without stepping on each other, and they keep working after you close
+   your laptop.
+3. **The agent runs CI itself on [RWX](https://www.rwx.com).** With
+   `rwx run --wait`, an agent can send its uncommitted changes to real CI,
+   wait for the result, and get back instructions for pulling the failing
+   logs. It can fix its own failures without you pasting logs into the chat.
+   RWX also covers what the workspace can't do. [Dagger](https://dagger.io)
+   needs container features that Conductor's sandboxes don't provide, so
+   Dagger pipelines run inside RWX tasks, and the agent downloads the
+   results with `rwx artifacts download`. Heavy work still gets done from a
+   lightweight workspace.
+4. **[roborev](https://roborev.io) reviews the change in the workspace,
+   before it's pushed.** roborev runs locally, with no hosted service. By
+   default it reviews every commit in the background, but this repo runs it
+   as a blocking step instead (`roborev review --wait`): the agent waits for
+   the verdict and fixes what it finds before pushing. Problems are cheapest
+   to fix while the agent still has the context, and background findings
+   that arrive later are easy to ignore.
+5. **[Pullfrog](https://pullfrog.com) reviews it again on the pull request.**
+   Pullfrog is an open-source GitHub bot that runs real coding agents inside
+   your own GitHub Actions, with your own model keys. Here it reviews every
+   pull request, and its approval is a required check. An agent can only
+   clear it by fixing and resolving each comment. When nobody else reads
+   your code, two reviews at two different moments are the closest you get
+   to a teammate.
+6. **Agents record what they learn in [cq](https://docs.mozilla.ai/cq).**
+   cq is Mozilla.ai's open standard for shared agent learning. Before an
+   agent acts, it checks the store for known pitfalls. When it works out
+   something non-obvious, like an undocumented behavior or a workaround that
+   took several attempts, it proposes that lesson so the next agent doesn't
+   have to rediscover it.
+7. **Agents share one task list through
+   [Beads](https://github.com/gastownhall/beads) and
+   [DoltHub](https://www.dolthub.com).** _(Work in progress.)_ Beads is an
+   issue tracker built for agents. It stores work as a dependency graph, so
+   an agent can ask what's ready to pick up and claim it. Its database is
+   [Dolt](https://www.dolthub.com), which works like Git for data, so pushing
+   and pulling through DoltHub gives agents in separate workspaces the same
+   view of what's done, what's claimed, and what's blocked.
+8. **Every agent session is kept with
+   [Paper Compute](https://papercompute.com).** _(Work in progress.)_
+   `paperctl` routes Claude Code, Codex, or Pi through a small local proxy
+   and captures the whole session: prompts, tool calls, token use, and cost.
+   Work that used to vanish when the terminal closed becomes history you can
+   search by meaning ("why did the deploy fail?"), and the sessions worth
+   repeating can become reusable skills.
+
+Big test suites get one more piece. [GTM SDK](https://gtmsdk.com) has a large
+one, so it builds and tests with [Bazel](https://bazel.build), which caches
+results and reruns only what a change actually affects. Agents get fast
+feedback instead of waiting on the whole suite every time.
+
+## The ideas behind it
+
+### Lightweight on purpose
+
+There are no servers to run and no platform to maintain here: just scripts,
+prompts, and notes you can read in an afternoon. Every decision assumes one
+human and many agents, so things that are easy to understand at a glance win
+over things that would scale to a hundred engineers. If understanding a piece
+of it would take a dashboard, that piece is too big.
+
+### Every workspace starts the same way
+
+An agent is only as reliable as the machine it runs on. One startup script
+sets up every new workspace, both for this repo and for any other project that
+uses it. Tools are pinned to exact versions and verified before they're used,
+so what worked yesterday still works today. When something is off, there's
+one place to look and one place to fix it. Fixes always land here and never
+in the individual projects. As soon as a setup fix exists in two places, the
+two copies start to drift apart.
+
+### A workspace that looks ready but isn't is worse than one that fails
+
+If a tool you asked for didn't install, setup says so loudly. Otherwise an
+agent can lose an hour to a missing command before anyone notices.
+
+### Agents get the same instructions everywhere
+
+The prompts that tell agents how to open a pull request, fix a failing build,
+or resolve a merge conflict are written once, here. A script copies them into
+each project. When people copy instructions by hand, the copies drift, and
+one project quietly keeps last month's advice. An automated check catches a
+stale copy before an agent follows it.
+
+### Heavy pieces are opt-in
+
+Not every project needs the Python tooling, the issue syncing, or the private
+package catalog. Those pieces exist, but they stay off until a project asks
+for them. Adding the setup to a project that doesn't need them should cost
+nothing.
+
+### Secrets stay out of the repo
+
+Tokens are read from the environment or a secrets manager at the moment
+they're needed. They are never committed to the repo, and wherever possible
+they never touch the disk. When you're the only person keeping watch, the
+safest secret is one that has nowhere to leak from.
+
+### Prove it before you depend on it
+
+This repo started with one question: could prebuilt [Flox](https://flox.dev)
+packages fix the source builds that kept failing in cloud workspaces? Instead
+of guessing, we ran the experiment on the real machines and wrote down what
+happened, dead ends included. That habit stuck. When this repo says something
+works, there's a record of it working in [`findings/`](findings/README.md).
+The traps we've already found are written down, so the next person or agent
+doesn't fall into them again.
+
+## The supporting cast
+
+These tools aren't steps in the flow, but they keep it running smoothly:
+
+- **[Trunk](https://docs.trunk.io/code-quality/overview)** runs every linter
+  and formatter in the repo through one command, `trunk check`, with each
+  tool pinned to a fixed version. It flags only issues a change introduces,
+  never the backlog, so agents aren't sent off cleaning up old code.
+- **[Entire](https://docs.entire.io)** turns every agent commit into a
+  checkpoint: the code change together with the prompt, reasoning, and tool
+  calls behind it, with secrets redacted before anything leaves the machine.
+  Paper keeps whole sessions, and Entire ties the reasoning to the commit, so
+  `git blame` can lead back to why.
+- **[Flox](https://flox.dev)** resolves one manifest into one lock file, so
+  your laptop, CI, and every agent's sandbox run exactly the same software,
+  built from prebuilt packages instead of compiled on a fragile machine.
+- **uv, pytest, and Reflex** are the Python essentials, for projects that want
+  them.
+
+## Where to go next
+
+This page covers the why. The how lives in [`skills/`](skills/): short,
+task-focused guides that agents load when they need them and that people can
+read too.
+
+| If you want to… | Read |
+| --- | --- |
+| Set up a workspace, or fix one that came up missing tools | [`conductor-startup-script`](skills/conductor-startup-script/SKILL.md) |
+| Debug a startup script that won't build in Conductor | [`conductor-cloud-startup-script-debugging`](skills/conductor-cloud-startup-script-debugging/SKILL.md) |
+| Test the startup script locally | [`run-startup-script-tests`](skills/run-startup-script-tests/SKILL.md) |
+| Share prompts with another project | [`conductor-prompts`](skills/conductor-prompts/SKILL.md) |
+| Pull issues from DoltHub or Linear | [`beads-sync`](skills/beads-sync/SKILL.md) |
+| Record or look up what agents learned | [`cq`](skills/cq/SKILL.md) |
+| Configure Pullfrog reviews | [`pullfrog-fireworks-setup`](skills/pullfrog-fireworks-setup/SKILL.md) |
+| Log in to Entire from a workspace | [`entire-device-login`](skills/entire-device-login/SKILL.md) |
+| Re-run the Flox experiments | [`flox-sandbox-harness`](skills/flox-sandbox-harness/SKILL.md) |
+| Publish or consume private Flox packages | [`floxhub-auth`](skills/floxhub-auth/SKILL.md) |
+
+The experiment results are in [`findings/`](findings/README.md), and
+[issue #16](https://github.com/elviskahoro/flox-conductor-sandbox/issues/16)
+has the Flox verdict.
