@@ -1808,7 +1808,9 @@ SU_RUN /tmp/stale-home /tmp/nowork-stubs-fail >/dev/null || fail "stale-migratio
 STALE_CFG=/tmp/stale-home/.roborev/config.toml
 grep -q 'roborev-1000-123' "${STALE_CFG}" && fail "stale /tmp socket address not removed: $(cat "${STALE_CFG}")"
 [[ "$(grep -c '^server_addr = "unix:///tmp/stale-home/\.roborev/run/d\.sock"$' "${STALE_CFG}")" == 1 ]] || fail "migrated server_addr wrong: $(cat "${STALE_CFG}")"
-grep -q '^foo = "bar"$' "${STALE_CFG}" && grep -q '^y = 1$' "${STALE_CFG}" || fail "migration dropped unrelated config lines: $(cat "${STALE_CFG}")"
+if ! { grep -q '^foo = "bar"$' "${STALE_CFG}" && grep -q '^y = 1$' "${STALE_CFG}"; }; then
+  fail "migration dropped unrelated config lines: $(cat "${STALE_CFG}")"
+fi
 [[ "$(stat -c %a /tmp/stale-home/.roborev/run)" == 700 ]] || fail "socket dir is not 0700"
 # A non-/tmp unix server_addr and a TCP one must both be left alone.
 printf 'server_addr = "unix:///var/run/custom.sock"\n' > "${STALE_CFG}"
@@ -1832,6 +1834,7 @@ LSOCK="$(sed -n 's/^server_addr = "unix:\/\/\(.*\)"$/\1/p' "${LONGH}/.roborev/co
 # RUN 30: when the daemon can't start, the FAIL row carries the real
 # `daemon run` error instead of just a generic start failure (issue #118).
 rm -rf /tmp/nowork-stubs-dead; mkdir -p /tmp/nowork-stubs-dead; cp -r /tmp/nowork-stubs/. /tmp/nowork-stubs-dead/
+# shellcheck disable=SC2016 # $1/$2 are for the stub's shell, not ours
 printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; status) exit 1;; daemon) if [ "$2" = run ]; then echo "Error: socket directory /tmp has unsafe permissions 777" >&2; fi; exit 1;; check-agents) exit 1;; esac\nexit 0\n' > /tmp/nowork-stubs-dead/roborev
 chmod 755 /tmp/nowork-stubs-dead/roborev
 rm -rf /tmp/dead-home; su - sandbox-user -c "mkdir -p /tmp/dead-home"
