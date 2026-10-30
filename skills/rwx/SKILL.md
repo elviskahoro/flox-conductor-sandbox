@@ -1,13 +1,37 @@
 ---
 name: rwx
-description: Use when an agent must validate a change against remote CI with the RWX CLI (rwx run --wait, rwx results, rwx logs, rwx artifacts) so its pull request has a passing build before review, without committing or pushing first.
+description: Use when working with RWX: creating or modifying a `.rwx/` run definition, validating a change against remote CI with the RWX CLI (rwx run --wait, rwx results, rwx logs, rwx artifacts) so a pull request has a passing build before review, checking why CI is red or what is failing on a branch, or running tests in an RWX sandbox.
 ---
 
 # RWX: pull requests from agents with passing builds
 
-Sources: [Truly continuous integration](https://www.rwx.com/blog/ensuring-pull-requests-from-agents-have-passing-builds) (Jordan Sanders, 2026-01-21). Requires RWX CLI 3.0.0 or newer. See also [RWX logs](https://www.rwx.com/blog/rwx-logs) (Jason Robinaugh, 2026-01-07) and [Build container images](https://www.rwx.com/docs/guides/build-container-images), [RWX Sandboxes](https://www.rwx.com/blog/rwx-sandboxes), and the [calculator-demo `claude.yml`](https://github.com/rwx-cloud/calculator-demo/blob/main/.rwx/claude.yml).
+Sources: the [rwx-cloud/skills](https://github.com/rwx-cloud/skills) `rwx` skill (MIT, v0.2.0), [Truly continuous integration](https://www.rwx.com/blog/ensuring-pull-requests-from-agents-have-passing-builds) (Jordan Sanders, 2026-01-21). Requires RWX CLI 3.0.0 or newer. See also [RWX logs](https://www.rwx.com/blog/rwx-logs) (Jason Robinaugh, 2026-01-07) and [Build container images](https://www.rwx.com/docs/guides/build-container-images), [RWX Sandboxes](https://www.rwx.com/blog/rwx-sandboxes), and the [calculator-demo `claude.yml`](https://github.com/rwx-cloud/calculator-demo/blob/main/.rwx/claude.yml).
 
 Reviewers don't want agent PRs without a green build, and agents often can't run the full suite locally. RWX lets the agent iterate against remote, parallelized CI until it passes, with no commit or push per attempt.
+
+## Before you start
+
+Run `rwx whoami` to confirm the CLI is signed in, and update the CLI if it is out of date.
+
+## Writing and validating run definitions
+
+Don't write `.rwx/*.yml` from memory. Pull the reference and read all of it without truncating:
+
+```bash
+rwx docs pull /migrating/rwx-reference
+rwx docs search "<query>"          # for anything the reference doesn't cover, then rwx docs pull the hit
+rwx lint .rwx/<name>.yml           # validate before running
+```
+
+`rwx run` doesn't need a commit or push, even when the definition references a commit SHA: RWX patches the git clone with your local contents.
+
+## Checking CI status
+
+To see what is failing on the current or a given branch, start with `rwx results -h`, then `rwx logs` for the failing task.
+
+## Migrating from GitHub Actions
+
+Use the [`migrate-from-gha`](../migrate-from-gha/SKILL.md) skill, then [`review-gha-migration`](../review-gha-migration/SKILL.md).
 
 ## Commands
 
@@ -192,4 +216,4 @@ tasks:
 - CI runs without a git push/pull and without building container images, so changes validate immediately.
 - Tasks are sandboxed with explicit dependencies, so an agent running locally or in the cloud needs no secrets and no up-to-date local dev environment.
 
-The article gives no config snippets. For `.rwx/` run definitions, check the RWX docs rather than guessing, and confirm flags with `rwx --help` and `rwx run --help`.
+The article gives no config snippets. For `.rwx/` run definitions use `rwx docs pull` (above), and confirm flags with `rwx --help` and `rwx run --help`.
