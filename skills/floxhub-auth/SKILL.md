@@ -20,7 +20,7 @@ FLOXHUB_TOKEN=<token> bash scripts/floxhub-provision.sh
 FLOXHUB_ACTIVATE_DIR=/path/to/repo bash scripts/floxhub-provision.sh   # activate another repo's committed .flox env
 ```
 
-- It resolves the token from Infisical first (`infisical secrets get FLOXHUB_TOKEN --plain`, with the name overridable via `FLOXHUB_TOKEN_SECRET_NAME`), then from `FLOXHUB_TOKEN`. There's no interactive fallback.
+- It uses `FLOXHUB_TOKEN` if already set, else Infisical (`infisical secrets get FLOXHUB_TOKEN --plain`, with the name overridable via `FLOXHUB_TOKEN_SECRET_NAME`). There's no interactive fallback. A stale `FLOXHUB_TOKEN` left in the shell wins over a rotated Infisical secret, so unset it when rotating.
 - It exports `FLOX_FLOXHUB_TOKEN` and runs `flox activate`, which is Flox's documented CI pattern. Nothing is written to the keyring or disk, and it has been confirmed to work from a fresh `$HOME`.
 - `elvis/bd` and `elvis/roborev` are published for `aarch64-darwin` and `x86_64-linux` only.
 
