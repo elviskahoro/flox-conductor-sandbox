@@ -723,7 +723,7 @@ rwx_install() {
 # Like the other tools in this script, this stage NEVER auto-runs
 # `entire enable`: that operator action is what writes .entire/settings.json
 # and installs agent hook files, and committing them is a per-repo decision
-# (the README documents the workflow). All this stage does is make the
+# (skills/conductor-startup-script documents the workflow). All this stage does is make the
 # commands available so an operator can run `entire enable --agent <X>` (or
 # read-only queries like `entire checkpoint list`, `entire trail list`,
 # `entire review`) in any later shell.
@@ -1652,7 +1652,7 @@ if rwx_install; then :; else record FAIL rwx "provisioning failed — see messag
 # companion `git-remote-entire` helper that Git invokes for `entire://`
 # remotes. Operator-driven `entire enable` is never run here — committing
 # .entire/settings.json and the agent hook files is a per-repo decision the
-# README documents separately. Like the other tool stages above, a
+# skills/conductor-startup-script documents separately. Like the other tool stages above, a
 # provisioning failure is fatal under the default posture, recorded-but-
 # non-fatal under STARTUP_BEST_EFFORT=1.
 if entire_install; then :; else record FAIL entire "provisioning failed — see messages above"; maybe_fail; fi
