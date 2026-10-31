@@ -1313,6 +1313,17 @@ find_repo_root() {
 # 244b3bf removed from pi_install's WARN. RUN 25's prefix assert plus
 # its positive/negative wording locks pin the no-toml shape; the
 # with-worktree running case goes through has_toml=1 unchanged.
+# roborev_agent_ok <agent>: `roborev check-agents` exits 0 even when the
+# agent is missing from PATH ("0 passed, 0 failed, 1 skipped", real v0.63.0),
+# which used to record a false "answered a smoke prompt — reviews are live".
+# Require exit 0 AND at least one agent passed AND none failed.
+roborev_agent_ok() {
+  local out
+  out="$(roborev check-agents --agent "$1" --timeout 30 </dev/null 2>&1 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&-)" || return 1
+  [[ "${out}" =~ ([0-9]+)\ passed,\ ([0-9]+)\ failed ]] || return 1
+  (( BASH_REMATCH[1] > 0 && BASH_REMATCH[2] == 0 ))
+}
+
 roborev_smoke_check() {
   local agent="$1" repo_root="$2"
   local has_toml=0
@@ -1346,7 +1357,7 @@ roborev_smoke_check() {
   else
     switch_hint="or set ROBOREV_AGENT to a working agent and re-run setup from inside a discoverable repo (or set CONDUCTOR_WORKSPACE_PATH=/path/to/repo), so the next run writes a .roborev.toml"
   fi
-  if roborev_quiet check-agents --agent "${agent}" --timeout 30; then
+  if roborev_agent_ok "${agent}"; then
     if [[ "${has_toml}" == 1 ]]; then
       record PASS roborev-agent "${agent} answered a smoke prompt — reviews are live"
     else
@@ -1366,29 +1377,56 @@ roborev_smoke_check() {
 # (issue #98). The default 127.0.0.1:7373 is machine-global, so one
 # sandbox's (or leftover) daemon would answer for every workspace and the
 # host. server_addr in the sandbox-HOME global config makes every roborev
-# call here — daemon, review, check-agents — use the private socket. The
-# socket path is short and keyed on HOME because unix socket paths are
-# capped at ~104 bytes. A server_addr already present is left alone.
+# call here — daemon, review, check-agents — use the private socket.
+# The socket lives in a 0700 dir under HOME, NOT /tmp: roborev refuses a
+# socket directory that is group/world accessible and Conductor sandboxes
+# have /tmp at mode 777 (issue #118; `daemon start` only times out, the
+# real error shows under `daemon run`). Unix socket paths are capped at
+# ~104 bytes, so an over-long HOME falls back to a short 0700 dir under /tmp
+# keyed on HOME. A server_addr already present is left alone, except a
+# stale unix:///tmp/ one written by an earlier version, which is replaced.
 roborev_isolate_daemon() {
-  local cfg="${HOME}/.roborev/config.toml" key sock
+  local cfg="${HOME}/.roborev/config.toml" key dir sock
   if grep -qE '^[[:space:]]*server_addr[[:space:]]*=' "${cfg}" 2>/dev/null; then
-    return 0
+    if grep -qE '^[[:space:]]*server_addr[[:space:]]*=[[:space:]]*"unix:///tmp/roborev-[0-9]+-[0-9]+\.sock"' "${cfg}"; then
+      sed -i.bak -E '/^[[:space:]]*server_addr[[:space:]]*=[[:space:]]*"unix:\/\/\/tmp\/roborev-[0-9]+-[0-9]+\.sock"/d' "${cfg}" && rm -f "${cfg}.bak" || return 1
+    else
+      return 0
+    fi
   fi
-  key="$(printf '%s' "${HOME}" | cksum | cut -d' ' -f1)"
-  sock="/tmp/roborev-$(id -u)-${key}.sock"
   mkdir -p "${HOME}/.roborev" || return 1
+  dir="${HOME}/.roborev/run"
+  sock="${dir}/d.sock"
+  if [[ ${#sock} -gt 100 ]]; then
+    key="$(printf '%s' "${HOME}" | cksum | cut -d' ' -f1)"
+    dir="/tmp/roborev-$(id -u)-${key}"
+    sock="${dir}/d.sock"
+  fi
+  mkdir -p "${dir}" && chmod 700 "${dir}" || return 1
   printf 'server_addr = "unix://%s"\n' "${sock}" >>"${cfg}" || return 1
 }
 
+# roborev_daemon_up: `roborev status` exits 0 even when it prints
+# "Daemon: not running" (real v0.63.0), so the exit code alone gives a false
+# PASS. Require exit 0 AND no "not running" in the output.
+roborev_daemon_up() {
+  local out
+  out="$(roborev status </dev/null 2>&1 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&-)" || return 1
+  [[ "${out}" != *"not running"* ]]
+}
+
 ensure_daemon() {
-  local stage="$1"
+  local stage="$1" err
   roborev_isolate_daemon || record WARN "${stage}" "could not write server_addr to ${HOME}/.roborev/config.toml — daemon falls back to the machine-global 127.0.0.1:7373 (issue #98)"
-  if roborev_quiet status; then
+  if roborev_daemon_up; then
     record PASS "${stage}" "daemon running"
   elif roborev_quiet daemon start; then
     record PASS "${stage}" "daemon revived"
   else
-    record FAIL "${stage}" "daemon not running and 'roborev daemon start' failed"
+    # `daemon start` hides the cause behind a generic timeout (issue #118);
+    # `daemon run` prints the real error (e.g. unsafe socket-dir perms).
+    err="$(timeout 5 roborev daemon run 2>&1 </dev/null | head -3 | tr '\n' ' ' || true)"
+    record FAIL "${stage}" "daemon not running and 'roborev daemon start' failed${err:+ — daemon run says: ${err}}"
     return 1
   fi
 }
