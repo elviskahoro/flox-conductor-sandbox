@@ -1395,10 +1395,19 @@ roborev_isolate_daemon() {
   printf 'server_addr = "unix://%s"\n' "${sock}" >>"${cfg}" || return 1
 }
 
+# roborev_daemon_up: `roborev status` exits 0 even when it prints
+# "Daemon: not running" (real v0.63.0), so the exit code alone gives a false
+# PASS. Require exit 0 AND no "not running" in the output.
+roborev_daemon_up() {
+  local out
+  out="$(roborev status </dev/null 2>&1 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&-)" || return 1
+  [[ "${out}" != *"not running"* ]]
+}
+
 ensure_daemon() {
   local stage="$1" err
   roborev_isolate_daemon || record WARN "${stage}" "could not write server_addr to ${HOME}/.roborev/config.toml — daemon falls back to the machine-global 127.0.0.1:7373 (issue #98)"
-  if roborev_quiet status; then
+  if roborev_daemon_up; then
     record PASS "${stage}" "daemon running"
   elif roborev_quiet daemon start; then
     record PASS "${stage}" "daemon revived"

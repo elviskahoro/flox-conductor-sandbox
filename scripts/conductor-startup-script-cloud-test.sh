@@ -1874,4 +1874,25 @@ else
 fi
 chmod 1777 /tmp # RUN 27-31 widened it to 777; restore the stock mode
 
+# RUN 32: real `roborev status` exits 0 while printing "Daemon: not running"
+# (v0.63.0). That must not count as running: with start failing it is a FAIL
+# row carrying the `daemon run` error, and with start working it is "revived".
+rm -rf /tmp/nowork-stubs-lie; mkdir -p /tmp/nowork-stubs-lie; cp -r /tmp/nowork-stubs/. /tmp/nowork-stubs-lie/
+# shellcheck disable=SC2016 # $1/$2 are for the stub's shell, not ours
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; status) echo "Daemon: not running"; exit 0;; daemon) if [ "$2" = run ]; then echo "Error: socket directory /tmp has unsafe permissions 777" >&2; fi; exit 1;; check-agents) exit 1;; esac\nexit 0\n' > /tmp/nowork-stubs-lie/roborev
+chmod 755 /tmp/nowork-stubs-lie/roborev
+rm -rf /tmp/lie-home; su - sandbox-user -c "mkdir -p /tmp/lie-home"
+LIE_OUT="$(SU_RUN /tmp/lie-home /tmp/nowork-stubs-lie || true)"
+case "${LIE_OUT}" in
+*"roborev-daemon | FAIL | daemon not running and 'roborev daemon start' failed — daemon run says: Error: socket directory /tmp"*) ;;
+*) printf '%s\n' "${LIE_OUT}" | grep roborev-daemon; fail "status exit 0 + 'not running' was treated as a running daemon" ;;
+esac
+# shellcheck disable=SC2016
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; status) echo "Daemon: not running"; exit 0;; daemon) exit 0;; check-agents) exit 1;; esac\nexit 0\n' > /tmp/nowork-stubs-lie/roborev
+LIE2_OUT="$(SU_RUN /tmp/lie-home /tmp/nowork-stubs-lie || true)"
+case "${LIE2_OUT}" in
+*"roborev-daemon | PASS | daemon revived"*) ;;
+*) printf '%s\n' "${LIE2_OUT}" | grep roborev-daemon; fail "'not running' status with working start was not 'daemon revived'" ;;
+esac
+
 echo "=== ALL CHECKS PASSED ==="
