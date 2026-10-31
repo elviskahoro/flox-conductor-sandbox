@@ -8,7 +8,7 @@ Source: adapted from [rwx-cloud/skills](https://github.com/rwx-cloud/skills) (MI
 ## Migration Procedure
 
 You are migrating a GitHub Actions workflow to RWX. Follow these steps exactly.
-Do NOT use TodoWrite — this procedure is your task list.
+This procedure is your task list; don't substitute a separate todo tool for it.
 
 ### Step 1: Read and analyze the source workflow
 
@@ -109,7 +109,7 @@ these should be two separate RWX tasks so the build can be cached independently.
 If the same build command appears in multiple GHA jobs, produce a single shared
 build task in the DAG rather than duplicating it.
 
-If the source workflow contains `docker build` steps, use AskUserQuestion to ask
+If the source workflow contains `docker build` steps, ask the user, and wait for their answer before proceeding,
 whether they'd like to use **RWX OCI images** instead. Explain the tradeoffs:
 OCI images leverage RWX's native image building with content-based caching and
 no Docker daemon dependency, but require adopting RWX-specific configuration.
