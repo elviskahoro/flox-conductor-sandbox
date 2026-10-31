@@ -39,7 +39,7 @@ Use the [`migrate-from-gha`](../migrate-from-gha/SKILL.md) skill, then [`review-
 - `rwx results` shows what happened in a run (which tasks passed or failed).
 - `rwx logs` gives task logs for troubleshooting a failure.
 - `rwx artifacts` fetches artifacts a run produced.
-- Every command accepts `--output json`. Use it when parsing results programmatically.
+- Most commands accept `--output json` for programmatic parsing; `rwx logs` uses `--json` (its `--output` is a download path). Confirm with `rwx <command> --help`.
 
 ## Loop
 
