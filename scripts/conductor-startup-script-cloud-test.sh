@@ -317,7 +317,7 @@ mkdir -p "${GLOBAL_HOOKS}" /tmp/roborev-stub
 # "$1" must stay literal — this printf emits a stub script whose own case
 # statement reads "$1", so single quotes are required, not an oversight.
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; init|install-hook|uninstall-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/roborev-stub/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; init|install-hook|uninstall-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub/roborev
 chmod 755 /tmp/roborev-stub/roborev
 su - sandbox-user -c "git init -q /tmp/guard-repo"
 RUN3_OUTPUT="$(su - sandbox-user -c "cd /tmp/guard-repo && PATH=/tmp/roborev-stub:\$PATH GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=${GLOBAL_HOOKS} bash ${STARTUP_SCRIPT}")" ||
@@ -357,7 +357,7 @@ echo "=== RUN 3B: leftover roborev hook removed; nothing reinstalled ==="
 rm -rf /tmp/hook-repo /tmp/roborev-stub2
 mkdir -p /tmp/roborev-stub2
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) rm -f "$(git rev-parse --git-path hooks/post-commit)" "$(git rev-parse --git-path hooks/post-rewrite)"; exit 0;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/roborev-stub2/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) rm -f "$(git rev-parse --git-path hooks/post-commit)" "$(git rev-parse --git-path hooks/post-rewrite)"; exit 0;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub2/roborev
 chmod 755 /tmp/roborev-stub2/roborev
 su - sandbox-user -c "git init -q /tmp/hook-repo"
 su - sandbox-user -c "printf '#!/bin/sh\nexec roborev post-commit\n' > /tmp/hook-repo/.git/hooks/post-commit && chmod 755 /tmp/hook-repo/.git/hooks/post-commit"
@@ -393,7 +393,7 @@ mkdir -p /tmp/roborev-stub3
 # writes there) would make that pre-seed fail with permission denied.
 su - sandbox-user -c "mkdir -p /tmp/global-hooks2"
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) echo called > /tmp/uninstall-called; exit 1;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/roborev-stub3/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) echo called > /tmp/uninstall-called; exit 1;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub3/roborev
 chmod 755 /tmp/roborev-stub3/roborev
 su - sandbox-user -c "git init -q /tmp/guard-repo2"
 su - sandbox-user -c "printf '#!/bin/sh\nexec roborev post-commit\n' > /tmp/global-hooks2/post-commit && chmod 755 /tmp/global-hooks2/post-commit"
@@ -425,7 +425,7 @@ echo "=== RUN 3D: ROBOREV_AGENT gate — malformed falls back, valid slug lands 
 rm -rf /tmp/agent-repo /tmp/agent-repo2 /tmp/agent-repo3 /tmp/agent-repo4 /tmp/agent-repo5 /tmp/roborev-stub4
 mkdir -p /tmp/roborev-stub4
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; init|install-hook|uninstall-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/roborev-stub4/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; init|install-hook|uninstall-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub4/roborev
 chmod 755 /tmp/roborev-stub4/roborev
 su - sandbox-user -c "git init -q /tmp/agent-repo"
 RUN3D_OUTPUT="$(su - sandbox-user -c "cd /tmp/agent-repo && PATH=/tmp/roborev-stub4:\$PATH ROBOREV_AGENT='bad \"value' bash ${STARTUP_SCRIPT}")" ||
@@ -516,7 +516,7 @@ echo "=== RUN 3E: mixed hooks — a careless uninstall must not PASS over a dele
 rm -rf /tmp/mixed-repo /tmp/roborev-stub5
 mkdir -p /tmp/roborev-stub5
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) rm -f "$(git rev-parse --git-path hooks/post-commit)" "$(git rev-parse --git-path hooks/post-rewrite)"; exit 0;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/roborev-stub5/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) rm -f "$(git rev-parse --git-path hooks/post-commit)" "$(git rev-parse --git-path hooks/post-rewrite)"; exit 0;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub5/roborev
 chmod 755 /tmp/roborev-stub5/roborev
 su - sandbox-user -c "git init -q /tmp/mixed-repo"
 su - sandbox-user -c "printf '#!/bin/sh\nexec my-formatter --fix\n' > /tmp/mixed-repo/.git/hooks/post-commit && chmod 755 /tmp/mixed-repo/.git/hooks/post-commit && printf '#!/bin/sh\n# roborev post-rewrite hook v2 - remaps reviews after rebase/amend\nexec roborev remap\n' > /tmp/mixed-repo/.git/hooks/post-rewrite && chmod 755 /tmp/mixed-repo/.git/hooks/post-rewrite"
@@ -549,9 +549,9 @@ echo "=== RUN 3F: uninstall WARN branches — partial removal and hard failure =
 rm -rf /tmp/partial-repo /tmp/fail-repo /tmp/roborev-stub6 /tmp/roborev-stub7
 mkdir -p /tmp/roborev-stub6 /tmp/roborev-stub7
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) rm -f "$(git rev-parse --git-path hooks/post-commit)"; exit 0;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/roborev-stub6/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) rm -f "$(git rev-parse --git-path hooks/post-commit)"; exit 0;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub6/roborev
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) exit 1;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/roborev-stub7/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) exit 1;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub7/roborev
 chmod 755 /tmp/roborev-stub6/roborev /tmp/roborev-stub7/roborev
 su - sandbox-user -c "git init -q /tmp/partial-repo"
 su - sandbox-user -c "printf '#!/bin/sh\n# roborev post-commit hook v4 - auto-reviews every commit\nexec roborev post-commit\n' > /tmp/partial-repo/.git/hooks/post-commit && chmod 755 /tmp/partial-repo/.git/hooks/post-commit && printf '#!/bin/sh\n# roborev post-rewrite hook v2 - remaps reviews after rebase/amend\nexec roborev remap\n' > /tmp/partial-repo/.git/hooks/post-rewrite && chmod 755 /tmp/partial-repo/.git/hooks/post-rewrite"
@@ -593,7 +593,7 @@ su - sandbox-user -c "
 rm -rf /tmp/worst-repo /tmp/roborev-stub8
 mkdir -p /tmp/roborev-stub8
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) rm -f "$(git rev-parse --git-path hooks/post-commit)" "$(git rev-parse --git-path hooks/post-rewrite)"; exit 1;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/roborev-stub8/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) rm -f "$(git rev-parse --git-path hooks/post-commit)" "$(git rev-parse --git-path hooks/post-rewrite)"; exit 1;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub8/roborev
 chmod 755 /tmp/roborev-stub8/roborev
 su - sandbox-user -c "git init -q /tmp/worst-repo"
 su - sandbox-user -c "printf '#!/bin/sh\nexec my-formatter --fix\n' > /tmp/worst-repo/.git/hooks/post-commit && chmod 755 /tmp/worst-repo/.git/hooks/post-commit && printf '#!/bin/sh\n# roborev post-rewrite hook v2 - remaps reviews after rebase/amend\nexec roborev remap\n' > /tmp/worst-repo/.git/hooks/post-rewrite && chmod 755 /tmp/worst-repo/.git/hooks/post-rewrite"
@@ -980,7 +980,7 @@ printf '#!/bin/sh\necho v22.19.0\n' > /tmp/pi-install-stubs/node
 chmod 755 /tmp/pi-install-stubs/node
 # stub roborev for the post-install smoke check (same shape as RUN 13).
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; status) exit 0;; daemon) exit 0;; check-agents) exit 0;; uninstall-hook|init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/pi-install-stubs/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; status) exit 0;; daemon) exit 0;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; uninstall-hook|init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/pi-install-stubs/roborev
 chmod 755 /tmp/pi-install-stubs/roborev
 su - sandbox-user -c "git init -q /tmp/pi-install-repo"
 RUN14_OUTPUT="$(su - sandbox-user -c "cd /tmp/pi-install-repo && PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
@@ -1893,6 +1893,24 @@ LIE2_OUT="$(SU_RUN /tmp/lie-home /tmp/nowork-stubs-lie || true)"
 case "${LIE2_OUT}" in
 *"roborev-daemon | PASS | daemon revived"*) ;;
 *) printf '%s\n' "${LIE2_OUT}" | grep roborev-daemon; fail "'not running' status with working start was not 'daemon revived'" ;;
+esac
+
+# RUN 33: real `roborev check-agents` exits 0 even when the agent is not on
+# PATH ("0 passed, 0 failed, 1 skipped", v0.63.0). That is not a smoke pass.
+# shellcheck disable=SC2016 # $1 is for the stub's shell, not ours
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; status) exit 0;; daemon) exit 0;; check-agents) echo "  - pi             pi (not found in PATH)"; echo "0 passed, 0 failed, 1 skipped"; exit 0;; esac\nexit 0\n' > /tmp/nowork-stubs-lie/roborev
+LIE3_OUT="$(SU_RUN /tmp/lie-home /tmp/nowork-stubs-lie || true)"
+case "${LIE3_OUT}" in
+*"roborev-agent | PASS"*) printf '%s\n' "${LIE3_OUT}" | grep roborev-agent; fail "skipped (missing) agent was reported as a passing smoke check" ;;
+*"roborev-agent | WARN"*) ;;
+*) printf '%s\n' "${LIE3_OUT}" | grep roborev-agent; fail "missing agent produced no roborev-agent WARN" ;;
+esac
+# shellcheck disable=SC2016
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; status) exit 0;; daemon) exit 0;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/nowork-stubs-lie/roborev
+LIE4_OUT="$(SU_RUN /tmp/lie-home /tmp/nowork-stubs-lie || true)"
+case "${LIE4_OUT}" in
+*"roborev-agent | PASS"*) ;;
+*) printf '%s\n' "${LIE4_OUT}" | grep roborev-agent; fail "a genuinely passing agent was not reported as PASS" ;;
 esac
 
 echo "=== ALL CHECKS PASSED ==="

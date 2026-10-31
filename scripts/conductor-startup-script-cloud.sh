@@ -1313,6 +1313,17 @@ find_repo_root() {
 # 244b3bf removed from pi_install's WARN. RUN 25's prefix assert plus
 # its positive/negative wording locks pin the no-toml shape; the
 # with-worktree running case goes through has_toml=1 unchanged.
+# roborev_agent_ok <agent>: `roborev check-agents` exits 0 even when the
+# agent is missing from PATH ("0 passed, 0 failed, 1 skipped", real v0.63.0),
+# which used to record a false "answered a smoke prompt — reviews are live".
+# Require exit 0 AND at least one agent passed AND none failed.
+roborev_agent_ok() {
+  local out
+  out="$(roborev check-agents --agent "$1" --timeout 30 </dev/null 2>&1 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&-)" || return 1
+  [[ "${out}" =~ ([0-9]+)\ passed,\ ([0-9]+)\ failed ]] || return 1
+  (( BASH_REMATCH[1] > 0 && BASH_REMATCH[2] == 0 ))
+}
+
 roborev_smoke_check() {
   local agent="$1" repo_root="$2"
   local has_toml=0
@@ -1346,7 +1357,7 @@ roborev_smoke_check() {
   else
     switch_hint="or set ROBOREV_AGENT to a working agent and re-run setup from inside a discoverable repo (or set CONDUCTOR_WORKSPACE_PATH=/path/to/repo), so the next run writes a .roborev.toml"
   fi
-  if roborev_quiet check-agents --agent "${agent}" --timeout 30; then
+  if roborev_agent_ok "${agent}"; then
     if [[ "${has_toml}" == 1 ]]; then
       record PASS roborev-agent "${agent} answered a smoke prompt — reviews are live"
     else
