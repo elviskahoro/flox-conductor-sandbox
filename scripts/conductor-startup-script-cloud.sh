@@ -192,12 +192,6 @@
 #                     Truncate to a stub for local development — but a
 #                     sandbox that ships an unset FIREWORKS_API_KEY is
 #                     configured-but-broken until the key is set.
-#   FIND_REPO_WAIT_SECS  optional; seconds find_repo_root polls for
-#                     CONDUCTOR_WORKSPACE_PATH / CONDUCTOR_ROOT_PATH to
-#                     become a git repo (issue #113: Conductor can start
-#                     setup before the checkout finishes). Default 120;
-#                     0 disables the wait. Non-numeric values are not
-#                     validated — leave unset unless tuning.
 #   STARTUP_BEST_EFFORT  set to 1 (this repo's settings.toml does) to make
 #                     the tool stages recorded-but-non-fatal; see the
 #                     failure-semantics section above.
@@ -254,14 +248,7 @@ log() { echo "[startup] $*"; }
 # Issue #113 diagnostic: record what setup actually sees at start, so the
 # "is the repo cloned / env var set when Conductor runs setup?" question
 # gets a real answer from a live run's log.
-_ws="${CONDUCTOR_WORKSPACE_PATH:-}"
-_ws_exists=no; _ws_git=no
-[[ -n "${_ws}" && -d "${_ws}" ]] && _ws_exists=yes
-[[ -n "${_ws}" ]] && git -C "${_ws}" rev-parse --show-toplevel >/dev/null 2>&1 && _ws_git=yes
-_root_git=no
-[[ -n "${CONDUCTOR_ROOT_PATH:-}" ]] && git -C "${CONDUCTOR_ROOT_PATH}" rev-parse --show-toplevel >/dev/null 2>&1 && _root_git=yes
-log "[diag] pwd=$(pwd) conductor_vars=$(env | grep '^CONDUCTOR_' | cut -d= -f1 | tr '\n' ' ') workspace_path_exists=${_ws_exists} workspace_path_git=${_ws_git} root_path_git=${_root_git}"
-unset _ws _ws_exists _ws_git _root_git
+log "[diag] pwd=$(pwd) conductor_vars=$(env | grep '^CONDUCTOR_' | cut -d= -f1 | tr '\n' ' ')"
 
 record() { # <status> <name> <detail> — one summary row + one log line
   RESULTS="${RESULTS}
@@ -1255,80 +1242,6 @@ roborev_quiet() {
 # copy-paste the failure handling into divergent variants (roborev
 # review finding).
 
-# find_repo_root: discover a git worktree when setup runs from a
-# non-worktree cwd (issue #101). Conductor cloud sandboxes run the
-# install script from $HOME — "/home/vercel-sandbox", NOT from inside
-# the cloned repo — so without help every roborev stage (the .roborev.toml
-# write and the hook posture that needs a .git dir) silently SKIPs and
-# a fresh workspace comes up "daemon live, no agent smoke check, no toml
-# written". Resolution order, conservative by design — auto-discovery
-# only fires when the result is unambiguous:
-#   1. CONDUCTOR_WORKSPACE_PATH (then CONDUCTOR_ROOT_PATH), when set AND resolvable via `git -C <p>
-#      rev-parse --show-toplevel`. Conductor exposes this env var to its
-#      install scripts (the only place the script can know where the repo
-#      sits); operators in a non-Conductor setup can also set it by hand.
-#   2. A single git worktree directly under $HOME — the path Conductor
-#      clones into. Two or more worktrees at the top level is taken as
-#      ambiguous and we fall through (return 1), so a workspace that
-#      happens to have multiple clones under $HOME never gets the wrong
-#      repo's .roborev.toml silently.
-#   3. Otherwise return 1, and the roborev stage records a loud WARN
-#      naming the gap and still runs the daemon + smoke check (the parts
-#      that don't need a repo root).
-# Prints the toplevel on stdout; returns 0 on success, 1 otherwise.
-# Never writes anything; never changes cwd. No process substitution
-# (gtm-sdk#279: sandboxes can lack /dev/fd, and `set -e` then kills the
-# script silently — same rule as every sandbox-bound script in this repo).
-find_repo_root() {
-  local toplevel found=() dir
-  # CONDUCTOR_ROOT_PATH is a second signal (same value as
-  # CONDUCTOR_WORKSPACE_PATH in observed cloud sandboxes, issue #113).
-  # Setup can run before Conductor finishes the checkout (#113 evidence: vars
-  # set, path not yet a repo). Poll up to FIND_REPO_WAIT_SECS (default 120)
-  # before falling through; 0 disables.
-  local var waited=0 max="${FIND_REPO_WAIT_SECS:-120}"
-  while :; do
-    for var in CONDUCTOR_WORKSPACE_PATH CONDUCTOR_ROOT_PATH; do
-      [[ -n "${!var:-}" ]] || continue
-      if toplevel="$(git -C "${!var}" rev-parse --show-toplevel 2>/dev/null)"; then
-        if [[ ${waited} -gt 0 ]]; then
-          echo "[startup] [diag] find_repo_root: repo appeared after ${waited}s" >&2
-        fi
-        printf '%s\n' "${toplevel}"
-        return 0
-      fi
-    done
-    [[ -n "${CONDUCTOR_WORKSPACE_PATH:-}${CONDUCTOR_ROOT_PATH:-}" && ${waited} -lt ${max} ]] || break
-    sleep 1
-    waited=$((waited + 1))
-  done
-  if [[ ${waited} -gt 0 ]]; then
-    echo "[startup] [diag] find_repo_root: no repo after ${waited}s wait" >&2
-    # Why git still refuses (not a repo yet vs. dubious ownership etc.); first
-    # line only, never the path.
-    for var in CONDUCTOR_WORKSPACE_PATH CONDUCTOR_ROOT_PATH; do
-      [[ -n "${!var:-}" ]] || continue
-      echo "[startup] [diag] find_repo_root: ${var} git says: $(git -C "${!var}" rev-parse --show-toplevel 2>&1 | head -1 | sed "s|${!var}|<path>|g")" >&2
-    done
-  fi
-  # Plain unquoted glob — pathname expansion results are never re-split,
-  # so spaces in repo names survive. The path is required to end with a
-  # slash via `"${HOME}"/*/`, so plain files at $HOME's top level are
-  # skipped automatically (the glob doesn't match them); only directories
-  # make it through, then we still require a `.git` child to be a worktree.
-  for dir in "${HOME}"/*/; do
-    [[ -e "${dir%/}/.git" ]] || continue
-    if toplevel="$(git -C "${dir%/}" rev-parse --show-toplevel 2>/dev/null)"; then
-      found+=("${toplevel}")
-    fi
-  done
-  if [[ ${#found[@]} -eq 1 ]]; then
-    printf '%s\n' "${found[0]}"
-    return 0
-  fi
-  return 1
-}
-
 # roborev_agent_ok <agent>: `roborev check-agents` exits 0 even when the
 # agent is missing from PATH ("0 passed, 0 failed, 1 skipped", real v0.63.0),
 # which used to record a false "answered a smoke prompt — reviews are live".
@@ -1502,33 +1415,20 @@ roborev_setup() {
     return 0
   fi
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    local discovered=""
-    # Issue #101: Conductor cloud sandboxes run setup from $HOME, not from
-    # inside the cloned repo, so without auto-discovery every roborev
-    # stage below (the .roborev.toml write + the hook posture that needs
-    # a .git dir) silently SKIPs and a fresh workspace comes up "daemon
-    # live, no agent smoke check, no toml written". Try find_repo_root:
-    # the daemon ensure still needs to run when cwd isn't a worktree, so
-    # even a discovery miss shouldn't bail us out before that. A short
-    # log line surfaces the auto-discovery — it doesn't earn a summary
-    # row because the later .roborev.toml-write or no-worktree-fallback
-    # rows already carry the result.
-    if discovered="$(find_repo_root)"; then
-      log "[context] roborev-config — cwd is not a worktree; using ${discovered} (issue #101, find_repo_root)"
-      cd "${discovered}"
-      repo_root="${discovered}"
-    else
-      # No worktree to write into. Run the parts that don't need one
-      # (the daemon and the smoke check — both daemon-side, neither
-      # touches the filesystem) and surface a single loud WARN naming
-      # the gap, so the operator knows .roborev.toml never landed and
-      # reviews can't read a committed agent.
-      record WARN roborev-config "cwd is not a git worktree and no repo found via CONDUCTOR_WORKSPACE_PATH or \$HOME (issue #101) — skipping .roborev.toml + hook posture; run setup from inside the repo, or set CONDUCTOR_WORKSPACE_PATH=/path/to/repo and re-run; daemon + smoke check still ran below"
-      mkdir -p "${HOME}/.roborev" 2>/dev/null || true
-      ensure_daemon roborev-daemon || return 1
-      roborev_smoke_check "${agent}" ""
-      return 0
-    fi
+    # Issue #101: Conductor cloud sandboxes can run setup from $HOME,
+    # outside the cloned repo (and #113: possibly before the checkout
+    # exists). No auto-discovery: Conductor does further setup after this
+    # script that it cannot see, so guessing a repo here is unreliable.
+    # Run the parts that don't need a worktree (the daemon and the smoke
+    # check — both daemon-side, neither touches the filesystem) and
+    # surface a single loud WARN naming the gap, so the operator knows
+    # .roborev.toml never landed here and reviews rely on the repo's
+    # committed .roborev.toml.
+    record WARN roborev-config "cwd is not a git worktree (issue #101) — skipping .roborev.toml + hook posture; run setup from inside the repo; daemon + smoke check still ran below"
+    mkdir -p "${HOME}/.roborev" 2>/dev/null || true
+    ensure_daemon roborev-daemon || return 1
+    roborev_smoke_check "${agent}" ""
+    return 0
   else
     repo_root="$(git rev-parse --show-toplevel)"
     cd "${repo_root}"

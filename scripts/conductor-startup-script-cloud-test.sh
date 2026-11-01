@@ -136,20 +136,8 @@
 #     the override and asserts the tailored WARN that mentions "pi is
 #     already installed" rather than the misleading "pi is not installed"
 #     wording a re-run would otherwise produce.
-#   - RUN 24 (issue #101): the $HOME/<repo> auto-discovery path. With cwd
-#     outside any worktree and HOME pointing at a directory holding exactly
-#     one git worktree (the Conductor cloud clone convention), the roborev
-#     stage must write .roborev.toml INSIDE the discovered repo, not in
-#     cwd. Without find_repo_root, the same setup silently SKIPs and a
-#     fresh cloud workspace comes up with no .roborev.toml — the regression
-#     RUN 24 codifies against. RUN 24B asserts two worktrees at the top
-#     level is taken as ambiguous: find_repo_root returns 1 and the
-#     no-worktree fallback must fire instead of silently picking a wrong
-#     repo's .roborev.toml. RUN 24C1 asserts CONDUCTOR_WORKSPACE_PATH is
-#     used when set with no $HOME worktree; RUN 24C2 asserts the env var
-#     wins precedence when a $HOME worktree would also resolve.
-#   - RUN 25 (issue #101): the no-worktree fallback. With no CONDUCTOR_
-#     WORKSPACE_PATH and no worktrees under $HOME, the roborev stage must
+#   - RUN 25 (issue #101): the no-worktree fallback. With cwd
+#     outside any git worktree, the roborev stage must
 #     record a single loud WARN naming the gap and still run daemon +
 #     smoke check. The .roborev.toml-write and hook-posture stages must
 #     NOT have run. The smoke-check helper's "no .roborev.toml" branch
@@ -1547,202 +1535,9 @@ case "${RUN23D_OUTPUT}" in
 *"keeps reviews live in this workspace"*) fail "23D tailored-WARN run still claims reviews are live in this workspace — the claim depends on a committed agent = \"pi\" .roborev.toml that pi_install cannot observe" ;;
 esac
 
-echo "=== RUN 24: \$HOME/<repo>/.git auto-discovery runs the full roborev stage ==="
-# Issue #101's first-class fix: Conductor cloud sandboxes run setup
-# from $HOME, NOT from inside the cloned repo, so without auto-
-# discovery the roborev stage silently SKIPs and a fresh workspace
-# comes up with no .roborev.toml + no agent smoke check + no hook
-# posture. The script's new find_repo_root discovers a single worktree
-# directly under $HOME (the path Conductor clones into) and cd's into
-# it. We rebuild the calling pattern here: cwd outside any worktree,
-# HOME pointing at a directory holding exactly one .git, full pinned
-# pi-install path so .roborev.toml gets the same effective writes
-# RUN 14 already exercises.
-rm -rf /tmp/find-repo-home
-su - sandbox-user -c "
-  set -e
-  mkdir -p /tmp/find-repo-home
-  cd /tmp/find-repo-home
-  git init -q repo
-  cd repo
-  git config user.email t@t
-  git config user.name t
-  echo init > README && git add README && git commit -q -m init
-"
-# Two worktrees in $HOME is ambiguous; build a SECOND empty worktree
-# elsewhere to verify find_repo_root returns 1 in that case. RUN 24B
-# covers it — building the ambiguity shape alongside the structural
-# shape so the safety isn't "by code review" only.
-rm -rf /tmp/find-repo-home-ambiguous
-su - sandbox-user -c "
-  set -e
-  mkdir -p /tmp/find-repo-home-ambiguous
-  cd /tmp/find-repo-home-ambiguous
-  git init -q repo-a
-  cd repo-a
-  git config user.email t@t; git config user.name t
-  echo init > README && git add README && git commit -q -m init
-  cd /tmp/find-repo-home-ambiguous
-  git init -q repo-b
-  cd repo-b
-  echo init > README
-"
-RUN24_OUTPUT="$(su - sandbox-user -c "cd /tmp && HOME=/tmp/find-repo-home PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
-  fail "find-repo run exited non-zero"
-printf '%s' "${RUN24_OUTPUT}"
-case "${RUN24_OUTPUT}" in *" | FAIL |"*) fail "find-repo run recorded FAIL row(s)" ;; esac
-# The .roborev.toml-write row inside the DISCOVERED repo proves we
-# cd'd into it — RUN 14's same row text confirms the script wrote
-# everything the with-worktree-from-cwd path would have.
-case "${RUN24_OUTPUT}" in
-*".roborev.toml written (agent: pi, model: fireworks/accounts/fireworks/models/glm-5p3-flash)"*) ;;
-*) fail "find-repo run missing the .roborev.toml-written row in the discovered repo" ;;
-esac
-# The hook posture row must show too (PASS on a brand-new repo) —
-# its presence means the cd'd-into-discovered-repo state propagated
-# past the toml write, the way the with-cwd-as-worktree path does.
-case "${RUN24_OUTPUT}" in *"roborev-hook | PASS"*) ;; *) fail "find-repo run missing the roborev-hook row — discovery did not cd into the worktree" ;; esac
-su - sandbox-user -c "
-  set -e
-  fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
-  [ -f /tmp/find-repo-home/repo/.roborev.toml ] ||
-    fail \"auto-discovery did not write .roborev.toml inside the discovered repo (cwd was /tmp — .roborev.toml.tmp cleanup would have masked it, but a missing file proves find_repo_root did not fire)\"
-  grep -q 'agent = \"pi\"' /tmp/find-repo-home/repo/.roborev.toml ||
-    fail \"auto-discovery wrote .roborev.toml without the agent line\"
-  grep -q 'model = \"fireworks/accounts/fireworks/models/glm-5p3-flash\"' /tmp/find-repo-home/repo/.roborev.toml ||
-    fail \"auto-discovery wrote .roborev.toml without the Fireworks model line\"
-" || fail "find-repo verification failed"
-# Two worktrees at the top: ambiguity, find_repo_root must return 1
-# and the script's no-worktree fallback (RUN 25 below) must fire.
-RUN24B_OUTPUT="$(su - sandbox-user -c "cd /tmp && HOME=/tmp/find-repo-home-ambiguous PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
-  fail "ambiguous-home run exited non-zero"
-case "${RUN24B_OUTPUT}" in *" | FAIL |"*) fail "ambiguous-home run recorded FAIL row(s)" ;; esac
-case "${RUN24B_OUTPUT}" in
-*"roborev-config | WARN | cwd is not a git worktree and no repo found via CONDUCTOR_WORKSPACE_PATH or \$HOME"*) ;;
-*) fail "ambiguous-home run missing the no-worktree WARN row — find_repo_root failed open instead of refusing" ;;
-esac
-case "${RUN24B_OUTPUT}" in *".roborev.toml written"*) fail "ambiguous-home run wrote .roborev.toml — find_repo_root picked a wrong repo" ;; esac
-
-# RUN 24C: CONDUCTOR_WORKSPACE_PATH takes precedence over the $HOME scan.
-# find_repo_root's primary resolution path (the commit message's first
-# bullet) gives Conductor's install-script env var precedence over the
-# $HOME/* scan so operators can point at an explicit path. Both the
-# straightforward case and the precedence case need coverage: a regression
-# in this branch — a typo in the env-var name, broken precedence, or
-# git-C resolving to a subdirectory — would pass CI silently while
-# breaking the Conductor-cloud machines this commit was written to fix.
-# Case 24C1: CONDUCTOR_WORKSPACE_PATH set, no $HOME worktree.
-rm -rf /tmp/cwp-workspace /tmp/cwp-empty-home
-su - sandbox-user -c "
-  set -e
-  mkdir -p /tmp/cwp-workspace
-  cd /tmp/cwp-workspace
-  git init -q repo
-  cd repo
-  git config user.email t@t; git config user.name t
-  echo init > README && git add README && git commit -q -m init
-  mkdir -p /tmp/cwp-empty-home
-"
-RUN24C1_OUTPUT="$(su - sandbox-user -c "cd /tmp && HOME=/tmp/cwp-empty-home CONDUCTOR_WORKSPACE_PATH=/tmp/cwp-workspace/repo PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
-  fail "cwp-straight run exited non-zero"
-case "${RUN24C1_OUTPUT}" in
-*".roborev.toml written (agent: pi, model: fireworks/accounts/fireworks/models/glm-5p3-flash)"*) ;;
-*) fail "cwp-straight run missing the .roborev.toml-written row — CONDUCTOR_WORKSPACE_PATH was not used" ;;
-esac
-[ -f /tmp/cwp-workspace/repo/.roborev.toml ] ||
-  fail "cwp-straight run did not write .roborev.toml into the CONDUCTOR_WORKSPACE_PATH repo"
-# Case 24C2: CONDUCTOR_WORKSPACE_PATH and a different $HOME worktree;
-# the env var must win. Without precedence the script would pick either
-# arbitrarily, so a regression in the resolution order would land the
-# wrong repo's .roborev.toml silently.
-rm -rf /tmp/cwp-precedence
-su - sandbox-user -c "
-  set -e
-  mkdir -p /tmp/cwp-precedence/ws
-  cd /tmp/cwp-precedence/ws
-  git config --global --unset user.email 2>/dev/null || true
-  git config --global --unset user.name 2>/dev/null || true
-  git init -q
-  git config user.email t@t; git config user.name t
-  echo init > README && git add README && git commit -q -m init
-  mkdir -p /tmp/cwp-precedence/home-elsewhere/repo
-  cd /tmp/cwp-precedence/home-elsewhere/repo
-  git config --global --unset user.email 2>/dev/null || true
-  git config --global --unset user.name 2>/dev/null || true
-  git init -q
-  echo init > README
-"
-RUN24C2_OUTPUT="$(su - sandbox-user -c "cd /tmp && HOME=/tmp/cwp-precedence/home-elsewhere CONDUCTOR_WORKSPACE_PATH=/tmp/cwp-precedence/ws PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
-  fail "cwp-precedence run exited non-zero"
-printf '%s' "${RUN24C2_OUTPUT}"
-case "${RUN24C2_OUTPUT}" in *" | FAIL |"*) fail "cwp-precedence run recorded FAIL row(s)" ;; esac
-case "${RUN24C2_OUTPUT}" in
-*".roborev.toml written (agent: pi, model: fireworks/accounts/fireworks/models/glm-5p3-flash)"*) ;;
-*) fail "cwp-precedence run missing the .roborev.toml-written row — CONDUCTOR_WORKSPACE_PATH was not used" ;;
-esac
-[ -f /tmp/cwp-precedence/ws/.roborev.toml ] ||
-  fail "cwp-precedence run did not write .roborev.toml into CONDUCTOR_WORKSPACE_PATH — the setup scanned for \$HOME repos and either failed open or picked the wrong one"
-[ ! -f /tmp/cwp-precedence/home-elsewhere/repo/.roborev.toml ] ||
-  fail "cwp-precedence run wrote .roborev.toml into the \$HOME repo — env var lost the precedence test"
-
-# RUN 24D (issue #113): CONDUCTOR_ROOT_PATH is a second resolution signal.
-# Case 24D1: root-only (the observed sandbox shape when the workspace var
-# is absent) resolves via CONDUCTOR_ROOT_PATH. FIND_REPO_WAIT_SECS=0 keeps
-# the suite fast.
-rm -rf /tmp/crp-root /tmp/crp-empty-home
-su - sandbox-user -c "
-  set -e
-  mkdir -p /tmp/crp-root /tmp/crp-empty-home
-  cd /tmp/crp-root
-  git init -q repo
-  cd repo
-  git config user.email t@t; git config user.name t
-  echo init > README && git add README && git commit -q -m init
-"
-RUN24D1_OUTPUT="$(su - sandbox-user -c "cd /tmp && HOME=/tmp/crp-empty-home FIND_REPO_WAIT_SECS=0 CONDUCTOR_ROOT_PATH=/tmp/crp-root/repo PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
-  fail "root-only run exited non-zero"
-case "${RUN24D1_OUTPUT}" in
-*".roborev.toml written (agent: pi, model: fireworks/accounts/fireworks/models/glm-5p3-flash)"*) ;;
-*) fail "root-only run missing the .roborev.toml-written row — CONDUCTOR_ROOT_PATH was not used" ;;
-esac
-[ -f /tmp/crp-root/repo/.roborev.toml ] ||
-  fail "root-only run did not write .roborev.toml into the CONDUCTOR_ROOT_PATH repo"
-# Case 24D2: workspace var unresolvable, root var valid: falls through to root.
-rm -f /tmp/crp-root/repo/.roborev.toml
-RUN24D2_OUTPUT="$(su - sandbox-user -c "cd /tmp && HOME=/tmp/crp-empty-home FIND_REPO_WAIT_SECS=0 CONDUCTOR_WORKSPACE_PATH=/tmp/crp-does-not-exist CONDUCTOR_ROOT_PATH=/tmp/crp-root/repo PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
-  fail "ws-bad/root-good run exited non-zero"
-[ -f /tmp/crp-root/repo/.roborev.toml ] ||
-  fail "ws-bad/root-good run did not fall through to CONDUCTOR_ROOT_PATH"
-
-# RUN 24E (issue #113): the checkout-wait loop.
-# Case 24E1: the path becomes a repo ~3s after setup starts; the default
-# wait must pick it up.
-rm -rf /tmp/cwait /tmp/cwait-empty-home
-mkdir -p /tmp/cwait-empty-home && chown sandbox-user /tmp/cwait-empty-home
-su - sandbox-user -c "
-  set -e
-  mkdir -p /tmp/cwait
-  ( sleep 3; cd /tmp/cwait && git init -q && git config user.email t@t && git config user.name t && echo init > README && git add README && git commit -q -m init ) >/dev/null 2>&1 &
-"
-RUN24E1_OUTPUT="$(su - sandbox-user -c "cd /tmp && HOME=/tmp/cwait-empty-home CONDUCTOR_WORKSPACE_PATH=/tmp/cwait PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
-  fail "wait-resolves run exited non-zero"
-[ -f /tmp/cwait/.roborev.toml ] ||
-  fail "wait-resolves run did not write .roborev.toml — the poll loop gave up before the repo appeared"
-# Case 24E2: path never becomes a repo and FIND_REPO_WAIT_SECS=2 gives up
-# and records the no-worktree WARN rather than hanging.
-rm -rf /tmp/cwait-never && mkdir -p /tmp/cwait-never && chown sandbox-user /tmp/cwait-never
-RUN24E2_OUTPUT="$(su - sandbox-user -c "cd /tmp && HOME=/tmp/cwait-empty-home FIND_REPO_WAIT_SECS=2 CONDUCTOR_WORKSPACE_PATH=/tmp/cwait-never PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
-  fail "wait-gives-up run exited non-zero"
-case "${RUN24E2_OUTPUT}" in
-*"roborev-config | WARN |"*) ;;
-*) fail "wait-gives-up run missing the roborev-config WARN row" ;;
-esac
-[ ! -f /tmp/cwait-never/.roborev.toml ] ||
-  fail "wait-gives-up run wrote .roborev.toml into a non-repo"
-
 echo "=== RUN 25: no-worktree fallback records the loud WARN + still runs daemon + smoke ==="
-# Issue #101's no-worktree fallback: find_repo_root returns 1 when
-# neither CONDUCTOR_WORKSPACE_PATH nor a single worktree resolves.
+# Issue #101's no-worktree fallback: when cwd is not a git worktree
+# (no repo auto-discovery — Conductor does more setup after this script).
 # The roborev stage records a single loud WARN naming the gap and
 # falls through to daemon + smoke check only — those parts never
 # needed a repo root. RUN 25 uses a stubs-only env so the smoke check
@@ -1769,7 +1564,7 @@ printf '%s' "${RUN25_OUTPUT}"
 case "${RUN25_OUTPUT}" in *" | FAIL |"*) fail "no-worktree run recorded FAIL row(s)" ;; esac
 # The loud WARN that names issue #101 and the gap.
 case "${RUN25_OUTPUT}" in
-*"roborev-config | WARN | cwd is not a git worktree and no repo found via CONDUCTOR_WORKSPACE_PATH or \$HOME"*) ;;
+*"roborev-config | WARN | cwd is not a git worktree (issue #101)"*) ;;
 *) fail "no-worktree run missing the loud no-worktree WARN row" ;;
 esac
 # Daemon + smoke both ran in the fallback path (the parts that don't
