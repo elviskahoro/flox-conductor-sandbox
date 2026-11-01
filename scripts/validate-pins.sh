@@ -2,7 +2,7 @@
 # Pin-sync validation for the workspace startup provisioning pins.
 #
 # The roborev version + sha256 pins, the trunk launcher checksum, and the
-# uv/pytest/reflex pins are deliberately duplicated across files (roborev
+# uv/pytest/reflex/ruff pins are deliberately duplicated across files (roborev
 # review finding: previously only comments kept them in sync). This is the
 # automated drift check — run in CI
 # (.github/workflows/conductor-startup-script-cloud.yml) and usable
@@ -26,7 +26,7 @@
 #      separate (process-scoped) install of the same tool; two different
 #      uv versions in one workspace is the same confusion class as the
 #      roborev drift.
-#   6. pytest/reflex pins (issue #44): single-home pins with no Flox
+#   6. pytest/reflex/ruff pins (issue #44): single-home pins with no Flox
 #      counterpart — the check is presence-and-shape, so an accidental
 #      unpinning (empty, or a floating range instead of an exact x.y.z)
 #      fails CI instead of silently floating.
@@ -165,7 +165,7 @@ else
   fail "uv version" "drift: startup-script=${UV_PIN_V:-<missing>}, prebuilt=${PREBUILT_UV:-<missing>}, floxhub-provision=${PROVISION_UV:-<missing>}"
 fi
 
-# 6. pytest/reflex pins (issue #44): single-home pins (no Flox
+# 6. pytest/reflex/ruff pins (issue #44): single-home pins (no Flox
 # counterpart), so there is nothing to cross-check — the invariant is
 # that they stay EXACT x.y.z pins in the startup script. An empty value
 # or a floating spec (>=, ~=, ^) must fail CI rather than silently float;

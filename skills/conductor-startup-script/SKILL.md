@@ -33,7 +33,7 @@ Set these in the repo's Conductor environment variables, never inline in the scr
 - `RWX_ACCESS_TOKEN`: validated before it's written atomically to `~/.config/rwx/accesstoken`, so a bad token never overwrites a good one.
 - `ROBOREV_AGENT` (default `pi`) and `ROBOREV_MODEL` (default `fireworks/accounts/fireworks/models/glm-5p3-flash` for pi). The `fireworks/` prefix is required (issue #85). claude-code never logs in from a cloud sandbox, and codex returns 401.
 - `FIREWORKS_API_KEY`: Pi + Fireworks can't review without it.
-- `STARTUP_PY_DEV_TOOLS=1`: turns on uv, pytest, and Reflex (see below). Each consuming repo must set it itself; pasting the script alone never enables it.
+- `STARTUP_PY_DEV_TOOLS=1`: turns on uv, pytest, Reflex, and ruff (see below). Each consuming repo must set it itself; pasting the script alone never enables it.
 - `STARTUP_BEST_EFFORT=1`: a failed tool stage is recorded but doesn't fail setup. A Python 3.11 failure or a requested pytools failure still exits non-zero.
 
 ## Reviews are on demand, never a background hook
@@ -55,7 +55,7 @@ Useful read-only queries: `entire status`, `entire checkpoint list`, `entire tra
 ## Python dev tools (`STARTUP_PY_DEV_TOOLS=1`, issue #44)
 
 - `uv` is the pinned release binary, installed in `/usr/local/bin`, with a `~/.local/bin` fallback when sudo isn't available. The Flox manifests' uv only exists inside an activation, so it doesn't count.
-- `pytest` and `reflex` are installed into a uv-managed venv at `~/.conductor-pytools`, with their commands symlinked onto PATH.
+- `pytest`, `reflex`, and `ruff` are installed into a uv-managed venv at `~/.conductor-pytools`, with their commands symlinked onto PATH.
 - Supported invocations: `pytest`, `reflex`, `~/.conductor-pytools/bin/python -m pytest`. A bare `python3 -m pytest` is not supported, because system site-packages are left clean.
 - Only the Reflex package is installed. Its frontend toolchain (bun/node, needed for `reflex init` and `reflex run`) is out of scope.
 - A failure here is always fatal, because a requested tool must never be missing from a workspace that looks ready.
@@ -65,8 +65,8 @@ Useful read-only queries: `entire status`, `entire checkpoint list`, `entire tra
 Pins live in the script's pins block. Always read the current values there, never from docs.
 
 - A uv bump must change three things together: the startup script, `envs/prebuilt`, and `envs/floxhub-provision` (and their locks). `scripts/validate-pins.sh` cross-checks them.
-- pytest and Reflex are pinned only in the startup script.
-- On re-runs, a working uv is reused as-is, so a `UV_PIN` bump only applies to fresh installs. pytest and Reflex are upgraded in place.
+- pytest, Reflex, and ruff are pinned only in the startup script.
+- On re-runs, a working uv is reused as-is, so a `UV_PIN` bump only applies to fresh installs. pytest, Reflex, and ruff are upgraded in place.
 - Entire: `ENTIRE_PIN` plus a per-platform `ENTIRE_SHA256_*` constant for each platform. The re-pin runbook is in the pins block.
 
 ## Deferred stages (issue #40): proven, not wired in yet

@@ -83,7 +83,7 @@
 #     under STARTUP_BEST_EFFORT=1 (this repo's settings.toml contract,
 #     gtm-sdk#702) is still recorded as a FAIL row but exits 0.
 #   - RUN 7/8 (issue #44): STARTUP_PY_DEV_TOOLS=1 — the settings.toml
-#     posture — provisions uv (real pinned download) plus pytest/reflex
+#     posture — provisions uv (real pinned download) plus pytest/reflex/ruff
 #     (real PyPI install into the ~/.conductor-pytools venv), all
 #     resolving under /usr/local/bin as sandbox-user with `python -m
 #     pytest` and `import reflex` working in the venv; RUN 8 re-runs and
@@ -658,7 +658,7 @@ echo "=== RUN 7: pytools provisioning (STARTUP_PY_DEV_TOOLS=1, the settings.toml
 # Issue #44's target path: this repo's settings.toml exports both flags,
 # so this run mirrors it — fresh pytools state (RUN 1/2 ran flag-off, so
 # no uv on PATH and no ~/.conductor-pytools yet), a REAL pinned uv
-# download with checksum verification, and a REAL pytest/reflex install
+# download with checksum verification, and a REAL pytest/reflex/ruff install
 # from PyPI into the venv.
 RUN7_OUTPUT="$(su - sandbox-user -c "cd /tmp && STARTUP_BEST_EFFORT=1 STARTUP_PY_DEV_TOOLS=1 bash ${STARTUP_SCRIPT}")" ||
   fail "pytools run exited non-zero"
@@ -670,7 +670,7 @@ for row in "uv | PASS" "pytools-venv | PASS" "pytest | PASS" "reflex | PASS" "ru
   case "${RUN7_OUTPUT}" in *"${row}"*) ;; *) fail "pytools run missing the ${row} row" ;; esac
 done
 
-echo "=== VERIFY: uv/pytest/reflex resolve as sandbox-user with the pinned versions ==="
+echo "=== VERIFY: uv/pytest/reflex/ruff resolve as sandbox-user with the pinned versions ==="
 su - sandbox-user -c "
   set -e
   fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }

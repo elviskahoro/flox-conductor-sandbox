@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2312  # $(...) in assignments and rows: stage failures surface through the stages' own || returns and the summary, not by killing the script mid-row
 # The single Conductor workspace startup script: roborev + trunk + rwx +
-# Python 3.11 + the opt-in Python dev tools (uv/pytest/reflex), then the
+# Python 3.11 + the opt-in Python dev tools (uv/pytest/reflex/ruff), then the
 # auth/init that makes them work rather than merely exist.
 #
 # Two consumers, one file (it replaced the former conductor-cloud-install.sh
@@ -43,7 +43,7 @@
 #      assumes a particular project — safe in any workspace, local or cloud.
 #      The trunk and python stages are reuse-if-present and SKIP cleanly off
 #      the target class, so pasting this into a repo that needs neither
-#      costs nothing. The uv/pytest/reflex stage (issue #44) is opt-in via
+#      costs nothing. The uv/pytest/reflex/ruff stage (issue #44) is opt-in via
 #      STARTUP_PY_DEV_TOOLS=1 and SKIPs when unset, so the paste surface is
 #      exactly what it was before that stage existed — only this repo's
 #      own settings.toml turns it on.
@@ -81,13 +81,14 @@
 #            AL2023 class only (see the stage body for the shadow-safety
 #            facts); SKIP elsewhere. The only always-on stage whose failure
 #            is a stated requirement rather than a nice-to-have.
-#   uv/pytest/reflex  opt-in (STARTUP_PY_DEV_TOOLS=1, this repo's
+#   uv/pytest/reflex/ruff  opt-in (STARTUP_PY_DEV_TOOLS=1, this repo's
 #            settings.toml): uv as a pinned, checksum-verified release
-#            binary placed like every other tool; pytest and reflex as
+#            binary placed like every other tool; pytest, reflex, and ruff as
 #            pinned packages in one uv-managed venv, ~/.conductor-pytools
 #            (Python 3.11), with their console scripts symlinked into the
-#            same bin dirs so later agent shells get `uv`, `pytest`, and
-#            `reflex` as commands. The venv is the intended Python
+#            same bin dirs so later agent shells get `uv`, `pytest`,
+#            `reflex`, and `ruff` as commands (plus `python`, linked to the
+#            venv interpreter when none is on PATH). The venv is the intended Python
 #            environment for the two packages — the documented module
 #            invocations are ~/.conductor-pytools/bin/python -m pytest and
 #            ... -c 'import reflex' (issue #44's managed-environment
@@ -106,7 +107,7 @@
 # roborev: new pin + sha256s from the release's checksums file, then
 # republish the FloxHub package — don't hand-edit any lock. uv: new pin +
 # sha256s (hand-hash the release tarballs), then bump both Flox manifests
-# and re-lock their envs together. pytest/reflex: no Flox counterpart —
+# and re-lock their envs together. pytest/reflex/ruff: no Flox counterpart —
 # the pins live only here, and validate-pins.sh asserts they stay exact
 # x.y.z pins. (The rwx block's former sibling copy in gtm-sdk's
 # conductor-workspace-setup.sh went away when that repo retired the script,
@@ -196,7 +197,7 @@
 #                     the tool stages recorded-but-non-fatal; see the
 #                     failure-semantics section above.
 #   STARTUP_PY_DEV_TOOLS  set to 1 (this repo's settings.toml does) to
-#                     provision uv/pytest/reflex; see the tool list and
+#                     provision uv/pytest/reflex/ruff; see the tool list and
 #                     the pytools stage body. Unset or any other value
 #                     records a SKIP row and changes nothing else — the
 #                     paste-ready consumer's surface stays as it was. A
@@ -1041,7 +1042,7 @@ venv_version() {
 
 pytools_stage() {
   if [[ "${STARTUP_PY_DEV_TOOLS:-0}" != "1" ]]; then
-    record SKIP pytools "not requested — set STARTUP_PY_DEV_TOOLS=1 to provision uv/pytest/reflex (this repo's settings.toml does)"
+    record SKIP pytools "not requested — set STARTUP_PY_DEV_TOOLS=1 to provision uv/pytest/reflex/ruff (this repo's settings.toml does)"
     return 0
   fi
   pytools_uv_install || return 1
