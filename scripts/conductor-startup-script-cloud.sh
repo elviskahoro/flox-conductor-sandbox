@@ -1105,41 +1105,46 @@ pytools_stage() {
   # command substitution and a subshell's LOCAL_FALLBACK_TOOLS update
   # would die there (the same trap roborev/trunk/rwx sidestep by noting
   # the captured path at the call site).
-  local pytest_link reflex_link ruff_link python_link=""
+  local pytest_link reflex_link ruff_link python_link
   pytest_link="$(expose_link "${PYTOOLS_VENV}/bin/pytest" pytest || true)"
   reflex_link="$(expose_link "${PYTOOLS_VENV}/bin/reflex" reflex || true)"
-  if [[ -z "${pytest_link}" || -z "${reflex_link}" ]]; then
-    record FAIL pytools "could not expose pytest/reflex commands (pytest link: ${pytest_link:-<none>}, reflex link: ${reflex_link:-<none>})"
-    return 1
-  fi
   ruff_link="$(expose_link "${PYTOOLS_VENV}/bin/ruff" ruff || true)"
-  if [[ -z "${ruff_link}" ]]; then
-    record FAIL ruff "could not expose the ruff command"
+  if [[ -z "${pytest_link}" || -z "${reflex_link}" || -z "${ruff_link}" ]]; then
+    record FAIL pytools "could not expose pytest/reflex/ruff commands (pytest link: ${pytest_link:-<none>}, reflex link: ${reflex_link:-<none>}, ruff link: ${ruff_link:-<none>})"
     return 1
-  fi
-  note_placement "${ruff_link}"
-  # `python` is absent on these sandboxes (only python3); link the venv's
-  # interpreter only when nothing named python already exists.
-  if ! command -v python >/dev/null 2>&1; then
-    python_link="$(expose_link "${PYTOOLS_PY}" python || true)"
-    [[ -n "${python_link}" ]] && note_placement "${python_link}"
   fi
   note_placement "${pytest_link}"
   note_placement "${reflex_link}"
+  note_placement "${ruff_link}"
+  # Only python3 exists on these sandboxes; link the venv interpreter as
+  # `python` unless something already provides it.
+  if ! command -v python >/dev/null 2>&1; then
+    python_link="$(expose_link "${PYTOOLS_PY}" python || true)"
+    if [[ -z "${python_link}" ]]; then
+      record FAIL pytools "could not expose the venv interpreter as python"
+      return 1
+    fi
+    note_placement "${python_link}"
+  fi
   hash -r 2>/dev/null || true
   # Final verification — the acceptance surface itself, re-proven on every
   # run so a REUSED install is proven functional, not just presumed:
   # commands resolve and report versions, and the documented module
   # invocations work in the venv.
-  local pytest_cmd reflex_cmd
+  local pytest_cmd reflex_cmd ruff_cmd
   pytest_cmd="$(command -v pytest || true)"
   reflex_cmd="$(command -v reflex || true)"
+  ruff_cmd="$(command -v ruff || true)"
   if [[ -z "${pytest_cmd}" ]] || ! pytest --version >/dev/null 2>&1; then
     record FAIL pytest "pytest command does not resolve or run after exposure (resolved: ${pytest_cmd:-<none>})"
     return 1
   fi
   if [[ -z "${reflex_cmd}" ]] || ! reflex --version >/dev/null 2>&1; then
     record FAIL reflex "reflex command does not resolve or run after exposure (resolved: ${reflex_cmd:-<none>})"
+    return 1
+  fi
+  if [[ -z "${ruff_cmd}" ]] || ! ruff --version >/dev/null 2>&1; then
+    record FAIL ruff "ruff command does not resolve or run after exposure (resolved: ${ruff_cmd:-<none>})"
     return 1
   fi
   if ! "${PYTOOLS_PY}" -m pytest --version >/dev/null 2>&1; then
@@ -1150,15 +1155,6 @@ pytools_stage() {
     record FAIL reflex "import reflex failed in the intended environment"
     return 1
   fi
-  if ! ruff --version >/dev/null 2>&1; then
-    record FAIL ruff "ruff command does not resolve or run after exposure (resolved: $(command -v ruff || echo '<none>'))"
-    return 1
-  fi
-  if [[ "${ruff_before}" == "${RUFF_PIN}" ]]; then
-    record PASS ruff "reused ${ruff_after} (command: $(command -v ruff); env: ~/.conductor-pytools)"
-  else
-    record PASS ruff "${ruff_after} installed into ~/.conductor-pytools (command: $(command -v ruff))"
-  fi
   if [[ "${pytest_before}" == "${PYTEST_PIN}" ]]; then
     record PASS pytest "reused ${pytest_after} (command: ${pytest_cmd}; env: ~/.conductor-pytools)"
   else
@@ -1168,6 +1164,11 @@ pytools_stage() {
     record PASS reflex "reused ${reflex_after} (command: ${reflex_cmd}; env: ~/.conductor-pytools)"
   else
     record PASS reflex "${reflex_after} installed into ~/.conductor-pytools (command: ${reflex_cmd})"
+  fi
+  if [[ "${ruff_before}" == "${RUFF_PIN}" ]]; then
+    record PASS ruff "reused ${ruff_after} (command: ${ruff_cmd}; env: ~/.conductor-pytools)"
+  else
+    record PASS ruff "${ruff_after} installed into ~/.conductor-pytools (command: ${ruff_cmd})"
   fi
 }
 
