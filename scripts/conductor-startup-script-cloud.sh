@@ -245,6 +245,11 @@ trap 'exit 143' TERM
 
 log() { echo "[startup] $*"; }
 
+# Issue #113 diagnostic: record what setup actually sees at start, so the
+# "is the repo cloned / env var set when Conductor runs setup?" question
+# gets a real answer from a live run's log.
+log "[diag] pwd=$(pwd) conductor_vars=$(env | grep '^CONDUCTOR_' | cut -d= -f1 | tr '\n' ' ')"
+
 record() { # <status> <name> <detail> — one summary row + one log line
   RESULTS="${RESULTS}
  ${2} | ${1} | ${3}"
@@ -1237,54 +1242,15 @@ roborev_quiet() {
 # copy-paste the failure handling into divergent variants (roborev
 # review finding).
 
-# find_repo_root: discover a git worktree when setup runs from a
-# non-worktree cwd (issue #101). Conductor cloud sandboxes run the
-# install script from $HOME — "/home/vercel-sandbox", NOT from inside
-# the cloned repo — so without help every roborev stage (the .roborev.toml
-# write and the hook posture that needs a .git dir) silently SKIPs and
-# a fresh workspace comes up "daemon live, no agent smoke check, no toml
-# written". Resolution order, conservative by design — auto-discovery
-# only fires when the result is unambiguous:
-#   1. CONDUCTOR_WORKSPACE_PATH, when set AND resolvable via `git -C <p>
-#      rev-parse --show-toplevel`. Conductor exposes this env var to its
-#      install scripts (the only place the script can know where the repo
-#      sits); operators in a non-Conductor setup can also set it by hand.
-#   2. A single git worktree directly under $HOME — the path Conductor
-#      clones into. Two or more worktrees at the top level is taken as
-#      ambiguous and we fall through (return 1), so a workspace that
-#      happens to have multiple clones under $HOME never gets the wrong
-#      repo's .roborev.toml silently.
-#   3. Otherwise return 1, and the roborev stage records a loud WARN
-#      naming the gap and still runs the daemon + smoke check (the parts
-#      that don't need a repo root).
-# Prints the toplevel on stdout; returns 0 on success, 1 otherwise.
-# Never writes anything; never changes cwd. No process substitution
-# (gtm-sdk#279: sandboxes can lack /dev/fd, and `set -e` then kills the
-# script silently — same rule as every sandbox-bound script in this repo).
-find_repo_root() {
-  local toplevel found=() dir
-  if [[ -n "${CONDUCTOR_WORKSPACE_PATH:-}" ]]; then
-    if toplevel="$(git -C "${CONDUCTOR_WORKSPACE_PATH}" rev-parse --show-toplevel 2>/dev/null)"; then
-      printf '%s\n' "${toplevel}"
-      return 0
-    fi
-  fi
-  # Plain unquoted glob — pathname expansion results are never re-split,
-  # so spaces in repo names survive. The path is required to end with a
-  # slash via `"${HOME}"/*/`, so plain files at $HOME's top level are
-  # skipped automatically (the glob doesn't match them); only directories
-  # make it through, then we still require a `.git` child to be a worktree.
-  for dir in "${HOME}"/*/; do
-    [[ -e "${dir%/}/.git" ]] || continue
-    if toplevel="$(git -C "${dir%/}" rev-parse --show-toplevel 2>/dev/null)"; then
-      found+=("${toplevel}")
-    fi
-  done
-  if [[ ${#found[@]} -eq 1 ]]; then
-    printf '%s\n' "${found[0]}"
-    return 0
-  fi
-  return 1
+# roborev_agent_ok <agent>: `roborev check-agents` exits 0 even when the
+# agent is missing from PATH ("0 passed, 0 failed, 1 skipped", real v0.63.0),
+# which used to record a false "answered a smoke prompt — reviews are live".
+# Require exit 0 AND at least one agent passed AND none failed.
+roborev_agent_ok() {
+  local out
+  out="$(roborev check-agents --agent "$1" --timeout 30 </dev/null 2>&1 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&-)" || return 1
+  [[ "${out}" =~ ([0-9]+)\ passed,\ ([0-9]+)\ failed ]] || return 1
+  (( BASH_REMATCH[1] > 0 && BASH_REMATCH[2] == 0 ))
 }
 
 # roborev_smoke_check <agent> <repo_root>: verify the configured agent
@@ -1313,6 +1279,7 @@ find_repo_root() {
 # 244b3bf removed from pi_install's WARN. RUN 25's prefix assert plus
 # its positive/negative wording locks pin the no-toml shape; the
 # with-worktree running case goes through has_toml=1 unchanged.
+
 roborev_smoke_check() {
   local agent="$1" repo_root="$2"
   local has_toml=0
@@ -1344,9 +1311,9 @@ roborev_smoke_check() {
   if [[ "${has_toml}" == 1 ]]; then
     switch_hint="or switch agents by editing the agent line in .roborev.toml (it wins over ROBOREV_AGENT), or delete it, set ROBOREV_AGENT, and re-run setup"
   else
-    switch_hint="or set ROBOREV_AGENT to a working agent and re-run setup from inside a discoverable repo (or set CONDUCTOR_WORKSPACE_PATH=/path/to/repo), so the next run writes a .roborev.toml"
+    switch_hint="or set ROBOREV_AGENT to a working agent and re-run setup with CONDUCTOR_WORKSPACE_PATH=/path/to/repo set, so the next run writes a .roborev.toml"
   fi
-  if roborev_quiet check-agents --agent "${agent}" --timeout 30; then
+  if roborev_agent_ok "${agent}"; then
     if [[ "${has_toml}" == 1 ]]; then
       record PASS roborev-agent "${agent} answered a smoke prompt — reviews are live"
     else
@@ -1366,29 +1333,56 @@ roborev_smoke_check() {
 # (issue #98). The default 127.0.0.1:7373 is machine-global, so one
 # sandbox's (or leftover) daemon would answer for every workspace and the
 # host. server_addr in the sandbox-HOME global config makes every roborev
-# call here — daemon, review, check-agents — use the private socket. The
-# socket path is short and keyed on HOME because unix socket paths are
-# capped at ~104 bytes. A server_addr already present is left alone.
+# call here — daemon, review, check-agents — use the private socket.
+# The socket lives in a 0700 dir under HOME, NOT /tmp: roborev refuses a
+# socket directory that is group/world accessible and Conductor sandboxes
+# have /tmp at mode 777 (issue #118; `daemon start` only times out, the
+# real error shows under `daemon run`). Unix socket paths are capped at
+# ~104 bytes, so an over-long HOME falls back to a short 0700 dir under /tmp
+# keyed on HOME. A server_addr already present is left alone, except a
+# stale unix:///tmp/ one written by an earlier version, which is replaced.
 roborev_isolate_daemon() {
-  local cfg="${HOME}/.roborev/config.toml" key sock
+  local cfg="${HOME}/.roborev/config.toml" key dir sock
   if grep -qE '^[[:space:]]*server_addr[[:space:]]*=' "${cfg}" 2>/dev/null; then
-    return 0
+    if grep -qE '^[[:space:]]*server_addr[[:space:]]*=[[:space:]]*"unix:///tmp/roborev-[0-9]+-[0-9]+\.sock"' "${cfg}"; then
+      sed -i.bak -E '/^[[:space:]]*server_addr[[:space:]]*=[[:space:]]*"unix:\/\/\/tmp\/roborev-[0-9]+-[0-9]+\.sock"/d' "${cfg}" && rm -f "${cfg}.bak" || return 1
+    else
+      return 0
+    fi
   fi
-  key="$(printf '%s' "${HOME}" | cksum | cut -d' ' -f1)"
-  sock="/tmp/roborev-$(id -u)-${key}.sock"
   mkdir -p "${HOME}/.roborev" || return 1
+  dir="${HOME}/.roborev/run"
+  sock="${dir}/d.sock"
+  if [[ ${#sock} -gt 100 ]]; then
+    key="$(printf '%s' "${HOME}" | cksum | cut -d' ' -f1)"
+    dir="/tmp/roborev-$(id -u)-${key}"
+    sock="${dir}/d.sock"
+  fi
+  mkdir -p "${dir}" && chmod 700 "${dir}" || return 1
   printf 'server_addr = "unix://%s"\n' "${sock}" >>"${cfg}" || return 1
 }
 
+# roborev_daemon_up: `roborev status` exits 0 even when it prints
+# "Daemon: not running" (real v0.63.0), so the exit code alone gives a false
+# PASS. Require exit 0 AND no "not running" in the output.
+roborev_daemon_up() {
+  local out
+  out="$(roborev status </dev/null 2>&1 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&-)" || return 1
+  [[ "${out}" != *"not running"* ]]
+}
+
 ensure_daemon() {
-  local stage="$1"
+  local stage="$1" err
   roborev_isolate_daemon || record WARN "${stage}" "could not write server_addr to ${HOME}/.roborev/config.toml — daemon falls back to the machine-global 127.0.0.1:7373 (issue #98)"
-  if roborev_quiet status; then
+  if roborev_daemon_up; then
     record PASS "${stage}" "daemon running"
   elif roborev_quiet daemon start; then
     record PASS "${stage}" "daemon revived"
   else
-    record FAIL "${stage}" "daemon not running and 'roborev daemon start' failed"
+    # `daemon start` hides the cause behind a generic timeout (issue #118);
+    # `daemon run` prints the real error (e.g. unsafe socket-dir perms).
+    err="$(timeout 5 roborev daemon run 2>&1 </dev/null | head -3 | tr '\n' ' ' || true)"
+    record FAIL "${stage}" "daemon not running and 'roborev daemon start' failed${err:+ — daemon run says: ${err}}"
     return 1
   fi
 }
@@ -1421,33 +1415,20 @@ roborev_setup() {
     return 0
   fi
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    local discovered=""
-    # Issue #101: Conductor cloud sandboxes run setup from $HOME, not from
-    # inside the cloned repo, so without auto-discovery every roborev
-    # stage below (the .roborev.toml write + the hook posture that needs
-    # a .git dir) silently SKIPs and a fresh workspace comes up "daemon
-    # live, no agent smoke check, no toml written". Try find_repo_root:
-    # the daemon ensure still needs to run when cwd isn't a worktree, so
-    # even a discovery miss shouldn't bail us out before that. A short
-    # log line surfaces the auto-discovery — it doesn't earn a summary
-    # row because the later .roborev.toml-write or no-worktree-fallback
-    # rows already carry the result.
-    if discovered="$(find_repo_root)"; then
-      log "[context] roborev-config — cwd is not a worktree; using ${discovered} (issue #101, find_repo_root)"
-      cd "${discovered}"
-      repo_root="${discovered}"
-    else
-      # No worktree to write into. Run the parts that don't need one
-      # (the daemon and the smoke check — both daemon-side, neither
-      # touches the filesystem) and surface a single loud WARN naming
-      # the gap, so the operator knows .roborev.toml never landed and
-      # reviews can't read a committed agent.
-      record WARN roborev-config "cwd is not a git worktree and no repo found via CONDUCTOR_WORKSPACE_PATH or \$HOME (issue #101) — skipping .roborev.toml + hook posture; run setup from inside the repo, or set CONDUCTOR_WORKSPACE_PATH=/path/to/repo and re-run; daemon + smoke check still ran below"
-      mkdir -p "${HOME}/.roborev" 2>/dev/null || true
-      ensure_daemon roborev-daemon || return 1
-      roborev_smoke_check "${agent}" ""
-      return 0
-    fi
+    # Issue #101: Conductor cloud sandboxes can run setup from $HOME,
+    # outside the cloned repo (and #113: possibly before the checkout
+    # exists). No auto-discovery: Conductor does further setup after this
+    # script that it cannot see, so guessing a repo here is unreliable.
+    # Run the parts that don't need a worktree (the daemon and the smoke
+    # check — both daemon-side, neither touches the filesystem) and
+    # surface a single loud WARN naming the gap, so the operator knows
+    # .roborev.toml never landed here and reviews rely on the repo's
+    # committed .roborev.toml.
+    record WARN roborev-config "cwd is not a git worktree (issue #101) — skipping .roborev.toml + hook posture; run setup from inside the repo; daemon + smoke check still ran below"
+    mkdir -p "${HOME}/.roborev" 2>/dev/null || true
+    ensure_daemon roborev-daemon || return 1
+    roborev_smoke_check "${agent}" ""
+    return 0
   else
     repo_root="$(git rev-parse --show-toplevel)"
     cd "${repo_root}"

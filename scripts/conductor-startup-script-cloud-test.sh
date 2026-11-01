@@ -136,20 +136,8 @@
 #     the override and asserts the tailored WARN that mentions "pi is
 #     already installed" rather than the misleading "pi is not installed"
 #     wording a re-run would otherwise produce.
-#   - RUN 24 (issue #101): the $HOME/<repo> auto-discovery path. With cwd
-#     outside any worktree and HOME pointing at a directory holding exactly
-#     one git worktree (the Conductor cloud clone convention), the roborev
-#     stage must write .roborev.toml INSIDE the discovered repo, not in
-#     cwd. Without find_repo_root, the same setup silently SKIPs and a
-#     fresh cloud workspace comes up with no .roborev.toml — the regression
-#     RUN 24 codifies against. RUN 24B asserts two worktrees at the top
-#     level is taken as ambiguous: find_repo_root returns 1 and the
-#     no-worktree fallback must fire instead of silently picking a wrong
-#     repo's .roborev.toml. RUN 24C1 asserts CONDUCTOR_WORKSPACE_PATH is
-#     used when set with no $HOME worktree; RUN 24C2 asserts the env var
-#     wins precedence when a $HOME worktree would also resolve.
-#   - RUN 25 (issue #101): the no-worktree fallback. With no CONDUCTOR_
-#     WORKSPACE_PATH and no worktrees under $HOME, the roborev stage must
+#   - RUN 25 (issue #101): the no-worktree fallback. With cwd
+#     outside any git worktree, the roborev stage must
 #     record a single loud WARN naming the gap and still run daemon +
 #     smoke check. The .roborev.toml-write and hook-posture stages must
 #     NOT have run. The smoke-check helper's "no .roborev.toml" branch
@@ -317,7 +305,7 @@ mkdir -p "${GLOBAL_HOOKS}" /tmp/roborev-stub
 # "$1" must stay literal — this printf emits a stub script whose own case
 # statement reads "$1", so single quotes are required, not an oversight.
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; init|install-hook|uninstall-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/roborev-stub/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; init|install-hook|uninstall-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub/roborev
 chmod 755 /tmp/roborev-stub/roborev
 su - sandbox-user -c "git init -q /tmp/guard-repo"
 RUN3_OUTPUT="$(su - sandbox-user -c "cd /tmp/guard-repo && PATH=/tmp/roborev-stub:\$PATH GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=${GLOBAL_HOOKS} bash ${STARTUP_SCRIPT}")" ||
@@ -357,7 +345,7 @@ echo "=== RUN 3B: leftover roborev hook removed; nothing reinstalled ==="
 rm -rf /tmp/hook-repo /tmp/roborev-stub2
 mkdir -p /tmp/roborev-stub2
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) rm -f "$(git rev-parse --git-path hooks/post-commit)" "$(git rev-parse --git-path hooks/post-rewrite)"; exit 0;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/roborev-stub2/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) rm -f "$(git rev-parse --git-path hooks/post-commit)" "$(git rev-parse --git-path hooks/post-rewrite)"; exit 0;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub2/roborev
 chmod 755 /tmp/roborev-stub2/roborev
 su - sandbox-user -c "git init -q /tmp/hook-repo"
 su - sandbox-user -c "printf '#!/bin/sh\nexec roborev post-commit\n' > /tmp/hook-repo/.git/hooks/post-commit && chmod 755 /tmp/hook-repo/.git/hooks/post-commit"
@@ -393,7 +381,7 @@ mkdir -p /tmp/roborev-stub3
 # writes there) would make that pre-seed fail with permission denied.
 su - sandbox-user -c "mkdir -p /tmp/global-hooks2"
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) echo called > /tmp/uninstall-called; exit 1;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/roborev-stub3/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) echo called > /tmp/uninstall-called; exit 1;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub3/roborev
 chmod 755 /tmp/roborev-stub3/roborev
 su - sandbox-user -c "git init -q /tmp/guard-repo2"
 su - sandbox-user -c "printf '#!/bin/sh\nexec roborev post-commit\n' > /tmp/global-hooks2/post-commit && chmod 755 /tmp/global-hooks2/post-commit"
@@ -425,7 +413,7 @@ echo "=== RUN 3D: ROBOREV_AGENT gate — malformed falls back, valid slug lands 
 rm -rf /tmp/agent-repo /tmp/agent-repo2 /tmp/agent-repo3 /tmp/agent-repo4 /tmp/agent-repo5 /tmp/roborev-stub4
 mkdir -p /tmp/roborev-stub4
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; init|install-hook|uninstall-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/roborev-stub4/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; init|install-hook|uninstall-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub4/roborev
 chmod 755 /tmp/roborev-stub4/roborev
 su - sandbox-user -c "git init -q /tmp/agent-repo"
 RUN3D_OUTPUT="$(su - sandbox-user -c "cd /tmp/agent-repo && PATH=/tmp/roborev-stub4:\$PATH ROBOREV_AGENT='bad \"value' bash ${STARTUP_SCRIPT}")" ||
@@ -516,7 +504,7 @@ echo "=== RUN 3E: mixed hooks — a careless uninstall must not PASS over a dele
 rm -rf /tmp/mixed-repo /tmp/roborev-stub5
 mkdir -p /tmp/roborev-stub5
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) rm -f "$(git rev-parse --git-path hooks/post-commit)" "$(git rev-parse --git-path hooks/post-rewrite)"; exit 0;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/roborev-stub5/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) rm -f "$(git rev-parse --git-path hooks/post-commit)" "$(git rev-parse --git-path hooks/post-rewrite)"; exit 0;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub5/roborev
 chmod 755 /tmp/roborev-stub5/roborev
 su - sandbox-user -c "git init -q /tmp/mixed-repo"
 su - sandbox-user -c "printf '#!/bin/sh\nexec my-formatter --fix\n' > /tmp/mixed-repo/.git/hooks/post-commit && chmod 755 /tmp/mixed-repo/.git/hooks/post-commit && printf '#!/bin/sh\n# roborev post-rewrite hook v2 - remaps reviews after rebase/amend\nexec roborev remap\n' > /tmp/mixed-repo/.git/hooks/post-rewrite && chmod 755 /tmp/mixed-repo/.git/hooks/post-rewrite"
@@ -549,9 +537,9 @@ echo "=== RUN 3F: uninstall WARN branches — partial removal and hard failure =
 rm -rf /tmp/partial-repo /tmp/fail-repo /tmp/roborev-stub6 /tmp/roborev-stub7
 mkdir -p /tmp/roborev-stub6 /tmp/roborev-stub7
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) rm -f "$(git rev-parse --git-path hooks/post-commit)"; exit 0;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/roborev-stub6/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) rm -f "$(git rev-parse --git-path hooks/post-commit)"; exit 0;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub6/roborev
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) exit 1;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/roborev-stub7/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) exit 1;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub7/roborev
 chmod 755 /tmp/roborev-stub6/roborev /tmp/roborev-stub7/roborev
 su - sandbox-user -c "git init -q /tmp/partial-repo"
 su - sandbox-user -c "printf '#!/bin/sh\n# roborev post-commit hook v4 - auto-reviews every commit\nexec roborev post-commit\n' > /tmp/partial-repo/.git/hooks/post-commit && chmod 755 /tmp/partial-repo/.git/hooks/post-commit && printf '#!/bin/sh\n# roborev post-rewrite hook v2 - remaps reviews after rebase/amend\nexec roborev remap\n' > /tmp/partial-repo/.git/hooks/post-rewrite && chmod 755 /tmp/partial-repo/.git/hooks/post-rewrite"
@@ -593,7 +581,7 @@ su - sandbox-user -c "
 rm -rf /tmp/worst-repo /tmp/roborev-stub8
 mkdir -p /tmp/roborev-stub8
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) rm -f "$(git rev-parse --git-path hooks/post-commit)" "$(git rev-parse --git-path hooks/post-rewrite)"; exit 1;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/roborev-stub8/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; uninstall-hook) rm -f "$(git rev-parse --git-path hooks/post-commit)" "$(git rev-parse --git-path hooks/post-rewrite)"; exit 1;; init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub8/roborev
 chmod 755 /tmp/roborev-stub8/roborev
 su - sandbox-user -c "git init -q /tmp/worst-repo"
 su - sandbox-user -c "printf '#!/bin/sh\nexec my-formatter --fix\n' > /tmp/worst-repo/.git/hooks/post-commit && chmod 755 /tmp/worst-repo/.git/hooks/post-commit && printf '#!/bin/sh\n# roborev post-rewrite hook v2 - remaps reviews after rebase/amend\nexec roborev remap\n' > /tmp/worst-repo/.git/hooks/post-rewrite && chmod 755 /tmp/worst-repo/.git/hooks/post-rewrite"
@@ -980,7 +968,7 @@ printf '#!/bin/sh\necho v22.19.0\n' > /tmp/pi-install-stubs/node
 chmod 755 /tmp/pi-install-stubs/node
 # stub roborev for the post-install smoke check (same shape as RUN 13).
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; status) exit 0;; daemon) exit 0;; check-agents) exit 0;; uninstall-hook|init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/pi-install-stubs/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; status) exit 0;; daemon) exit 0;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; uninstall-hook|init|install-hook) echo "stub: $1 must never be called" >&2; exit 1;; esac\nexit 0\n' > /tmp/pi-install-stubs/roborev
 chmod 755 /tmp/pi-install-stubs/roborev
 su - sandbox-user -c "git init -q /tmp/pi-install-repo"
 RUN14_OUTPUT="$(su - sandbox-user -c "cd /tmp/pi-install-repo && PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
@@ -1547,147 +1535,9 @@ case "${RUN23D_OUTPUT}" in
 *"keeps reviews live in this workspace"*) fail "23D tailored-WARN run still claims reviews are live in this workspace — the claim depends on a committed agent = \"pi\" .roborev.toml that pi_install cannot observe" ;;
 esac
 
-echo "=== RUN 24: \$HOME/<repo>/.git auto-discovery runs the full roborev stage ==="
-# Issue #101's first-class fix: Conductor cloud sandboxes run setup
-# from $HOME, NOT from inside the cloned repo, so without auto-
-# discovery the roborev stage silently SKIPs and a fresh workspace
-# comes up with no .roborev.toml + no agent smoke check + no hook
-# posture. The script's new find_repo_root discovers a single worktree
-# directly under $HOME (the path Conductor clones into) and cd's into
-# it. We rebuild the calling pattern here: cwd outside any worktree,
-# HOME pointing at a directory holding exactly one .git, full pinned
-# pi-install path so .roborev.toml gets the same effective writes
-# RUN 14 already exercises.
-rm -rf /tmp/find-repo-home
-su - sandbox-user -c "
-  set -e
-  mkdir -p /tmp/find-repo-home
-  cd /tmp/find-repo-home
-  git init -q repo
-  cd repo
-  git config user.email t@t
-  git config user.name t
-  echo init > README && git add README && git commit -q -m init
-"
-# Two worktrees in $HOME is ambiguous; build a SECOND empty worktree
-# elsewhere to verify find_repo_root returns 1 in that case. RUN 24B
-# covers it — building the ambiguity shape alongside the structural
-# shape so the safety isn't "by code review" only.
-rm -rf /tmp/find-repo-home-ambiguous
-su - sandbox-user -c "
-  set -e
-  mkdir -p /tmp/find-repo-home-ambiguous
-  cd /tmp/find-repo-home-ambiguous
-  git init -q repo-a
-  cd repo-a
-  git config user.email t@t; git config user.name t
-  echo init > README && git add README && git commit -q -m init
-  cd /tmp/find-repo-home-ambiguous
-  git init -q repo-b
-  cd repo-b
-  echo init > README
-"
-RUN24_OUTPUT="$(su - sandbox-user -c "cd /tmp && HOME=/tmp/find-repo-home PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
-  fail "find-repo run exited non-zero"
-printf '%s' "${RUN24_OUTPUT}"
-case "${RUN24_OUTPUT}" in *" | FAIL |"*) fail "find-repo run recorded FAIL row(s)" ;; esac
-# The .roborev.toml-write row inside the DISCOVERED repo proves we
-# cd'd into it — RUN 14's same row text confirms the script wrote
-# everything the with-worktree-from-cwd path would have.
-case "${RUN24_OUTPUT}" in
-*".roborev.toml written (agent: pi, model: fireworks/accounts/fireworks/models/glm-5p3-flash)"*) ;;
-*) fail "find-repo run missing the .roborev.toml-written row in the discovered repo" ;;
-esac
-# The hook posture row must show too (PASS on a brand-new repo) —
-# its presence means the cd'd-into-discovered-repo state propagated
-# past the toml write, the way the with-cwd-as-worktree path does.
-case "${RUN24_OUTPUT}" in *"roborev-hook | PASS"*) ;; *) fail "find-repo run missing the roborev-hook row — discovery did not cd into the worktree" ;; esac
-su - sandbox-user -c "
-  set -e
-  fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
-  [ -f /tmp/find-repo-home/repo/.roborev.toml ] ||
-    fail \"auto-discovery did not write .roborev.toml inside the discovered repo (cwd was /tmp — .roborev.toml.tmp cleanup would have masked it, but a missing file proves find_repo_root did not fire)\"
-  grep -q 'agent = \"pi\"' /tmp/find-repo-home/repo/.roborev.toml ||
-    fail \"auto-discovery wrote .roborev.toml without the agent line\"
-  grep -q 'model = \"fireworks/accounts/fireworks/models/glm-5p3-flash\"' /tmp/find-repo-home/repo/.roborev.toml ||
-    fail \"auto-discovery wrote .roborev.toml without the Fireworks model line\"
-" || fail "find-repo verification failed"
-# Two worktrees at the top: ambiguity, find_repo_root must return 1
-# and the script's no-worktree fallback (RUN 25 below) must fire.
-RUN24B_OUTPUT="$(su - sandbox-user -c "cd /tmp && HOME=/tmp/find-repo-home-ambiguous PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
-  fail "ambiguous-home run exited non-zero"
-case "${RUN24B_OUTPUT}" in *" | FAIL |"*) fail "ambiguous-home run recorded FAIL row(s)" ;; esac
-case "${RUN24B_OUTPUT}" in
-*"roborev-config | WARN | cwd is not a git worktree and no repo found via CONDUCTOR_WORKSPACE_PATH or \$HOME"*) ;;
-*) fail "ambiguous-home run missing the no-worktree WARN row — find_repo_root failed open instead of refusing" ;;
-esac
-case "${RUN24B_OUTPUT}" in *".roborev.toml written"*) fail "ambiguous-home run wrote .roborev.toml — find_repo_root picked a wrong repo" ;; esac
-
-# RUN 24C: CONDUCTOR_WORKSPACE_PATH takes precedence over the $HOME scan.
-# find_repo_root's primary resolution path (the commit message's first
-# bullet) gives Conductor's install-script env var precedence over the
-# $HOME/* scan so operators can point at an explicit path. Both the
-# straightforward case and the precedence case need coverage: a regression
-# in this branch — a typo in the env-var name, broken precedence, or
-# git-C resolving to a subdirectory — would pass CI silently while
-# breaking the Conductor-cloud machines this commit was written to fix.
-# Case 24C1: CONDUCTOR_WORKSPACE_PATH set, no $HOME worktree.
-rm -rf /tmp/cwp-workspace /tmp/cwp-empty-home
-su - sandbox-user -c "
-  set -e
-  mkdir -p /tmp/cwp-workspace
-  cd /tmp/cwp-workspace
-  git init -q repo
-  cd repo
-  git config user.email t@t; git config user.name t
-  echo init > README && git add README && git commit -q -m init
-  mkdir -p /tmp/cwp-empty-home
-"
-RUN24C1_OUTPUT="$(su - sandbox-user -c "cd /tmp && HOME=/tmp/cwp-empty-home CONDUCTOR_WORKSPACE_PATH=/tmp/cwp-workspace/repo PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
-  fail "cwp-straight run exited non-zero"
-case "${RUN24C1_OUTPUT}" in
-*".roborev.toml written (agent: pi, model: fireworks/accounts/fireworks/models/glm-5p3-flash)"*) ;;
-*) fail "cwp-straight run missing the .roborev.toml-written row — CONDUCTOR_WORKSPACE_PATH was not used" ;;
-esac
-[ -f /tmp/cwp-workspace/repo/.roborev.toml ] ||
-  fail "cwp-straight run did not write .roborev.toml into the CONDUCTOR_WORKSPACE_PATH repo"
-# Case 24C2: CONDUCTOR_WORKSPACE_PATH and a different $HOME worktree;
-# the env var must win. Without precedence the script would pick either
-# arbitrarily, so a regression in the resolution order would land the
-# wrong repo's .roborev.toml silently.
-rm -rf /tmp/cwp-precedence
-su - sandbox-user -c "
-  set -e
-  mkdir -p /tmp/cwp-precedence/ws
-  cd /tmp/cwp-precedence/ws
-  git config --global --unset user.email 2>/dev/null || true
-  git config --global --unset user.name 2>/dev/null || true
-  git init -q
-  git config user.email t@t; git config user.name t
-  echo init > README && git add README && git commit -q -m init
-  mkdir -p /tmp/cwp-precedence/home-elsewhere/repo
-  cd /tmp/cwp-precedence/home-elsewhere/repo
-  git config --global --unset user.email 2>/dev/null || true
-  git config --global --unset user.name 2>/dev/null || true
-  git init -q
-  echo init > README
-"
-RUN24C2_OUTPUT="$(su - sandbox-user -c "cd /tmp && HOME=/tmp/cwp-precedence/home-elsewhere CONDUCTOR_WORKSPACE_PATH=/tmp/cwp-precedence/ws PATH=/tmp/pi-install-stubs:/usr/local/bin:\$PATH bash /tmp/local-startup.sh")" ||
-  fail "cwp-precedence run exited non-zero"
-printf '%s' "${RUN24C2_OUTPUT}"
-case "${RUN24C2_OUTPUT}" in *" | FAIL |"*) fail "cwp-precedence run recorded FAIL row(s)" ;; esac
-case "${RUN24C2_OUTPUT}" in
-*".roborev.toml written (agent: pi, model: fireworks/accounts/fireworks/models/glm-5p3-flash)"*) ;;
-*) fail "cwp-precedence run missing the .roborev.toml-written row — CONDUCTOR_WORKSPACE_PATH was not used" ;;
-esac
-[ -f /tmp/cwp-precedence/ws/.roborev.toml ] ||
-  fail "cwp-precedence run did not write .roborev.toml into CONDUCTOR_WORKSPACE_PATH — the setup scanned for \$HOME repos and either failed open or picked the wrong one"
-[ ! -f /tmp/cwp-precedence/home-elsewhere/repo/.roborev.toml ] ||
-  fail "cwp-precedence run wrote .roborev.toml into the \$HOME repo — env var lost the precedence test"
-
 echo "=== RUN 25: no-worktree fallback records the loud WARN + still runs daemon + smoke ==="
-# Issue #101's no-worktree fallback: find_repo_root returns 1 when
-# neither CONDUCTOR_WORKSPACE_PATH nor a single worktree resolves.
+# Issue #101's no-worktree fallback: when cwd is not a git worktree
+# (no repo auto-discovery — Conductor does more setup after this script).
 # The roborev stage records a single loud WARN naming the gap and
 # falls through to daemon + smoke check only — those parts never
 # needed a repo root. RUN 25 uses a stubs-only env so the smoke check
@@ -1714,7 +1564,7 @@ printf '%s' "${RUN25_OUTPUT}"
 case "${RUN25_OUTPUT}" in *" | FAIL |"*) fail "no-worktree run recorded FAIL row(s)" ;; esac
 # The loud WARN that names issue #101 and the gap.
 case "${RUN25_OUTPUT}" in
-*"roborev-config | WARN | cwd is not a git worktree and no repo found via CONDUCTOR_WORKSPACE_PATH or \$HOME"*) ;;
+*"roborev-config | WARN | cwd is not a git worktree (issue #101)"*) ;;
 *) fail "no-worktree run missing the loud no-worktree WARN row" ;;
 esac
 # Daemon + smoke both ran in the fallback path (the parts that don't
@@ -1779,7 +1629,7 @@ for pass in 1 2; do
 done
 ISOLATE_CFG=/tmp/isolate-home/.roborev/config.toml
 [[ -f "${ISOLATE_CFG}" ]] || fail "daemon isolation did not write ${ISOLATE_CFG}"
-[[ "$(grep -c '^server_addr = "unix:///tmp/roborev-[0-9]*-[0-9]*\.sock"$' "${ISOLATE_CFG}")" == 1 ]] ||
+[[ "$(grep -c '^server_addr = "unix:///tmp/isolate-home/\.roborev/run/d\.sock"$' "${ISOLATE_CFG}")" == 1 ]] ||
   fail "expected exactly one unix-socket server_addr after two runs, got: $(cat "${ISOLATE_CFG}")"
 # A pre-set server_addr must never be overridden.
 printf 'server_addr = "127.0.0.1:9999"\n' > "${ISOLATE_CFG}"
@@ -1787,5 +1637,130 @@ su - sandbox-user -c "cd /tmp && unset ROBOREV_MODEL && HOME=/tmp/isolate-home P
   fail "daemon-isolation preset run exited non-zero"
 [[ "$(cat "${ISOLATE_CFG}")" == 'server_addr = "127.0.0.1:9999"' ]] ||
   fail "daemon isolation overwrote a pre-set server_addr: $(cat "${ISOLATE_CFG}")"
+
+# --- RUN 27-31 (issues #98/#118): socket-dir placement + daemon failures ---
+SU_RUN() { # SU_RUN <home> <stubdir> -> runs the startup script, prints output
+  su - sandbox-user -c "cd /tmp && unset ROBOREV_MODEL && HOME=$1 PATH=$2:/usr/local/bin:\$PATH bash /tmp/local-startup.sh" 2>&1
+}
+ISO_FN=/tmp/isolate-fn.sh
+sed -n '/^roborev_isolate_daemon() {/,/^}/p' scripts/conductor-startup-script-cloud.sh > "${ISO_FN}"
+[[ -s "${ISO_FN}" ]] || fail "could not extract roborev_isolate_daemon"
+chmod 755 "${ISO_FN}"
+
+# RUN 27: a stale unix:///tmp/ server_addr from an older setup (rejected by
+# roborev when /tmp is 777, issue #118) is migrated; unrelated config lines
+# survive; the socket dir is 0700 under HOME, never /tmp.
+chmod 777 /tmp
+rm -rf /tmp/stale-home; su - sandbox-user -c "mkdir -p /tmp/stale-home/.roborev"
+printf 'foo = "bar"\nserver_addr = "unix:///tmp/roborev-1000-123.sock"\n[x]\ny = 1\n' > /tmp/stale-home/.roborev/config.toml
+chown -R sandbox-user /tmp/stale-home
+SU_RUN /tmp/stale-home /tmp/nowork-stubs-fail >/dev/null || fail "stale-migration run exited non-zero"
+STALE_CFG=/tmp/stale-home/.roborev/config.toml
+grep -q 'roborev-1000-123' "${STALE_CFG}" && fail "stale /tmp socket address not removed: $(cat "${STALE_CFG}")"
+[[ "$(grep -c '^server_addr = "unix:///tmp/stale-home/\.roborev/run/d\.sock"$' "${STALE_CFG}")" == 1 ]] || fail "migrated server_addr wrong: $(cat "${STALE_CFG}")"
+if ! { grep -q '^foo = "bar"$' "${STALE_CFG}" && grep -q '^y = 1$' "${STALE_CFG}"; }; then
+  fail "migration dropped unrelated config lines: $(cat "${STALE_CFG}")"
+fi
+[[ "$(stat -c %a /tmp/stale-home/.roborev/run)" == 700 ]] || fail "socket dir is not 0700"
+# A non-/tmp unix server_addr and a TCP one must both be left alone.
+printf 'server_addr = "unix:///var/run/custom.sock"\n' > "${STALE_CFG}"
+SU_RUN /tmp/stale-home /tmp/nowork-stubs-fail >/dev/null || fail "custom-unix run exited non-zero"
+[[ "$(cat "${STALE_CFG}")" == 'server_addr = "unix:///var/run/custom.sock"' ]] || fail "custom unix server_addr was modified"
+
+# RUN 28: two sandboxes (distinct HOMEs) never share a socket.
+for h in iso-a iso-b; do rm -rf /tmp/${h}; su - sandbox-user -c "mkdir -p /tmp/${h}"; SU_RUN /tmp/${h} /tmp/nowork-stubs-fail >/dev/null || fail "${h} run failed"; done
+A="$(grep '^server_addr' /tmp/iso-a/.roborev/config.toml)"; B="$(grep '^server_addr' /tmp/iso-b/.roborev/config.toml)"
+[[ -n "${A}" && -n "${B}" && "${A}" != "${B}" ]] || fail "sandboxes share a socket: '${A}' vs '${B}'"
+
+# RUN 29: over-long HOME (unix socket paths cap at ~104 bytes) falls back
+# to a short 0700 dir, still not world-accessible.
+LONGH="/tmp/$(printf 'l%.0s' $(seq 1 90))"
+rm -rf "${LONGH}"; su - sandbox-user -c "mkdir -p ${LONGH}"
+su - sandbox-user -c "HOME=${LONGH} bash -c '. ${ISO_FN}; roborev_isolate_daemon'" || fail "long-HOME isolate failed"
+LSOCK="$(sed -n 's/^server_addr = "unix:\/\/\(.*\)"$/\1/p' "${LONGH}/.roborev/config.toml")"
+[[ -n "${LSOCK}" && ${#LSOCK} -le 100 ]] || fail "long-HOME socket path missing or too long (${#LSOCK}): ${LSOCK}"
+[[ "$(stat -c %a "$(dirname "${LSOCK}")")" == 700 ]] || fail "long-HOME fallback socket dir is not 0700"
+
+# RUN 30: when the daemon can't start, the FAIL row carries the real
+# `daemon run` error instead of just a generic start failure (issue #118).
+rm -rf /tmp/nowork-stubs-dead; mkdir -p /tmp/nowork-stubs-dead; cp -r /tmp/nowork-stubs/. /tmp/nowork-stubs-dead/
+# shellcheck disable=SC2016 # $1/$2 are for the stub's shell, not ours
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; status) exit 1;; daemon) if [ "$2" = run ]; then echo "Error: socket directory /tmp has unsafe permissions 777" >&2; fi; exit 1;; check-agents) exit 1;; esac\nexit 0\n' > /tmp/nowork-stubs-dead/roborev
+chmod 755 /tmp/nowork-stubs-dead/roborev
+rm -rf /tmp/dead-home; su - sandbox-user -c "mkdir -p /tmp/dead-home"
+DEAD_OUT="$(SU_RUN /tmp/dead-home /tmp/nowork-stubs-dead || true)"
+case "${DEAD_OUT}" in
+*"roborev-daemon | FAIL | daemon not running and 'roborev daemon start' failed — daemon run says: Error: socket directory /tmp has unsafe permissions 777"*) ;;
+*) printf '%s\n' "${DEAD_OUT}" | grep roborev-daemon; fail "daemon FAIL row lacks the 'daemon run' error" ;;
+esac
+
+# RUN 31: REAL roborev binary (installed by RUN 1) with /tmp at 777 — the
+# actual #118 environment. Old behavior (unix:///tmp socket) must fail, the
+# script's behavior must bring up a healthy daemon, and nothing may bind the
+# machine-global TCP 7373. The `roborev-daemon | PASS` row alone proves
+# little: real `roborev status` exits 0 even when it prints "Daemon: not
+# running" (verified on v0.63.0 with the old unix:///tmp layout under a 777
+# /tmp), so `Health: OK` and the private socket are the real assertions.
+REAL=/usr/local/bin/roborev
+if [[ -x "${REAL}" ]] && "${REAL}" version 2>&1 | grep -qv stub; then
+  chmod 777 /tmp
+  rm -rf /tmp/real-old /tmp/real-new; su - sandbox-user -c "mkdir -p /tmp/real-old/.roborev /tmp/real-new"
+  printf 'server_addr = "unix:///tmp/roborev-1000-9.sock"\n' > /tmp/real-old/.roborev/config.toml; chown -R sandbox-user /tmp/real-old
+  OLD_ERR="$(su - sandbox-user -c "HOME=/tmp/real-old timeout 8 ${REAL} daemon run 2>&1" || true)"
+  case "${OLD_ERR}" in *"unsafe permissions 777"*) ;; *) fail "real roborev no longer rejects a /tmp socket with 777 /tmp (premise changed): ${OLD_ERR}" ;; esac
+  REAL_OUT="$(su - sandbox-user -c "cd /tmp && unset ROBOREV_MODEL && HOME=/tmp/real-new PATH=/usr/local/bin:\$PATH bash /tmp/local-startup.sh" 2>&1 || true)"
+  case "${REAL_OUT}" in *"roborev-daemon | PASS"*) ;; *) printf '%s\n' "${REAL_OUT}" | grep roborev; fail "real roborev daemon did not come up under 777 /tmp" ;; esac
+  su - sandbox-user -c "HOME=/tmp/real-new ${REAL} status" 2>&1 | grep -q 'Health: OK' || fail "real daemon unhealthy"
+  [[ -S /tmp/real-new/.roborev/run/d.sock ]] || fail "real daemon socket missing at the private path"
+  if (exec 3<>/dev/tcp/127.0.0.1/7373) 2>/dev/null; then fail "something is listening on machine-global 127.0.0.1:7373"; fi
+  su - sandbox-user -c "HOME=/tmp/real-new ${REAL} daemon stop" >/dev/null 2>&1 || true
+  # NOT `roborev status` here: in v0.63.0 it auto-starts a daemon when none
+  # is running, so it can't tell "stopped" from "revived". The private socket
+  # vanishing is the observable signal that the daemon is gone.
+  for _ in 1 2 3 4 5; do [[ -S /tmp/real-new/.roborev/run/d.sock ]] || break; sleep 1; done
+  [[ ! -S /tmp/real-new/.roborev/run/d.sock ]] || fail "RUN 31 left a real roborev daemon running after 'daemon stop'"
+else
+  echo "RUN 31 SKIPPED: real roborev not at ${REAL}"
+fi
+chmod 1777 /tmp # RUN 27-31 widened it to 777; restore the stock mode
+
+# RUN 32: real `roborev status` exits 0 while printing "Daemon: not running"
+# (v0.63.0). That must not count as running: with start failing it is a FAIL
+# row carrying the `daemon run` error, and with start working it is "revived".
+rm -rf /tmp/nowork-stubs-lie; mkdir -p /tmp/nowork-stubs-lie; cp -r /tmp/nowork-stubs/. /tmp/nowork-stubs-lie/
+# shellcheck disable=SC2016 # $1/$2 are for the stub's shell, not ours
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; status) echo "Daemon: not running"; exit 0;; daemon) if [ "$2" = run ]; then echo "Error: socket directory /tmp has unsafe permissions 777" >&2; fi; exit 1;; check-agents) exit 1;; esac\nexit 0\n' > /tmp/nowork-stubs-lie/roborev
+chmod 755 /tmp/nowork-stubs-lie/roborev
+rm -rf /tmp/lie-home; su - sandbox-user -c "mkdir -p /tmp/lie-home"
+LIE_OUT="$(SU_RUN /tmp/lie-home /tmp/nowork-stubs-lie || true)"
+case "${LIE_OUT}" in
+*"roborev-daemon | FAIL | daemon not running and 'roborev daemon start' failed — daemon run says: Error: socket directory /tmp"*) ;;
+*) printf '%s\n' "${LIE_OUT}" | grep roborev-daemon; fail "status exit 0 + 'not running' was treated as a running daemon" ;;
+esac
+# shellcheck disable=SC2016
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; status) echo "Daemon: not running"; exit 0;; daemon) exit 0;; check-agents) exit 1;; esac\nexit 0\n' > /tmp/nowork-stubs-lie/roborev
+LIE2_OUT="$(SU_RUN /tmp/lie-home /tmp/nowork-stubs-lie || true)"
+case "${LIE2_OUT}" in
+*"roborev-daemon | PASS | daemon revived"*) ;;
+*) printf '%s\n' "${LIE2_OUT}" | grep roborev-daemon; fail "'not running' status with working start was not 'daemon revived'" ;;
+esac
+
+# RUN 33: real `roborev check-agents` exits 0 even when the agent is not on
+# PATH ("0 passed, 0 failed, 1 skipped", v0.63.0). That is not a smoke pass.
+# shellcheck disable=SC2016 # $1 is for the stub's shell, not ours
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; status) exit 0;; daemon) exit 0;; check-agents) echo "  - pi             pi (not found in PATH)"; echo "0 passed, 0 failed, 1 skipped"; exit 0;; esac\nexit 0\n' > /tmp/nowork-stubs-lie/roborev
+LIE3_OUT="$(SU_RUN /tmp/lie-home /tmp/nowork-stubs-lie || true)"
+case "${LIE3_OUT}" in
+*"roborev-agent | PASS"*) printf '%s\n' "${LIE3_OUT}" | grep roborev-agent; fail "skipped (missing) agent was reported as a passing smoke check" ;;
+*"roborev-agent | WARN"*) ;;
+*) printf '%s\n' "${LIE3_OUT}" | grep roborev-agent; fail "missing agent produced no roborev-agent WARN" ;;
+esac
+# shellcheck disable=SC2016
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; status) exit 0;; daemon) exit 0;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/nowork-stubs-lie/roborev
+LIE4_OUT="$(SU_RUN /tmp/lie-home /tmp/nowork-stubs-lie || true)"
+case "${LIE4_OUT}" in
+*"roborev-agent | PASS"*) ;;
+*) printf '%s\n' "${LIE4_OUT}" | grep roborev-agent; fail "a genuinely passing agent was not reported as PASS" ;;
+esac
 
 echo "=== ALL CHECKS PASSED ==="
