@@ -158,7 +158,7 @@ These tools aren't steps in the flow, but they keep it running smoothly:
 - **[Flox](https://flox.dev)** resolves one manifest into one lock file, so
   your laptop, CI, and every agent's sandbox run exactly the same software,
   built from prebuilt packages instead of compiled on a fragile machine.
-- **uv, pytest, and Reflex** are the Python essentials, for projects that want
+- **uv, pytest, Reflex, and ruff** are the Python essentials, for projects that want
   them.
 
 ## Where to go next

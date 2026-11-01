@@ -83,7 +83,7 @@
 #     under STARTUP_BEST_EFFORT=1 (this repo's settings.toml contract,
 #     gtm-sdk#702) is still recorded as a FAIL row but exits 0.
 #   - RUN 7/8 (issue #44): STARTUP_PY_DEV_TOOLS=1 — the settings.toml
-#     posture — provisions uv (real pinned download) plus pytest/reflex
+#     posture — provisions uv (real pinned download) plus pytest/reflex/ruff
 #     (real PyPI install into the ~/.conductor-pytools venv), all
 #     resolving under /usr/local/bin as sandbox-user with `python -m
 #     pytest` and `import reflex` working in the venv; RUN 8 re-runs and
@@ -658,7 +658,7 @@ echo "=== RUN 7: pytools provisioning (STARTUP_PY_DEV_TOOLS=1, the settings.toml
 # Issue #44's target path: this repo's settings.toml exports both flags,
 # so this run mirrors it — fresh pytools state (RUN 1/2 ran flag-off, so
 # no uv on PATH and no ~/.conductor-pytools yet), a REAL pinned uv
-# download with checksum verification, and a REAL pytest/reflex install
+# download with checksum verification, and a REAL pytest/reflex/ruff install
 # from PyPI into the venv.
 RUN7_OUTPUT="$(su - sandbox-user -c "cd /tmp && STARTUP_BEST_EFFORT=1 STARTUP_PY_DEV_TOOLS=1 bash ${STARTUP_SCRIPT}")" ||
   fail "pytools run exited non-zero"
@@ -666,11 +666,11 @@ printf '%s\n' "${RUN7_OUTPUT}"
 case "${RUN7_OUTPUT}" in
 *" | FAIL |"*) fail "pytools run recorded FAIL row(s)" ;;
 esac
-for row in "uv | PASS" "pytools-venv | PASS" "pytest | PASS" "reflex | PASS"; do
+for row in "uv | PASS" "pytools-venv | PASS" "pytest | PASS" "reflex | PASS" "ruff | PASS"; do
   case "${RUN7_OUTPUT}" in *"${row}"*) ;; *) fail "pytools run missing the ${row} row" ;; esac
 done
 
-echo "=== VERIFY: uv/pytest/reflex resolve as sandbox-user with the pinned versions ==="
+echo "=== VERIFY: uv/pytest/reflex/ruff resolve as sandbox-user with the pinned versions ==="
 su - sandbox-user -c "
   set -e
   fail() { echo \"TEST FAIL: \$*\" >&2; exit 1; }
@@ -696,6 +696,14 @@ su - sandbox-user -c "
   printf '%s' \"\${reflex_version_out}\" | grep -q \"\${pin_reflex}\" ||
     fail \"reflex does not report the pinned \${pin_reflex}: \${reflex_version_out}\"
 
+  pin_ruff=\"\$(sed -n 's/^RUFF_PIN=\"\([^\"]*\)\".*/\1/p' ${STARTUP_SCRIPT})\"
+  [ \"\$(command -v ruff)\" = /usr/local/bin/ruff ] ||
+    fail \"ruff resolved to \$(command -v ruff)\"
+  ruff --version 2>&1 | grep -q \"\${pin_ruff}\" ||
+    fail \"ruff does not report the pinned \${pin_ruff}\"
+  # The sandbox ships only python3; setup links the venv interpreter.
+  command -v python >/dev/null || fail \"python is not on PATH\"
+
   # Issue #44 acceptance: the provisioned Python environment runs
   # python -m pytest and imports reflex (the managed-environment
   # equivalent — the venv IS the intended environment).
@@ -718,7 +726,7 @@ case "${RUN8_OUTPUT}" in
 esac
 # Positive reuse assertions: a re-download or re-install would pass the
 # FAIL/fallback checks above unnoticed.
-for row in "uv | PASS | reused" "pytools-venv | PASS | reused" "pytest | PASS | reused" "reflex | PASS | reused"; do
+for row in "uv | PASS | reused" "pytools-venv | PASS | reused" "pytest | PASS | reused" "reflex | PASS | reused" "ruff | PASS | reused"; do
   case "${RUN8_OUTPUT}" in *"${row}"*) ;; *) fail "pytools re-run missing the ${row} row — re-provisioned instead of reusing" ;; esac
 done
 

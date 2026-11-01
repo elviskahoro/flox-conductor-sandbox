@@ -30,7 +30,7 @@ fi
 # (reviews on demand with --wait — no background post-commit auto-review
 # hook is installed), and the issue #44 Python dev tools:
 # STARTUP_PY_DEV_TOOLS=1 provisions
-# uv (pinned, checksum-verified release binary) plus pytest and reflex
+# uv (pinned, checksum-verified release binary) plus pytest, reflex, and ruff
 # (exact-pinned packages in the uv-managed ~/.conductor-pytools
 # venv), all exposed as commands for later agent shells — the Flox
 # manifests' uv is process-scoped and a fresh workspace otherwise has

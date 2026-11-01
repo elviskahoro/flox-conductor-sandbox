@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2312  # $(...) in assignments and rows: stage failures surface through the stages' own || returns and the summary, not by killing the script mid-row
 # The single Conductor workspace startup script: roborev + trunk + rwx +
-# Python 3.11 + the opt-in Python dev tools (uv/pytest/reflex), then the
+# Python 3.11 + the opt-in Python dev tools (uv/pytest/reflex/ruff), then the
 # auth/init that makes them work rather than merely exist.
 #
 # Two consumers, one file (it replaced the former conductor-cloud-install.sh
@@ -43,7 +43,7 @@
 #      assumes a particular project — safe in any workspace, local or cloud.
 #      The trunk and python stages are reuse-if-present and SKIP cleanly off
 #      the target class, so pasting this into a repo that needs neither
-#      costs nothing. The uv/pytest/reflex stage (issue #44) is opt-in via
+#      costs nothing. The uv/pytest/reflex/ruff stage (issue #44) is opt-in via
 #      STARTUP_PY_DEV_TOOLS=1 and SKIPs when unset, so the paste surface is
 #      exactly what it was before that stage existed — only this repo's
 #      own settings.toml turns it on.
@@ -81,13 +81,14 @@
 #            AL2023 class only (see the stage body for the shadow-safety
 #            facts); SKIP elsewhere. The only always-on stage whose failure
 #            is a stated requirement rather than a nice-to-have.
-#   uv/pytest/reflex  opt-in (STARTUP_PY_DEV_TOOLS=1, this repo's
+#   uv/pytest/reflex/ruff  opt-in (STARTUP_PY_DEV_TOOLS=1, this repo's
 #            settings.toml): uv as a pinned, checksum-verified release
-#            binary placed like every other tool; pytest and reflex as
+#            binary placed like every other tool; pytest, reflex, and ruff as
 #            pinned packages in one uv-managed venv, ~/.conductor-pytools
 #            (Python 3.11), with their console scripts symlinked into the
-#            same bin dirs so later agent shells get `uv`, `pytest`, and
-#            `reflex` as commands. The venv is the intended Python
+#            same bin dirs so later agent shells get `uv`, `pytest`,
+#            `reflex`, and `ruff` as commands (plus python, linked to the
+#            venv interpreter when none is on PATH). The venv is the intended Python
 #            environment for the two packages — the documented module
 #            invocations are ~/.conductor-pytools/bin/python -m pytest and
 #            ... -c 'import reflex' (issue #44's managed-environment
@@ -106,7 +107,7 @@
 # roborev: new pin + sha256s from the release's checksums file, then
 # republish the FloxHub package — don't hand-edit any lock. uv: new pin +
 # sha256s (hand-hash the release tarballs), then bump both Flox manifests
-# and re-lock their envs together. pytest/reflex: no Flox counterpart —
+# and re-lock their envs together. pytest/reflex/ruff: no Flox counterpart —
 # the pins live only here, and validate-pins.sh asserts they stay exact
 # x.y.z pins. (The rwx block's former sibling copy in gtm-sdk's
 # conductor-workspace-setup.sh went away when that repo retired the script,
@@ -196,7 +197,7 @@
 #                     the tool stages recorded-but-non-fatal; see the
 #                     failure-semantics section above.
 #   STARTUP_PY_DEV_TOOLS  set to 1 (this repo's settings.toml does) to
-#                     provision uv/pytest/reflex; see the tool list and
+#                     provision uv/pytest/reflex/ruff; see the tool list and
 #                     the pytools stage body. Unset or any other value
 #                     records a SKIP row and changes nothing else — the
 #                     paste-ready consumer's surface stays as it was. A
@@ -966,6 +967,7 @@ python311_stage() {
 UV_PIN="0.11.26"
 PYTEST_PIN="9.1.1"
 REFLEX_PIN="0.9.12"
+RUFF_PIN="0.17.3"
 PYTOOLS_VENV="${HOME}/.conductor-pytools"
 PYTOOLS_PY="${PYTOOLS_VENV}/bin/python"
 
@@ -1040,7 +1042,7 @@ venv_version() {
 
 pytools_stage() {
   if [[ "${STARTUP_PY_DEV_TOOLS:-0}" != "1" ]]; then
-    record SKIP pytools "not requested — set STARTUP_PY_DEV_TOOLS=1 to provision uv/pytest/reflex (this repo's settings.toml does)"
+    record SKIP pytools "not requested — set STARTUP_PY_DEV_TOOLS=1 to provision uv/pytest/reflex/ruff (this repo's settings.toml does)"
     return 0
   fi
   pytools_uv_install || return 1
@@ -1073,18 +1075,20 @@ pytools_stage() {
   # already satisfy them — a satisfied pin is left untouched (the reuse
   # path stays network-free), a stale or missing one is upgraded/healed in
   # place by the same command.
-  local pytest_before reflex_before
+  local pytest_before reflex_before ruff_before
   pytest_before="$(venv_version pytest)"
   reflex_before="$(venv_version reflex)"
-  if [[ "${pytest_before}" != "${PYTEST_PIN}" || "${reflex_before}" != "${REFLEX_PIN}" ]]; then
-    if ! uv pip install --python "${PYTOOLS_PY}" "pytest==${PYTEST_PIN}" "reflex==${REFLEX_PIN}"; then
-      record FAIL pytools-pkg "uv pip install pytest==${PYTEST_PIN} reflex==${REFLEX_PIN} failed (see output above)"
+  ruff_before="$(venv_version ruff)"
+  if [[ "${pytest_before}" != "${PYTEST_PIN}" || "${reflex_before}" != "${REFLEX_PIN}" || "${ruff_before}" != "${RUFF_PIN}" ]]; then
+    if ! uv pip install --python "${PYTOOLS_PY}" "pytest==${PYTEST_PIN}" "reflex==${REFLEX_PIN}" "ruff==${RUFF_PIN}"; then
+      record FAIL pytools-pkg "uv pip install pytest==${PYTEST_PIN} reflex==${REFLEX_PIN} ruff==${RUFF_PIN} failed (see output above)"
       return 1
     fi
   fi
-  local pytest_after reflex_after
+  local pytest_after reflex_after ruff_after
   pytest_after="$(venv_version pytest)"
   reflex_after="$(venv_version reflex)"
+  ruff_after="$(venv_version ruff)"
   if [[ "${pytest_after}" != "${PYTEST_PIN}" ]]; then
     record FAIL pytest "venv does not provide pytest ${PYTEST_PIN} after install (resolved: ${pytest_after:-<none>})"
     return 1
@@ -1093,34 +1097,55 @@ pytools_stage() {
     record FAIL reflex "venv does not provide reflex ${REFLEX_PIN} after install (resolved: ${reflex_after:-<none>})"
     return 1
   fi
+  if [[ "${ruff_after}" != "${RUFF_PIN}" ]]; then
+    record FAIL ruff "venv does not provide ruff ${RUFF_PIN} after install (resolved: ${ruff_after:-<none>})"
+    return 1
+  fi
   # Expose the console scripts as commands for later shells. note_placement
   # happens HERE, not inside expose_link: the link helpers run inside
   # command substitution and a subshell's LOCAL_FALLBACK_TOOLS update
   # would die there (the same trap roborev/trunk/rwx sidestep by noting
   # the captured path at the call site).
-  local pytest_link reflex_link
+  local pytest_link reflex_link ruff_link python_link
   pytest_link="$(expose_link "${PYTOOLS_VENV}/bin/pytest" pytest || true)"
   reflex_link="$(expose_link "${PYTOOLS_VENV}/bin/reflex" reflex || true)"
-  if [[ -z "${pytest_link}" || -z "${reflex_link}" ]]; then
-    record FAIL pytools "could not expose pytest/reflex commands (pytest link: ${pytest_link:-<none>}, reflex link: ${reflex_link:-<none>})"
+  ruff_link="$(expose_link "${PYTOOLS_VENV}/bin/ruff" ruff || true)"
+  if [[ -z "${pytest_link}" || -z "${reflex_link}" || -z "${ruff_link}" ]]; then
+    record FAIL pytools "could not expose pytest/reflex/ruff commands (pytest link: ${pytest_link:-<none>}, reflex link: ${reflex_link:-<none>}, ruff link: ${ruff_link:-<none>})"
     return 1
   fi
   note_placement "${pytest_link}"
   note_placement "${reflex_link}"
+  note_placement "${ruff_link}"
+  # Only python3 exists on these sandboxes; link the venv interpreter as
+  # python unless something already provides it.
+  if ! command -v python >/dev/null 2>&1; then
+    python_link="$(expose_link "${PYTOOLS_PY}" python || true)"
+    if [[ -z "${python_link}" ]]; then
+      record FAIL pytools "could not expose the venv interpreter as python"
+      return 1
+    fi
+    note_placement "${python_link}"
+  fi
   hash -r 2>/dev/null || true
   # Final verification — the acceptance surface itself, re-proven on every
   # run so a REUSED install is proven functional, not just presumed:
   # commands resolve and report versions, and the documented module
   # invocations work in the venv.
-  local pytest_cmd reflex_cmd
+  local pytest_cmd reflex_cmd ruff_cmd
   pytest_cmd="$(command -v pytest || true)"
   reflex_cmd="$(command -v reflex || true)"
+  ruff_cmd="$(command -v ruff || true)"
   if [[ -z "${pytest_cmd}" ]] || ! pytest --version >/dev/null 2>&1; then
     record FAIL pytest "pytest command does not resolve or run after exposure (resolved: ${pytest_cmd:-<none>})"
     return 1
   fi
   if [[ -z "${reflex_cmd}" ]] || ! reflex --version >/dev/null 2>&1; then
     record FAIL reflex "reflex command does not resolve or run after exposure (resolved: ${reflex_cmd:-<none>})"
+    return 1
+  fi
+  if [[ -z "${ruff_cmd}" ]] || ! ruff --version >/dev/null 2>&1; then
+    record FAIL ruff "ruff command does not resolve or run after exposure (resolved: ${ruff_cmd:-<none>})"
     return 1
   fi
   if ! "${PYTOOLS_PY}" -m pytest --version >/dev/null 2>&1; then
@@ -1140,6 +1165,11 @@ pytools_stage() {
     record PASS reflex "reused ${reflex_after} (command: ${reflex_cmd}; env: ~/.conductor-pytools)"
   else
     record PASS reflex "${reflex_after} installed into ~/.conductor-pytools (command: ${reflex_cmd})"
+  fi
+  if [[ "${ruff_before}" == "${RUFF_PIN}" ]]; then
+    record PASS ruff "reused ${ruff_after} (command: ${ruff_cmd}; env: ~/.conductor-pytools)"
+  else
+    record PASS ruff "${ruff_after} installed into ~/.conductor-pytools (command: ${ruff_cmd})"
   fi
 }
 
