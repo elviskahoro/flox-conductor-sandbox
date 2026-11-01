@@ -39,12 +39,12 @@ Use the [`migrate-from-gha`](../migrate-from-gha/SKILL.md) skill, then [`review-
 - `rwx results` shows what happened in a run (which tasks passed or failed).
 - `rwx logs` gives task logs for troubleshooting a failure.
 - `rwx artifacts` fetches artifacts a run produced.
-- Most commands accept `--output json` for programmatic parsing; `rwx logs` uses `--json` (its `--output` is a download path). Confirm with `rwx <command> --help`.
+- Most commands accept `--format json` for programmatic parsing (`--json` is a shorthand); on `rwx logs`, `--output` is a download path, not a format. Confirm with `rwx <command> --help`.
 
 ## Loop
 
 1. Make a change.
-2. `rwx run --wait` (add `--output json` if parsing).
+2. `rwx run --wait` (add `--format json` if parsing).
 3. On failure, use `rwx results`, then `rwx logs` / `rwx artifacts` for the failing task, fix, and go to 2.
 4. Open the PR only once the run is green.
 
