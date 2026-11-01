@@ -1311,7 +1311,7 @@ roborev_smoke_check() {
   if [[ "${has_toml}" == 1 ]]; then
     switch_hint="or switch agents by editing the agent line in .roborev.toml (it wins over ROBOREV_AGENT), or delete it, set ROBOREV_AGENT, and re-run setup"
   else
-    switch_hint="or set ROBOREV_AGENT to a working agent and re-run setup from inside a discoverable repo (or set CONDUCTOR_WORKSPACE_PATH=/path/to/repo), so the next run writes a .roborev.toml"
+    switch_hint="or set ROBOREV_AGENT to a working agent and re-run setup with CONDUCTOR_WORKSPACE_PATH=/path/to/repo set, so the next run writes a .roborev.toml"
   fi
   if roborev_agent_ok "${agent}"; then
     if [[ "${has_toml}" == 1 ]]; then
