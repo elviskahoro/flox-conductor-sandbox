@@ -192,6 +192,12 @@
 #                     Truncate to a stub for local development — but a
 #                     sandbox that ships an unset FIREWORKS_API_KEY is
 #                     configured-but-broken until the key is set.
+#   FIND_REPO_WAIT_SECS  optional; seconds find_repo_root polls for
+#                     CONDUCTOR_WORKSPACE_PATH / CONDUCTOR_ROOT_PATH to
+#                     become a git repo (issue #113: Conductor can start
+#                     setup before the checkout finishes). Default 30;
+#                     0 disables the wait. Non-numeric values are not
+#                     validated — leave unset unless tuning.
 #   STARTUP_BEST_EFFORT  set to 1 (this repo's settings.toml does) to make
 #                     the tool stages recorded-but-non-fatal; see the
 #                     failure-semantics section above.
@@ -252,8 +258,10 @@ _ws="${CONDUCTOR_WORKSPACE_PATH:-}"
 _ws_exists=no; _ws_git=no
 [[ -n "${_ws}" && -d "${_ws}" ]] && _ws_exists=yes
 [[ -n "${_ws}" ]] && git -C "${_ws}" rev-parse --show-toplevel >/dev/null 2>&1 && _ws_git=yes
-log "[diag] pwd=$(pwd) conductor_vars=$(env | grep '^CONDUCTOR_' | cut -d= -f1 | tr '\n' ' ') workspace_path_exists=${_ws_exists} workspace_path_git=${_ws_git}"
-unset _ws _ws_exists _ws_git
+_root_git=no
+[[ -n "${CONDUCTOR_ROOT_PATH:-}" ]] && git -C "${CONDUCTOR_ROOT_PATH}" rev-parse --show-toplevel >/dev/null 2>&1 && _root_git=yes
+log "[diag] pwd=$(pwd) conductor_vars=$(env | grep '^CONDUCTOR_' | cut -d= -f1 | tr '\n' ' ') workspace_path_exists=${_ws_exists} workspace_path_git=${_ws_git} root_path_git=${_root_git}"
+unset _ws _ws_exists _ws_git _root_git
 
 record() { # <status> <name> <detail> — one summary row + one log line
   RESULTS="${RESULTS}
@@ -1313,6 +1321,17 @@ find_repo_root() {
   return 1
 }
 
+# roborev_agent_ok <agent>: `roborev check-agents` exits 0 even when the
+# agent is missing from PATH ("0 passed, 0 failed, 1 skipped", real v0.63.0),
+# which used to record a false "answered a smoke prompt — reviews are live".
+# Require exit 0 AND at least one agent passed AND none failed.
+roborev_agent_ok() {
+  local out
+  out="$(roborev check-agents --agent "$1" --timeout 30 </dev/null 2>&1 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&-)" || return 1
+  [[ "${out}" =~ ([0-9]+)\ passed,\ ([0-9]+)\ failed ]] || return 1
+  (( BASH_REMATCH[1] > 0 && BASH_REMATCH[2] == 0 ))
+}
+
 # roborev_smoke_check <agent> <repo_root>: verify the configured agent
 # actually answers a smoke prompt — this is what makes reviews work end
 # to end. Non-fatal: a wrong agent choice or a transient failure
@@ -1339,16 +1358,6 @@ find_repo_root() {
 # 244b3bf removed from pi_install's WARN. RUN 25's prefix assert plus
 # its positive/negative wording locks pin the no-toml shape; the
 # with-worktree running case goes through has_toml=1 unchanged.
-# roborev_agent_ok <agent>: `roborev check-agents` exits 0 even when the
-# agent is missing from PATH ("0 passed, 0 failed, 1 skipped", real v0.63.0),
-# which used to record a false "answered a smoke prompt — reviews are live".
-# Require exit 0 AND at least one agent passed AND none failed.
-roborev_agent_ok() {
-  local out
-  out="$(roborev check-agents --agent "$1" --timeout 30 </dev/null 2>&1 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&-)" || return 1
-  [[ "${out}" =~ ([0-9]+)\ passed,\ ([0-9]+)\ failed ]] || return 1
-  (( BASH_REMATCH[1] > 0 && BASH_REMATCH[2] == 0 ))
-}
 
 roborev_smoke_check() {
   local agent="$1" repo_root="$2"
