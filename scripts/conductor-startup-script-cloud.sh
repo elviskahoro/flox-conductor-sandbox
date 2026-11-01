@@ -248,7 +248,12 @@ log() { echo "[startup] $*"; }
 # Issue #113 diagnostic: record what setup actually sees at start, so the
 # "is the repo cloned / env var set when Conductor runs setup?" question
 # gets a real answer from a live run's log.
-log "[diag] pwd=$(pwd) conductor_vars=$(env | grep '^CONDUCTOR_' | cut -d= -f1 | tr '\n' ' ') workspace_git=$([[ -e "${CONDUCTOR_WORKSPACE_PATH:-/nonexistent}/.git" ]] && echo yes || echo no)"
+_ws="${CONDUCTOR_WORKSPACE_PATH:-}"
+_ws_exists=no; _ws_git=no
+[[ -n "${_ws}" && -d "${_ws}" ]] && _ws_exists=yes
+[[ -n "${_ws}" ]] && git -C "${_ws}" rev-parse --show-toplevel >/dev/null 2>&1 && _ws_git=yes
+log "[diag] pwd=$(pwd) conductor_vars=$(env | grep '^CONDUCTOR_' | cut -d= -f1 | tr '\n' ' ') workspace_path_exists=${_ws_exists} workspace_path_git=${_ws_git}"
+unset _ws _ws_exists _ws_git
 
 record() { # <status> <name> <detail> — one summary row + one log line
   RESULTS="${RESULTS}
@@ -1270,14 +1275,26 @@ find_repo_root() {
   local toplevel found=() dir
   # CONDUCTOR_ROOT_PATH is a second signal (same value as
   # CONDUCTOR_WORKSPACE_PATH in observed cloud sandboxes, issue #113).
-  local var
-  for var in CONDUCTOR_WORKSPACE_PATH CONDUCTOR_ROOT_PATH; do
-    [[ -n "${!var:-}" ]] || continue
-    if toplevel="$(git -C "${!var}" rev-parse --show-toplevel 2>/dev/null)"; then
-      printf '%s\n' "${toplevel}"
-      return 0
-    fi
+  # Setup can run before Conductor finishes the checkout (#113 evidence: vars
+  # set, path not yet a repo). Poll up to FIND_REPO_WAIT_SECS (default 30)
+  # before falling through; 0 disables.
+  local var waited=0 max="${FIND_REPO_WAIT_SECS:-30}"
+  while :; do
+    for var in CONDUCTOR_WORKSPACE_PATH CONDUCTOR_ROOT_PATH; do
+      [[ -n "${!var:-}" ]] || continue
+      if toplevel="$(git -C "${!var}" rev-parse --show-toplevel 2>/dev/null)"; then
+        if [[ ${waited} -gt 0 ]]; then
+          echo "[startup] [diag] find_repo_root: repo appeared after ${waited}s" >&2
+        fi
+        printf '%s\n' "${toplevel}"
+        return 0
+      fi
+    done
+    [[ -n "${CONDUCTOR_WORKSPACE_PATH:-}${CONDUCTOR_ROOT_PATH:-}" && ${waited} -lt ${max} ]] || break
+    sleep 1
+    waited=$((waited + 1))
   done
+  [[ ${waited} -gt 0 ]] && echo "[startup] [diag] find_repo_root: no repo after ${waited}s wait" >&2
   # Plain unquoted glob — pathname expansion results are never re-split,
   # so spaces in repo names survive. The path is required to end with a
   # slash via `"${HOME}"/*/`, so plain files at $HOME's top level are
