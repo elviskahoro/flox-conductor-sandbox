@@ -966,6 +966,7 @@ python311_stage() {
 UV_PIN="0.11.26"
 PYTEST_PIN="9.1.1"
 REFLEX_PIN="0.9.12"
+RUFF_PIN="0.17.3"
 PYTOOLS_VENV="${HOME}/.conductor-pytools"
 PYTOOLS_PY="${PYTOOLS_VENV}/bin/python"
 
@@ -1073,18 +1074,20 @@ pytools_stage() {
   # already satisfy them — a satisfied pin is left untouched (the reuse
   # path stays network-free), a stale or missing one is upgraded/healed in
   # place by the same command.
-  local pytest_before reflex_before
+  local pytest_before reflex_before ruff_before
   pytest_before="$(venv_version pytest)"
   reflex_before="$(venv_version reflex)"
-  if [[ "${pytest_before}" != "${PYTEST_PIN}" || "${reflex_before}" != "${REFLEX_PIN}" ]]; then
-    if ! uv pip install --python "${PYTOOLS_PY}" "pytest==${PYTEST_PIN}" "reflex==${REFLEX_PIN}"; then
-      record FAIL pytools-pkg "uv pip install pytest==${PYTEST_PIN} reflex==${REFLEX_PIN} failed (see output above)"
+  ruff_before="$(venv_version ruff)"
+  if [[ "${pytest_before}" != "${PYTEST_PIN}" || "${reflex_before}" != "${REFLEX_PIN}" || "${ruff_before}" != "${RUFF_PIN}" ]]; then
+    if ! uv pip install --python "${PYTOOLS_PY}" "pytest==${PYTEST_PIN}" "reflex==${REFLEX_PIN}" "ruff==${RUFF_PIN}"; then
+      record FAIL pytools-pkg "uv pip install pytest==${PYTEST_PIN} reflex==${REFLEX_PIN} ruff==${RUFF_PIN} failed (see output above)"
       return 1
     fi
   fi
-  local pytest_after reflex_after
+  local pytest_after reflex_after ruff_after
   pytest_after="$(venv_version pytest)"
   reflex_after="$(venv_version reflex)"
+  ruff_after="$(venv_version ruff)"
   if [[ "${pytest_after}" != "${PYTEST_PIN}" ]]; then
     record FAIL pytest "venv does not provide pytest ${PYTEST_PIN} after install (resolved: ${pytest_after:-<none>})"
     return 1
@@ -1093,17 +1096,33 @@ pytools_stage() {
     record FAIL reflex "venv does not provide reflex ${REFLEX_PIN} after install (resolved: ${reflex_after:-<none>})"
     return 1
   fi
+  if [[ "${ruff_after}" != "${RUFF_PIN}" ]]; then
+    record FAIL ruff "venv does not provide ruff ${RUFF_PIN} after install (resolved: ${ruff_after:-<none>})"
+    return 1
+  fi
   # Expose the console scripts as commands for later shells. note_placement
   # happens HERE, not inside expose_link: the link helpers run inside
   # command substitution and a subshell's LOCAL_FALLBACK_TOOLS update
   # would die there (the same trap roborev/trunk/rwx sidestep by noting
   # the captured path at the call site).
-  local pytest_link reflex_link
+  local pytest_link reflex_link ruff_link python_link=""
   pytest_link="$(expose_link "${PYTOOLS_VENV}/bin/pytest" pytest || true)"
   reflex_link="$(expose_link "${PYTOOLS_VENV}/bin/reflex" reflex || true)"
   if [[ -z "${pytest_link}" || -z "${reflex_link}" ]]; then
     record FAIL pytools "could not expose pytest/reflex commands (pytest link: ${pytest_link:-<none>}, reflex link: ${reflex_link:-<none>})"
     return 1
+  fi
+  ruff_link="$(expose_link "${PYTOOLS_VENV}/bin/ruff" ruff || true)"
+  if [[ -z "${ruff_link}" ]]; then
+    record FAIL ruff "could not expose the ruff command"
+    return 1
+  fi
+  note_placement "${ruff_link}"
+  # `python` is absent on these sandboxes (only python3); link the venv's
+  # interpreter only when nothing named python already exists.
+  if ! command -v python >/dev/null 2>&1; then
+    python_link="$(expose_link "${PYTOOLS_PY}" python || true)"
+    [[ -n "${python_link}" ]] && note_placement "${python_link}"
   fi
   note_placement "${pytest_link}"
   note_placement "${reflex_link}"
@@ -1130,6 +1149,15 @@ pytools_stage() {
   if ! "${PYTOOLS_PY}" -c 'import reflex' >/dev/null 2>&1; then
     record FAIL reflex "import reflex failed in the intended environment"
     return 1
+  fi
+  if ! ruff --version >/dev/null 2>&1; then
+    record FAIL ruff "ruff command does not resolve or run after exposure (resolved: $(command -v ruff || echo '<none>'))"
+    return 1
+  fi
+  if [[ "${ruff_before}" == "${RUFF_PIN}" ]]; then
+    record PASS ruff "reused ${ruff_after} (command: $(command -v ruff); env: ~/.conductor-pytools)"
+  else
+    record PASS ruff "${ruff_after} installed into ~/.conductor-pytools (command: $(command -v ruff))"
   fi
   if [[ "${pytest_before}" == "${PYTEST_PIN}" ]]; then
     record PASS pytest "reused ${pytest_after} (command: ${pytest_cmd}; env: ~/.conductor-pytools)"

@@ -666,7 +666,7 @@ printf '%s\n' "${RUN7_OUTPUT}"
 case "${RUN7_OUTPUT}" in
 *" | FAIL |"*) fail "pytools run recorded FAIL row(s)" ;;
 esac
-for row in "uv | PASS" "pytools-venv | PASS" "pytest | PASS" "reflex | PASS"; do
+for row in "uv | PASS" "pytools-venv | PASS" "pytest | PASS" "reflex | PASS" "ruff | PASS"; do
   case "${RUN7_OUTPUT}" in *"${row}"*) ;; *) fail "pytools run missing the ${row} row" ;; esac
 done
 
@@ -696,6 +696,14 @@ su - sandbox-user -c "
   printf '%s' \"\${reflex_version_out}\" | grep -q \"\${pin_reflex}\" ||
     fail \"reflex does not report the pinned \${pin_reflex}: \${reflex_version_out}\"
 
+  pin_ruff=\"\$(sed -n 's/^RUFF_PIN=\"\([^\"]*\)\".*/\1/p' ${STARTUP_SCRIPT})\"
+  [ \"\$(command -v ruff)\" = /usr/local/bin/ruff ] ||
+    fail \"ruff resolved to \$(command -v ruff)\"
+  ruff --version 2>&1 | grep -q \"\${pin_ruff}\" ||
+    fail \"ruff does not report the pinned \${pin_ruff}\"
+  # The sandbox ships only python3; setup links the venv interpreter.
+  command -v python >/dev/null || fail \"python is not on PATH\"
+
   # Issue #44 acceptance: the provisioned Python environment runs
   # python -m pytest and imports reflex (the managed-environment
   # equivalent — the venv IS the intended environment).
@@ -718,7 +726,7 @@ case "${RUN8_OUTPUT}" in
 esac
 # Positive reuse assertions: a re-download or re-install would pass the
 # FAIL/fallback checks above unnoticed.
-for row in "uv | PASS | reused" "pytools-venv | PASS | reused" "pytest | PASS | reused" "reflex | PASS | reused"; do
+for row in "uv | PASS | reused" "pytools-venv | PASS | reused" "pytest | PASS | reused" "reflex | PASS | reused" "ruff | PASS | reused"; do
   case "${RUN8_OUTPUT}" in *"${row}"*) ;; *) fail "pytools re-run missing the ${row} row — re-provisioned instead of reusing" ;; esac
 done
 

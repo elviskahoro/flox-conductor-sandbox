@@ -171,7 +171,7 @@ fi
 # or a floating spec (>=, ~=, ^) must fail CI rather than silently float;
 # a pre/post release (e.g. 9.1.1rc1) also fails, forcing a deliberate
 # pin decision instead of an accidental one.
-for pin_name in PYTEST_PIN REFLEX_PIN; do
+for pin_name in PYTEST_PIN REFLEX_PIN RUFF_PIN; do
   pin_value="$(sed -n "s/^${pin_name}=\"\([^\"]*\)\".*/\1/p" "${STARTUP}")"
   if [[ "${pin_value}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     pass "${pin_name}" "exact pin ${pin_value}"
