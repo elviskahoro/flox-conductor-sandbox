@@ -87,7 +87,7 @@
 #            pinned packages in one uv-managed venv, ~/.conductor-pytools
 #            (Python 3.11), with their console scripts symlinked into the
 #            same bin dirs so later agent shells get `uv`, `pytest`,
-#            `reflex`, and `ruff` as commands (plus `python`, linked to the
+#            `reflex`, and `ruff` as commands (plus python, linked to the
 #            venv interpreter when none is on PATH). The venv is the intended Python
 #            environment for the two packages — the documented module
 #            invocations are ~/.conductor-pytools/bin/python -m pytest and
@@ -1118,7 +1118,7 @@ pytools_stage() {
   note_placement "${reflex_link}"
   note_placement "${ruff_link}"
   # Only python3 exists on these sandboxes; link the venv interpreter as
-  # `python` unless something already provides it.
+  # python unless something already provides it.
   if ! command -v python >/dev/null 2>&1; then
     python_link="$(expose_link "${PYTOOLS_PY}" python || true)"
     if [[ -z "${python_link}" ]]; then
