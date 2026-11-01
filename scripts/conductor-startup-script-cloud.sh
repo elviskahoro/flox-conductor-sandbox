@@ -195,7 +195,7 @@
 #   FIND_REPO_WAIT_SECS  optional; seconds find_repo_root polls for
 #                     CONDUCTOR_WORKSPACE_PATH / CONDUCTOR_ROOT_PATH to
 #                     become a git repo (issue #113: Conductor can start
-#                     setup before the checkout finishes). Default 30;
+#                     setup before the checkout finishes). Default 120;
 #                     0 disables the wait. Non-numeric values are not
 #                     validated — leave unset unless tuning.
 #   STARTUP_BEST_EFFORT  set to 1 (this repo's settings.toml does) to make
@@ -1284,9 +1284,9 @@ find_repo_root() {
   # CONDUCTOR_ROOT_PATH is a second signal (same value as
   # CONDUCTOR_WORKSPACE_PATH in observed cloud sandboxes, issue #113).
   # Setup can run before Conductor finishes the checkout (#113 evidence: vars
-  # set, path not yet a repo). Poll up to FIND_REPO_WAIT_SECS (default 30)
+  # set, path not yet a repo). Poll up to FIND_REPO_WAIT_SECS (default 120)
   # before falling through; 0 disables.
-  local var waited=0 max="${FIND_REPO_WAIT_SECS:-30}"
+  local var waited=0 max="${FIND_REPO_WAIT_SECS:-120}"
   while :; do
     for var in CONDUCTOR_WORKSPACE_PATH CONDUCTOR_ROOT_PATH; do
       [[ -n "${!var:-}" ]] || continue
@@ -1302,7 +1302,15 @@ find_repo_root() {
     sleep 1
     waited=$((waited + 1))
   done
-  [[ ${waited} -gt 0 ]] && echo "[startup] [diag] find_repo_root: no repo after ${waited}s wait" >&2
+  if [[ ${waited} -gt 0 ]]; then
+    echo "[startup] [diag] find_repo_root: no repo after ${waited}s wait" >&2
+    # Why git still refuses (not a repo yet vs. dubious ownership etc.); first
+    # line only, never the path.
+    for var in CONDUCTOR_WORKSPACE_PATH CONDUCTOR_ROOT_PATH; do
+      [[ -n "${!var:-}" ]] || continue
+      echo "[startup] [diag] find_repo_root: ${var} git says: $(git -C "${!var}" rev-parse --show-toplevel 2>&1 | head -1 | sed "s|${!var}|<path>|g")" >&2
+    done
+  fi
   # Plain unquoted glob — pathname expansion results are never re-split,
   # so spaces in repo names survive. The path is required to end with a
   # slash via `"${HOME}"/*/`, so plain files at $HOME's top level are
