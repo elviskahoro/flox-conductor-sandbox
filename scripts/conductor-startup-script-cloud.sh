@@ -1030,6 +1030,13 @@ pytools_uv_install() {
     return 1
   fi
   note_placement "${path}"
+  # uvx ships in the same tarball; agents reach for `uvx <tool>` (issues
+  # #128/#129), so place it beside uv.
+  if [[ -x "${dir}/${asset%.tar.gz}/uvx" ]]; then
+    local uvx_path
+    uvx_path="$(install_bin "${dir}/${asset%.tar.gz}/uvx" uvx || true)"
+    [[ -n "${uvx_path}" ]] && note_placement "${uvx_path}"
+  fi
   hash -r 2>/dev/null || true
   if ! uv --version >/dev/null 2>&1; then
     log "error: installed uv binary failed its version check"
