@@ -666,7 +666,7 @@ printf '%s\n' "${RUN7_OUTPUT}"
 case "${RUN7_OUTPUT}" in
 *" | FAIL |"*) fail "pytools run recorded FAIL row(s)" ;;
 esac
-for row in "uv | PASS" "pytools-venv | PASS" "pytest | PASS" "reflex | PASS" "ruff | PASS"; do
+for row in "uv | PASS" "pytools-venv | PASS" "pytest | PASS" "reflex | PASS" "ruff | PASS" "pyright | PASS" "pyrefly | PASS"; do
   case "${RUN7_OUTPUT}" in *"${row}"*) ;; *) fail "pytools run missing the ${row} row" ;; esac
 done
 
@@ -701,6 +701,16 @@ su - sandbox-user -c "
     fail \"ruff resolved to \$(command -v ruff)\"
   ruff --version 2>&1 | grep -q \"\${pin_ruff}\" ||
     fail \"ruff does not report the pinned \${pin_ruff}\"
+  pin_pyright=\"\$(sed -n 's/^PYRIGHT_PIN=\"\([^\"]*\)\".*/\1/p' ${STARTUP_SCRIPT})\"
+  [ \"\$(command -v pyright)\" = /usr/local/bin/pyright ] ||
+    fail \"pyright resolved to \$(command -v pyright)\"
+  pyright --version 2>&1 | grep -q \"\${pin_pyright}\" ||
+    fail \"pyright does not report the pinned \${pin_pyright}\"
+  pin_pyrefly=\"\$(sed -n 's/^PYREFLY_PIN=\"\([^\"]*\)\".*/\1/p' ${STARTUP_SCRIPT})\"
+  [ \"\$(command -v pyrefly)\" = /usr/local/bin/pyrefly ] ||
+    fail \"pyrefly resolved to \$(command -v pyrefly)\"
+  pyrefly --version 2>&1 | grep -q \"\${pin_pyrefly}\" ||
+    fail \"pyrefly does not report the pinned \${pin_pyrefly}\"
   # The sandbox ships only python3; setup links the venv interpreter.
   command -v python >/dev/null || fail \"python is not on PATH\"
 
@@ -726,7 +736,7 @@ case "${RUN8_OUTPUT}" in
 esac
 # Positive reuse assertions: a re-download or re-install would pass the
 # FAIL/fallback checks above unnoticed.
-for row in "uv | PASS | reused" "pytools-venv | PASS | reused" "pytest | PASS | reused" "reflex | PASS | reused" "ruff | PASS | reused"; do
+for row in "uv | PASS | reused" "pytools-venv | PASS | reused" "pytest | PASS | reused" "reflex | PASS | reused" "ruff | PASS | reused" "pyright | PASS | reused" "pyrefly | PASS | reused"; do
   case "${RUN8_OUTPUT}" in *"${row}"*) ;; *) fail "pytools re-run missing the ${row} row — re-provisioned instead of reusing" ;; esac
 done
 
