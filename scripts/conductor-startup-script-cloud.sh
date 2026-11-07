@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2312  # $(...) in assignments and rows: stage failures surface through the stages' own || returns and the summary, not by killing the script mid-row
 # The single Conductor workspace startup script: roborev + trunk + rwx +
-# Python 3.11 + the opt-in Python dev tools (uv/pytest/reflex/ruff), then the
+# Python 3.11 + the opt-in Python dev tools (uv/pytest/reflex/ruff/pyright/pyrefly), then the
 # auth/init that makes them work rather than merely exist.
 #
 # Two consumers, one file (it replaced the former conductor-cloud-install.sh
@@ -43,7 +43,7 @@
 #      assumes a particular project — safe in any workspace, local or cloud.
 #      The trunk and python stages are reuse-if-present and SKIP cleanly off
 #      the target class, so pasting this into a repo that needs neither
-#      costs nothing. The uv/pytest/reflex/ruff stage (issue #44) is opt-in via
+#      costs nothing. The uv/pytest/reflex/ruff/pyright/pyrefly stage (issue #44) is opt-in via
 #      STARTUP_PY_DEV_TOOLS=1 and SKIPs when unset, so the paste surface is
 #      exactly what it was before that stage existed — only this repo's
 #      own settings.toml turns it on.
@@ -81,7 +81,7 @@
 #            AL2023 class only (see the stage body for the shadow-safety
 #            facts); SKIP elsewhere. The only always-on stage whose failure
 #            is a stated requirement rather than a nice-to-have.
-#   uv/pytest/reflex/ruff  opt-in (STARTUP_PY_DEV_TOOLS=1, this repo's
+#   uv/pytest/reflex/ruff/pyright/pyrefly  opt-in (STARTUP_PY_DEV_TOOLS=1, this repo's
 #            settings.toml): uv as a pinned, checksum-verified release
 #            binary placed like every other tool; pytest, reflex, and ruff as
 #            pinned packages in one uv-managed venv, ~/.conductor-pytools
@@ -197,7 +197,7 @@
 #                     the tool stages recorded-but-non-fatal; see the
 #                     failure-semantics section above.
 #   STARTUP_PY_DEV_TOOLS  set to 1 (this repo's settings.toml does) to
-#                     provision uv/pytest/reflex/ruff; see the tool list and
+#                     provision uv/pytest/reflex/ruff/pyright/pyrefly; see the tool list and
 #                     the pytools stage body. Unset or any other value
 #                     records a SKIP row and changes nothing else — the
 #                     paste-ready consumer's surface stays as it was. A
@@ -968,6 +968,12 @@ UV_PIN="0.11.26"
 PYTEST_PIN="9.1.1"
 REFLEX_PIN="0.9.12"
 RUFF_PIN="0.17.3"
+# Matches the pyright pinned in consuming repos' Trunk configs. The PyPI
+# wrapper downloads the npm CLI on first run and needs node, so install
+# the [nodejs] extra and pre-warm below (a later shell may be offline).
+PYRIGHT_PIN="1.1.414"
+# Matches the pyrefly pinned in consuming repos' Trunk configs.
+PYREFLY_PIN="1.3.1"
 PYTOOLS_VENV="${HOME}/.conductor-pytools"
 PYTOOLS_PY="${PYTOOLS_VENV}/bin/python"
 
@@ -1024,6 +1030,13 @@ pytools_uv_install() {
     return 1
   fi
   note_placement "${path}"
+  # uvx ships in the same tarball; agents reach for `uvx <tool>` (issues
+  # #128/#129), so place it beside uv.
+  if [[ -x "${dir}/${asset%.tar.gz}/uvx" ]]; then
+    local uvx_path
+    uvx_path="$(install_bin "${dir}/${asset%.tar.gz}/uvx" uvx || true)"
+    [[ -n "${uvx_path}" ]] && note_placement "${uvx_path}"
+  fi
   hash -r 2>/dev/null || true
   if ! uv --version >/dev/null 2>&1; then
     log "error: installed uv binary failed its version check"
@@ -1042,7 +1055,7 @@ venv_version() {
 
 pytools_stage() {
   if [[ "${STARTUP_PY_DEV_TOOLS:-0}" != "1" ]]; then
-    record SKIP pytools "not requested — set STARTUP_PY_DEV_TOOLS=1 to provision uv/pytest/reflex/ruff (this repo's settings.toml does)"
+    record SKIP pytools "not requested — set STARTUP_PY_DEV_TOOLS=1 to provision uv/pytest/reflex/ruff/pyright/pyrefly (this repo's settings.toml does)"
     return 0
   fi
   pytools_uv_install || return 1
@@ -1075,20 +1088,24 @@ pytools_stage() {
   # already satisfy them — a satisfied pin is left untouched (the reuse
   # path stays network-free), a stale or missing one is upgraded/healed in
   # place by the same command.
-  local pytest_before reflex_before ruff_before
+  local pytest_before reflex_before ruff_before pyright_before pyrefly_before
   pytest_before="$(venv_version pytest)"
   reflex_before="$(venv_version reflex)"
   ruff_before="$(venv_version ruff)"
-  if [[ "${pytest_before}" != "${PYTEST_PIN}" || "${reflex_before}" != "${REFLEX_PIN}" || "${ruff_before}" != "${RUFF_PIN}" ]]; then
-    if ! uv pip install --python "${PYTOOLS_PY}" "pytest==${PYTEST_PIN}" "reflex==${REFLEX_PIN}" "ruff==${RUFF_PIN}"; then
-      record FAIL pytools-pkg "uv pip install pytest==${PYTEST_PIN} reflex==${REFLEX_PIN} ruff==${RUFF_PIN} failed (see output above)"
+  pyright_before="$(venv_version pyright)"
+  pyrefly_before="$(venv_version pyrefly)"
+  if [[ "${pytest_before}" != "${PYTEST_PIN}" || "${reflex_before}" != "${REFLEX_PIN}" || "${ruff_before}" != "${RUFF_PIN}" || "${pyright_before}" != "${PYRIGHT_PIN}" || "${pyrefly_before}" != "${PYREFLY_PIN}" ]]; then
+    if ! uv pip install --python "${PYTOOLS_PY}" "pytest==${PYTEST_PIN}" "reflex==${REFLEX_PIN}" "ruff==${RUFF_PIN}" "pyright[nodejs]==${PYRIGHT_PIN}" "pyrefly==${PYREFLY_PIN}"; then
+      record FAIL pytools-pkg "uv pip install pytest==${PYTEST_PIN} reflex==${REFLEX_PIN} ruff==${RUFF_PIN} pyright==${PYRIGHT_PIN} pyrefly==${PYREFLY_PIN} failed (see output above)"
       return 1
     fi
   fi
-  local pytest_after reflex_after ruff_after
+  local pytest_after reflex_after ruff_after pyright_after pyrefly_after
   pytest_after="$(venv_version pytest)"
   reflex_after="$(venv_version reflex)"
   ruff_after="$(venv_version ruff)"
+  pyright_after="$(venv_version pyright)"
+  pyrefly_after="$(venv_version pyrefly)"
   if [[ "${pytest_after}" != "${PYTEST_PIN}" ]]; then
     record FAIL pytest "venv does not provide pytest ${PYTEST_PIN} after install (resolved: ${pytest_after:-<none>})"
     return 1
@@ -1101,22 +1118,34 @@ pytools_stage() {
     record FAIL ruff "venv does not provide ruff ${RUFF_PIN} after install (resolved: ${ruff_after:-<none>})"
     return 1
   fi
+  if [[ "${pyright_after}" != "${PYRIGHT_PIN}" ]]; then
+    record FAIL pyright "venv does not provide pyright ${PYRIGHT_PIN} after install (resolved: ${pyright_after:-<none>})"
+    return 1
+  fi
+  if [[ "${pyrefly_after}" != "${PYREFLY_PIN}" ]]; then
+    record FAIL pyrefly "venv does not provide pyrefly ${PYREFLY_PIN} after install (resolved: ${pyrefly_after:-<none>})"
+    return 1
+  fi
   # Expose the console scripts as commands for later shells. note_placement
   # happens HERE, not inside expose_link: the link helpers run inside
   # command substitution and a subshell's LOCAL_FALLBACK_TOOLS update
   # would die there (the same trap roborev/trunk/rwx sidestep by noting
   # the captured path at the call site).
-  local pytest_link reflex_link ruff_link python_link
+  local pytest_link reflex_link ruff_link pyright_link pyrefly_link python_link
   pytest_link="$(expose_link "${PYTOOLS_VENV}/bin/pytest" pytest || true)"
   reflex_link="$(expose_link "${PYTOOLS_VENV}/bin/reflex" reflex || true)"
   ruff_link="$(expose_link "${PYTOOLS_VENV}/bin/ruff" ruff || true)"
-  if [[ -z "${pytest_link}" || -z "${reflex_link}" || -z "${ruff_link}" ]]; then
-    record FAIL pytools "could not expose pytest/reflex/ruff commands (pytest link: ${pytest_link:-<none>}, reflex link: ${reflex_link:-<none>}, ruff link: ${ruff_link:-<none>})"
+  pyright_link="$(expose_link "${PYTOOLS_VENV}/bin/pyright" pyright || true)"
+  pyrefly_link="$(expose_link "${PYTOOLS_VENV}/bin/pyrefly" pyrefly || true)"
+  if [[ -z "${pytest_link}" || -z "${reflex_link}" || -z "${ruff_link}" || -z "${pyright_link}" || -z "${pyrefly_link}" ]]; then
+    record FAIL pytools "could not expose pytest/reflex/ruff commands (pytest link: ${pytest_link:-<none>}, reflex link: ${reflex_link:-<none>}, ruff link: ${ruff_link:-<none>}, pyright link: ${pyright_link:-<none>}, pyrefly link: ${pyrefly_link:-<none>})"
     return 1
   fi
   note_placement "${pytest_link}"
   note_placement "${reflex_link}"
   note_placement "${ruff_link}"
+  note_placement "${pyright_link}"
+  note_placement "${pyrefly_link}"
   # Only python3 exists on these sandboxes; link the venv interpreter as
   # python unless something already provides it.
   if ! command -v python >/dev/null 2>&1; then
@@ -1132,10 +1161,12 @@ pytools_stage() {
   # run so a REUSED install is proven functional, not just presumed:
   # commands resolve and report versions, and the documented module
   # invocations work in the venv.
-  local pytest_cmd reflex_cmd ruff_cmd
+  local pytest_cmd reflex_cmd ruff_cmd pyright_cmd pyrefly_cmd
   pytest_cmd="$(command -v pytest || true)"
   reflex_cmd="$(command -v reflex || true)"
   ruff_cmd="$(command -v ruff || true)"
+  pyright_cmd="$(command -v pyright || true)"
+  pyrefly_cmd="$(command -v pyrefly || true)"
   if [[ -z "${pytest_cmd}" ]] || ! pytest --version >/dev/null 2>&1; then
     record FAIL pytest "pytest command does not resolve or run after exposure (resolved: ${pytest_cmd:-<none>})"
     return 1
@@ -1146,6 +1177,16 @@ pytools_stage() {
   fi
   if [[ -z "${ruff_cmd}" ]] || ! ruff --version >/dev/null 2>&1; then
     record FAIL ruff "ruff command does not resolve or run after exposure (resolved: ${ruff_cmd:-<none>})"
+    return 1
+  fi
+  # --version also fetches the npm CLI on first run, so this pre-warms
+  # the cache and proves node + network worked now, not at first use.
+  if [[ -z "${pyright_cmd}" ]] || ! pyright --version >/dev/null 2>&1; then
+    record FAIL pyright "pyright command does not resolve or run after exposure (resolved: ${pyright_cmd:-<none>})"
+    return 1
+  fi
+  if [[ -z "${pyrefly_cmd}" ]] || ! pyrefly --version >/dev/null 2>&1; then
+    record FAIL pyrefly "pyrefly command does not resolve or run after exposure (resolved: ${pyrefly_cmd:-<none>})"
     return 1
   fi
   if ! "${PYTOOLS_PY}" -m pytest --version >/dev/null 2>&1; then
@@ -1170,6 +1211,16 @@ pytools_stage() {
     record PASS ruff "reused ${ruff_after} (command: ${ruff_cmd}; env: ~/.conductor-pytools)"
   else
     record PASS ruff "${ruff_after} installed into ~/.conductor-pytools (command: ${ruff_cmd})"
+  fi
+  if [[ "${pyright_before}" == "${PYRIGHT_PIN}" ]]; then
+    record PASS pyright "reused ${pyright_after} (command: ${pyright_cmd}; env: ~/.conductor-pytools)"
+  else
+    record PASS pyright "${pyright_after} installed into ~/.conductor-pytools (command: ${pyright_cmd})"
+  fi
+  if [[ "${pyrefly_before}" == "${PYREFLY_PIN}" ]]; then
+    record PASS pyrefly "reused ${pyrefly_after} (command: ${pyrefly_cmd}; env: ~/.conductor-pytools)"
+  else
+    record PASS pyrefly "${pyrefly_after} installed into ~/.conductor-pytools (command: ${pyrefly_cmd})"
   fi
 }
 
