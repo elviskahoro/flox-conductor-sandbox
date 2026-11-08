@@ -1,6 +1,6 @@
 ---
 name: rwx
-description: Use when working with RWX: creating or modifying a `.rwx/` run definition, validating a change against remote CI with the RWX CLI (rwx run --wait, rwx results, rwx logs, rwx artifacts) so a pull request has a passing build before review, checking why CI is red or what is failing on a branch, or running tests in an RWX sandbox.
+description: Use when working with RWX: creating or modifying a `.rwx/` run definition, validating a change against remote CI with the RWX CLI (rwx run --wait, rwx results, rwx logs, rwx artifacts) so a pull request has a passing build before review, checking why CI is red or what is failing on a branch, or running tests in an RWX sandbox, or authenticating the RWX CLI (access tokens, `rwx whoami`, which workspace a token belongs to).
 ---
 
 # RWX: pull requests from agents with passing builds
@@ -9,9 +9,34 @@ Sources: the [rwx-cloud/skills](https://github.com/rwx-cloud/skills) `rwx` skill
 
 Reviewers don't want agent PRs without a green build, and agents often can't run the full suite locally. RWX lets the agent iterate against remote, parallelized CI until it passes, with no commit or push per attempt.
 
-## Before you start
+## Authentication
 
-Run `rwx whoami` to confirm the CLI is signed in, and update the CLI if it is out of date.
+The CLI reads a token from, in order: `--access-token`, `$RWX_ACCESS_TOKEN`, then `~/.config/rwx/accesstoken` (what `rwx login` writes). Check which one is active, and who it is:
+
+```bash
+rwx whoami          # token kind, organization, user
+```
+
+In Conductor cloud workspaces the startup script validates `RWX_ACCESS_TOKEN` and persists it to `~/.config/rwx/accesstoken` (see [`conductor-startup-script`](../conductor-startup-script/SKILL.md)). If `rwx whoami` fails, run `rwx login` in a terminal or set `RWX_ACCESS_TOKEN` in the workspace's environment variables and re-run setup.
+
+### One token per RWX workspace
+
+Env vars named `RWX_ACCESS_TOKEN_<SUFFIX>` or `RWC_ACCESS_TOKEN_<SUFFIX>` may also be injected, each scoped to one RWX organization (`<SUFFIX>` is the uppercased org/owner name). The CLI doesn't read these names, so export the right one under `RWX_ACCESS_TOKEN`. List names without values:
+
+```bash
+env | grep -E '^RW[XC]_ACCESS_TOKEN_.' | cut -d= -f1
+```
+
+Pick the token whose suffix matches the repo owner. `export` lasts for the whole shell session, so re-run this (or `unset RWX_ACCESS_TOKEN`) when you switch repos or organizations:
+
+```bash
+OWNER=$(git remote get-url origin | sed -E 's#.*[:/]([^/]+)/[^/]+(\.git)?$#\1#' | tr a-z A-Z)
+TOKEN="$(printenv "RWX_ACCESS_TOKEN_$OWNER" || printenv "RWC_ACCESS_TOKEN_$OWNER")"
+[ -n "$TOKEN" ] && export RWX_ACCESS_TOKEN="$TOKEN"   # an empty export would shadow ~/.config/rwx/accesstoken
+rwx whoami
+```
+
+A run, task, or log ID only resolves under the organization that owns it. On not-found or unauthorized, switch tokens. Never print, log, or commit a token value.
 
 ## Writing and validating run definitions
 
@@ -25,6 +50,22 @@ rwx lint .rwx/<name>.yml           # validate before running
 
 `rwx run` doesn't need a commit or push, even when the definition references a commit SHA: RWX patches the git clone with your local contents.
 
+## Running CI on your working tree
+
+`rwx run` sends a git patch with the run, so no commit or push is needed:
+
+- Base: the closest ancestor of local `HEAD` that is already on `origin`. `event.git.sha` resolves to it.
+- Patch on top: unpushed commits, staged and unstaged changes, untracked files. Anything in `.gitignore` is excluded. Git LFS changes error out; commit and push those first.
+- `RWX_DISABLE_GIT_PATCH=1` turns patching off.
+
+```bash
+rwx run .rwx/ci.yml --wait --fail-fast             # run on the working tree, stop at first failure
+rwx run .rwx/ci.yml --target <task-key> --wait     # one task and its dependencies (repeatable)
+rwx run .rwx/ci.yml --init key=value --title "wip" # init params, run title
+```
+
+For the patch to apply, `git/clone` takes `ref: ${{ init.commit-sha }}` and the `cli` trigger sets `commit-sha: ${{ event.git.sha }}`. A cli-dispatched run starts with an empty workspace, so the definition must clone the repo itself (see the header of `.rwx/gtm-903-consume-published-image.yml`). Edits to `.rwx` files are picked up locally.
+
 ## Checking CI status
 
 To see what is failing on the current or a given branch, start with `rwx results -h`, then `rwx logs` for the failing task.
@@ -36,14 +77,17 @@ Use the [`migrate-from-gha`](../migrate-from-gha/SKILL.md) skill, then [`review-
 ## Commands
 
 - `rwx run --wait` starts a run and blocks until it finishes. Use it as the agent's validation step.
-- `rwx results` shows what happened in a run (which tasks passed or failed).
-- `rwx logs` gives task logs for troubleshooting a failure.
-- `rwx artifacts` fetches artifacts a run produced.
+- `rwx results [run-id]` shows what happened in a run; with no ID it uses the current branch (`--branch`, `--commit`, `--repo`, `--wait`).
+- `rwx runs list` lists runs (`--mine`, `--branch`, `--result-status failed`, `--limit`).
+- `rwx logs <task-id>` or `rwx logs <run-id> --task <key> --output DIR` downloads task logs.
+- `rwx lint .rwx/<name>.yml` validates a run definition (`--fix` applies available fixes). Run it after every edit to `.rwx/*.yml`.
+- `rwx docs search "<query>"` / `rwx docs pull <path>` read the docs. Use Bash for these, not WebFetch.
+- `rwx artifacts list|download` fetches artifacts a run produced.
 - Most commands accept `--format json` for programmatic parsing (`--json` is a shorthand); on `rwx logs`, `--output` is a download path, not a format. Confirm with `rwx <command> --help`.
 
 ## Loop
 
-1. Make a change.
+1. Make a change; `rwx lint` any edited `.rwx/*.yml`.
 2. `rwx run --wait` (add `--format json` if parsing).
 3. On failure, use `rwx results`, then `rwx logs` / `rwx artifacts` for the failing task, fix, and go to 2.
 4. Open the PR only once the run is green.
