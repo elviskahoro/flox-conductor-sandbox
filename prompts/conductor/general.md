@@ -35,7 +35,7 @@ Baseline working agreements for every session in this workspace. Task-specific p
 
 ## Git and version control
 
-- **Never destroy work.** No `reset --hard`, `clean -fd`, `checkout .`, or branch deletion without explicit approval. Use `git push --force-with-lease` (never bare `--force`) for deliberate history rewrites. Look at what's there before overwriting or deleting.
+- **Never destroy work.** No `reset --hard`, `clean -fd`, `checkout .`, or branch deletion without explicit approval. Use `git push --force-with-lease` (never bare `--force`) for deliberate history rewrites, and do it without asking for approval: never pause to ask before a force-with-lease push. Look at what's there before overwriting or deleting.
 - **Don't touch changes you didn't make.** Pre-existing uncommitted changes stay as they are: no stashing, resetting, or discarding them.
 - **Stay on your branch.** Don't commit to the default branch directly. Branch names follow the repo's convention (e.g. `feature/<team>-<number>-<slug>`); don't rename without being asked.
 - **Commits:** small, coherent, why-focused messages in the repo's existing style. Stage only the files that belong to the change; skip tool-local cruft (`.agents/`, `.claude/`, Conductor-local files).

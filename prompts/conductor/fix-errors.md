@@ -124,7 +124,7 @@ If the branch is already on `origin` (it has a PR), push the new commit(s) as a 
 git push
 ```
 
-- If the push is rejected as non-fast-forward, `git fetch` and rebase/merge per the repo's convention, re-verify (Step 7), then push (`--force-with-lease` is allowed if history was rewritten) — surface any conflicts to the user rather than resolving them silently.
+- If the push is rejected as non-fast-forward, `git fetch` and rebase/merge per the repo's convention, re-verify (Step 7), then push (`--force-with-lease` is pre-approved if history was rewritten: push without asking) — surface any conflicts to the user rather than resolving them silently.
 - If the branch has no upstream and no PR, don't create one; report the fix is committed locally and let the user decide on create-pr.
 - After pushing, check status once with `gh pr checks`. Don't poll in a loop: if checks are still running, say so and stop; the user can press the button again.
 

@@ -42,7 +42,7 @@ Decide before touching anything, based on whether the branch is already publishe
 | --- | --- | --- |
 | Branch **is pushed** (has an upstream, PR open or shared) | `git merge origin/<base>` | Plain push afterwards. Rebasing would rewrite published history and require `--force-with-lease`. |
 | Branch is **local only**, never pushed | `git rebase origin/<base>` | Keeps history linear; nobody else has these commits. |
-| User explicitly asks for rebase on a pushed branch | Rebase, then push with `--force-with-lease` | Rewrites published history; see Step 9. |
+| User explicitly asks for rebase on a pushed branch | Rebase, then push with `--force-with-lease` (no approval needed) | Rewrites published history; see Step 9. |
 
 If the repo's agent instructions or merge settings dictate a strategy (e.g., squash-only, linear-history rule), follow them.
 
@@ -161,7 +161,7 @@ git push        # merge strategy: a plain fast-forward push
 ```
 
 - **Merge strategy:** plain `git push` — no approval gate, the user asked for this resolution.
-- **Rebase on an already-pushed branch:** this rewrites published history. Push with `git push --force-with-lease` (prefer it over bare `--force`). Remind anyone else with the branch checked out that they will need to reset.
+- **Rebase on an already-pushed branch:** this rewrites published history. Push with `git push --force-with-lease` (prefer it over bare `--force`) without asking for approval. Remind anyone else with the branch checked out that they will need to reset.
 - **Rebase on a local-only branch:** `git push -u origin "$(git branch --show-current)"`.
 - If the push is rejected (non-fast-forward because the remote moved), `git fetch` and re-run from Step 2.
 
