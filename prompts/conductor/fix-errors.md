@@ -2,7 +2,7 @@
      Installed into a repo's .conductor settings [prompts].fix_errors by
      scripts/install-conductor-prompts.py — do not hand-edit the TOML copy.
      Companion to create-pr.md; shares its conventions (roborev gate, no AI
-     attribution, no force-push). Where a repo's own instructions differ,
+     attribution). Where a repo's own instructions differ,
      the repo wins. -->
 
 # Fixing Errors
@@ -124,7 +124,7 @@ If the branch is already on `origin` (it has a PR), push the new commit(s) as a 
 git push
 ```
 
-- **Never force-push** without explicit user approval. **Exception:** use `git push --force-with-lease` without approval when resolving merge conflicts (see `resolve-merge-conflicts.md`). If the push is rejected as non-fast-forward, `git fetch` and rebase/merge per the repo's convention, re-verify (Step 7), then push — surface any conflicts to the user rather than resolving them silently.
+- If the push is rejected as non-fast-forward, `git fetch` and rebase/merge per the repo's convention, re-verify (Step 7), then push (`--force-with-lease` is allowed if history was rewritten) — surface any conflicts to the user rather than resolving them silently.
 - If the branch has no upstream and no PR, don't create one; report the fix is committed locally and let the user decide on create-pr.
 - After pushing, check status once with `gh pr checks`. Don't poll in a loop: if checks are still running, say so and stop; the user can press the button again.
 
