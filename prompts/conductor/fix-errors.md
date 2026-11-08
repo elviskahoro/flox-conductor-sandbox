@@ -157,7 +157,7 @@ Be factual. If a check is still red or unverified, say so; do not round up to "s
 - **Fixing on top of a guess:** shipping a change you couldn't reproduce or verify, then claiming success.
 - **Scope creep:** refactors, dependency upgrades, or formatting sweeps unrelated to the failure.
 - **Fixing pre-existing or flaky failures** as if the branch caused them.
-- **Destructive shortcuts:** `git reset --hard`, `git push -f`, `git checkout .`, deleting lockfiles or caches to "clean up", `--no-verify`.
+- **Destructive shortcuts:** `git reset --hard`, bare `git push --force` (use `--force-with-lease`), `git checkout .`, deleting lockfiles or caches to "clean up", `--no-verify`.
 - **Repeating without progress:** don't repeat an unchanged fix or stop solely because a round count was reached. Re-examine the finding and evidence, try a different safe in-scope correction, and report the concrete blocker if no actionable safe change remains. Ask the user when resolving it requires a major refactor, architectural/interface change, or product decision.
 - **Generated-file hand edits:** regenerate with the repo's tooling.
 

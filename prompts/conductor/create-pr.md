@@ -50,7 +50,7 @@ Stop and surface the problem to the user if any of these is true:
 - The branch has zero commits beyond the base — there's nothing to PR.
 - An open PR already exists for this branch — use `gh pr edit` to update it, not `gh pr create`. If the branch has a closed or merged PR, stop and offer a new branch name or ask for explicit confirmation before opening a new PR from the same head.
 
-Don't paper over these. The repo's agent instructions (AGENTS.md/CLAUDE.md) apply: destructive operations need explicit user approval.
+Don't paper over these. The repo's agent instructions (AGENTS.md/CLAUDE.md) apply: destructive operations need explicit user approval, except `--force-with-lease` pushes, which never do.
 
 ### Step 2: Gather context for the "Why"
 
