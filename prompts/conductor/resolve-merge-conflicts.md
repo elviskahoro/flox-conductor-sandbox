@@ -1,7 +1,7 @@
 <!-- Canonical source: flox-conductor-sandbox prompts/conductor/resolve-merge-conflicts.md.
      Installed into a repo's .conductor settings [prompts].resolve_merge_conflicts by
      scripts/install-conductor-prompts.py — do not hand-edit the TOML copy.
-     Sibling of create-pr.md; shares its gates (roborev, no force-push, no AI
+     Sibling of create-pr.md; shares its gates (roborev, no AI
      attribution). Where a repo's own instructions differ, the repo wins. -->
 
 # Resolving Merge Conflicts
@@ -40,9 +40,9 @@ Decide before touching anything, based on whether the branch is already publishe
 
 | Situation | Strategy | Why |
 | --- | --- | --- |
-| Branch **is pushed** (has an upstream, PR open or shared) | `git merge origin/<base>` | Plain push afterwards. Rebasing would rewrite published history and require a force-push. |
+| Branch **is pushed** (has an upstream, PR open or shared) | `git merge origin/<base>` | Plain push afterwards. Rebasing would rewrite published history and require `--force-with-lease`. |
 | Branch is **local only**, never pushed | `git rebase origin/<base>` | Keeps history linear; nobody else has these commits. |
-| User explicitly asks for rebase on a pushed branch | Rebase, but **stop before pushing** | Force-push needs explicit user approval (see Step 9). |
+| User explicitly asks for rebase on a pushed branch | Rebase, then push with `--force-with-lease` | Rewrites published history; see Step 9. |
 
 If the repo's agent instructions or merge settings dictate a strategy (e.g., squash-only, linear-history rule), follow them.
 
@@ -161,9 +161,9 @@ git push        # merge strategy: a plain fast-forward push
 ```
 
 - **Merge strategy:** plain `git push` — no approval gate, the user asked for this resolution.
-- **Rebase on an already-pushed branch:** this rewrites published history. Use `git push --force-with-lease` (never bare `--force`) to push the rebased branch with conflict resolutions. No approval needed for force push during conflict resolution — the goal is to integrate both changes cleanly. Remind anyone else with the branch checked out that they will need to reset.
+- **Rebase on an already-pushed branch:** this rewrites published history. Push with `git push --force-with-lease` (prefer it over bare `--force`). Remind anyone else with the branch checked out that they will need to reset.
 - **Rebase on a local-only branch:** `git push -u origin "$(git branch --show-current)"`.
-- If the push is rejected (non-fast-forward because the remote moved), `git fetch` and re-run from Step 2 — don't force.
+- If the push is rejected (non-fast-forward because the remote moved), `git fetch` and re-run from Step 2.
 
 ### Step 10: Confirm and report
 
@@ -199,9 +199,9 @@ CI usually catches `<<<<<<<` in source, but not in docs, YAML comments, or templ
 
 A merge commit that also reformats files, bumps deps, or fixes a nearby bug is unreviewable — the reviewer can't tell resolution from drive-by. Put unrelated changes in a separate commit or a separate PR.
 
-### Don't force-push to silently overwrite upstream work
+### Don't force over unseen commits
 
-If a push is rejected, the remote has commits you haven't seen. Fetch and integrate; never `--force` over them. **Exception:** use `git push --force-with-lease` when rebasing on an already-pushed branch during conflict resolution (Step 9), after running all tests and `roborev review --wait`.
+If a push is rejected, the remote has commits you haven't seen. Fetch and integrate; use `--force-with-lease` only for deliberate history rewrites.
 
 ### Don't add AI attribution
 
@@ -232,7 +232,7 @@ If two behaviors genuinely contradict, the answer is a question to the user, not
 
 | Pitfall | Why it bites | Fix |
 | --- | --- | --- |
-| Rebasing a pushed branch by habit | Requires a force-push; rewrites shared history | Default to merge for published branches (Step 2) |
+| Rebasing a pushed branch by habit | Requires `--force-with-lease`; rewrites shared history | Default to merge for published branches (Step 2) |
 | Mixing up ours/theirs during rebase | They're swapped relative to merge; silently keeps the wrong side | Re-derive which is which before any flag use (Step 4) |
 | Resolving by reading only the conflict hunk | Misses the intent in surrounding code and commit history | Run Step 3's history/base diffs first |
 | Trusting "no markers" as done | Semantic conflicts compile fine and fail later | Step 6 tests + Step 8 roborev |
@@ -242,7 +242,6 @@ If two behaviors genuinely contradict, the answer is a question to the user, not
 
 ## Red flags (stop and rethink)
 
-- About to run `git push --force` or `git push -f`.
 - About to run `git checkout --ours .` / `--theirs .`, or `git merge -X ours|theirs`.
 - About to `git rebase --skip` or `git merge --abort` without the user asking.
 - Resolving a hunk whose purpose you can't state in one sentence.

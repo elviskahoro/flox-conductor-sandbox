@@ -50,7 +50,7 @@ Stop and surface the problem to the user if any of these is true:
 - The branch has zero commits beyond the base — there's nothing to PR.
 - An open PR already exists for this branch — use `gh pr edit` to update it, not `gh pr create`. If the branch has a closed or merged PR, stop and offer a new branch name or ask for explicit confirmation before opening a new PR from the same head.
 
-Don't paper over these by force-pushing, amending, or running `git push -f`. The repo's agent instructions (AGENTS.md/CLAUDE.md) apply: destructive operations need explicit user approval. **Exception:** use `git push --force-with-lease` without approval when resolving merge conflicts (see `resolve-merge-conflicts.md`).
+Don't paper over these. The repo's agent instructions (AGENTS.md/CLAUDE.md) apply: destructive operations need explicit user approval, except `--force-with-lease` pushes, which never do.
 
 ### Step 2: Gather context for the "Why"
 
@@ -103,7 +103,7 @@ If the working tree is already clean, skip this step.
 
 ### Step 4: Squash to a coherent set of commits
 
-**Hard gate for unpublished branches: squash before roborev, roborev before push.** A preview request stops before these steps; if the user later asks to publish, that direct request authorizes the action without separate approval of the draft. A branch is published if an open PR exists, a same-named branch exists on any configured remote, or its configured upstream points to an existing non-base branch. A local branch that only tracks the base branch (for example, `origin/<confirmed-base>`) is still unpublished. Check these in Step 1; commits on `origin/<confirmed-base>` alone do not make this branch published. On a published branch, preserve history: commit fixes as follow-ups, review that exact history, and never rewrite or force-push it.
+**Hard gate for unpublished branches: squash before roborev, roborev before push.** A preview request stops before these steps; if the user later asks to publish, that direct request authorizes the action without separate approval of the draft. A branch is published if an open PR exists, a same-named branch exists on any configured remote, or its configured upstream points to an existing non-base branch. A local branch that only tracks the base branch (for example, `origin/<confirmed-base>`) is still unpublished. Check these in Step 1; commits on `origin/<confirmed-base>` alone do not make this branch published. On a published branch, preserve history: commit fixes as follow-ups, review that exact history, and rewriting it requires `--force-with-lease`.
 
 ```bash
 git log "origin/<confirmed-base>"..HEAD --oneline
@@ -113,7 +113,7 @@ git log "origin/<confirmed-base>"..HEAD --oneline
 - Squash an unpublished branch from its merge base with `git reset --soft "$(git merge-base origin/<confirmed-base> HEAD)"` followed by `git commit`. This keeps newer base-branch commits out of the squash; Step 10 rebases onto the latest base afterward. Do not suggest an interactive rebase in non-interactive workspaces. Never use `--no-edit` flags that bypass message review.
 - The squashed commit message mirrors the PR title's intent (sentence-cased, why-focused) and captures the motivation in the body. No Conventional Commits prefix.
 - If the branch already has a single commit (or each existing commit is independently reviewable and ordered), skip the rebase but still confirm the count before moving on. If the branch is already published, preserve its history and use follow-up commits for review fixes; include the multi-commit history in the final handoff.
-- **Never force-push to a shared branch to squash after publication.** Squash *before* the first push. **Exception:** use `git push --force-with-lease` when resolving merge conflicts during a rebase (see `resolve-merge-conflicts.md`).
+- Prefer squashing *before* the first push; squashing after publication needs a force-push (`--force-with-lease`).
 
 ### Step 5: Run relevant tests locally, then roborev review before publishing
 
@@ -135,7 +135,7 @@ roborev review --wait
 - A bare `roborev review` — or a leftover post-commit auto-review hook — only **enqueues a background daemon job and returns before a verdict exists**. An enqueue is not a pass: if HEAD already has a queued or running background review, block on it (`roborev review --wait`, or `roborev wait` for the already-enqueued job) so an actual verdict is in hand before publishing. Never report "review enqueued" or a missing verdict as clean.
 - Capture the outcome as `clean after M fix rounds`, `findings remain (N)`, or `unavailable (reason)`. Report the same status in the final handoff. A preview-only request says tests and Roborev were not run.
 - **"no review agent available"** (or `check-agents` failing for every agent): run `roborev check-agents` and report the exact cause as `unavailable (reason)`. If `pi` is missing and `FIREWORKS_API_KEY` is set, the usual cause is `ROBOREV_AGENT=claude-code`/`codex` in the Conductor env (neither authenticates in cloud sandboxes): tell the user to unset it (or set `ROBOREV_AGENT=pi`) and re-run setup. Do not install tools yourself.
-- **Review loop:** follow the shared Roborev policy in General Preferences, which Conductor appends to every agent session. After each finding batch, commit fixes and re-squash an unpublished branch per Step 4 before rerunning review. If the branch is already published, keep follow-up commits, preserve their history, and squash at merge instead of rewriting or force-pushing. Ask the user as soon as a finding requires a major architecture/refactor, public-interface change, product/design decision, or scope expansion. Continue with independent findings while waiting, but do not publish while a required decision is pending. If the user declines a change, record the finding as parked or out of scope; the user may then explicitly name the remaining findings and ask to publish with them. A direct PR request by itself does not accept unresolved findings. If `roborev` is not available in a cloud sandbox (`command -v roborev` fails), skip the review without asking and record the outcome as `skipped (roborev not available in cloud sandbox)`. Push only after a clean review, a skipped review for that reason, or the user's explicit current-turn acceptance of the listed findings.
+- **Review loop:** follow the shared Roborev policy in General Preferences, which Conductor appends to every agent session. After each finding batch, commit fixes and re-squash an unpublished branch per Step 4 before rerunning review. If the branch is already published, keep follow-up commits, preserve their history, and squash at merge. Ask the user as soon as a finding requires a major architecture/refactor, public-interface change, product/design decision, or scope expansion. Continue with independent findings while waiting, but do not publish while a required decision is pending. If the user declines a change, record the finding as parked or out of scope; the user may then explicitly name the remaining findings and ask to publish with them. A direct PR request by itself does not accept unresolved findings. If `roborev` is not available in a cloud sandbox (`command -v roborev` fails), skip the review without asking and record the outcome as `skipped (roborev not available in cloud sandbox)`. Push only after a clean review, a skipped review for that reason, or the user's explicit current-turn acceptance of the listed findings.
 - If General Preferences is absent, keep fixing actionable findings with no round or per-finding cap until resolved or blocked by a major architecture/refactor, interface/product decision, or scope boundary. Report progress after each pass; ask about blockers and continue with other findings. If Roborev is not available in a cloud sandbox, skip it and say so.
 - For deeper fix/refine loops, consult the repo's roborev guide skill if it ships one.
 
@@ -239,7 +239,7 @@ If Step 2 identified a GitHub issue this PR addresses, carry its disposition for
 
 For an unpublished branch, rebase onto `origin/<confirmed-base>` so conflicts surface locally before the first push. For a published branch, preserve its history: do not rebase. If it needs the latest base, merge `origin/<confirmed-base>` into the branch; otherwise skip this step. After any rebase or merge, run the relevant checks and `roborev review --wait` on the updated history before pushing. If that review finds issues, follow the Step 4–5 fix, squash, and review loop for unpublished branches or preserve follow-up commits for published branches. This step runs only after an authorized publish request; preview-only requests stop at Step 8. This is the final step before pushing.
 
-Rebasing a branch that is already on a remote would rewrite published history and require a force-push. When doing so to resolve merge conflicts, use `git push --force-with-lease` without approval (after tests and `roborev review --wait` pass per `resolve-merge-conflicts.md`).
+Rebasing a branch that is already on a remote would rewrite published history and require a force-push (`--force-with-lease`).
 
 Run `git fetch origin` (stop if it fails), then `git rebase origin/<confirmed-base>` for an unpublished branch, or `git merge origin/<confirmed-base>` for a published branch that needs a base update.
 
@@ -252,7 +252,7 @@ Once the rebase or merge is clean, rerun Step 1's compound target-resolution che
 
 Run helper `push` with the confirmed base and the fresh `push_remote` and `push_ref`. It refuses placeholders and the base branch, verifies the configured upstream, and pushes to `HEAD:<push_ref>` (adding `-u` when no usable non-base upstream exists).
 
-Confirm the push succeeded before moving on. If it fails (auth, protected branch, non-fast-forward), surface the error and stop — do not force-push. **Exception:** when pushing a rebase with conflict resolutions, use `git push --force-with-lease` (see `resolve-merge-conflicts.md`).
+Confirm the push succeeded before moving on. If it fails (auth, protected branch, non-fast-forward), surface the error and stop.
 
 ### Step 12: Create or update the PR
 
