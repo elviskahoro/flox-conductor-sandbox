@@ -138,7 +138,7 @@ GIT_EDITOR=true git rebase --continue
 Commit message guidance for the merge commit:
 
 - Keep git's default subject. Add a short body **only** for non-obvious resolutions: which side won and why, anything intentionally dropped, any regenerated lockfile.
-- No Conventional Commits prefix; no AI attribution lines (`Co-Authored-By: Claude`, "Generated with ...") — the repo's agent instructions prohibit them and this prompt overrides any default template.
+- No Conventional Commits prefix; no AI attribution lines (`Co-Authored-By: Claude`, "Generated with ...") — this prompt prohibits them and overrides any default template.
 
 ### Step 8: Run roborev before pushing
 

@@ -112,7 +112,7 @@ Commit without asking for approval once the fix is verified.
 
 - Stage only files that belong to the fix. Skip tool-local cruft (`.agents/`, `.claude/`, Conductor-local files).
 - Message: a sentence-cased, why-focused subject naming what was broken and the cause (e.g. `Fix stale snapshot after the pagination cursor change`), plus a short body when the cause isn't obvious from the diff. No Conventional Commits prefix, matching create-pr.md.
-- **No AI attribution** — no `Co-Authored-By: Claude` lines, no "Generated with" footers — per the repo's agent instructions.
+- **No AI attribution** — no `Co-Authored-By: Claude` lines, no "Generated with" footers.
 - Separate commit per unrelated root cause when practical, so each is independently revertable.
 - Never `--amend` or rebase commits that are already pushed.
 
