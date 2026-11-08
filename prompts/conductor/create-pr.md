@@ -50,7 +50,7 @@ Stop and surface the problem to the user if any of these is true:
 - The branch has zero commits beyond the base — there's nothing to PR.
 - An open PR already exists for this branch — use `gh pr edit` to update it, not `gh pr create`. If the branch has a closed or merged PR, stop and offer a new branch name or ask for explicit confirmation before opening a new PR from the same head.
 
-Don't paper over these. The repo's agent instructions (AGENTS.md/CLAUDE.md) apply: destructive operations need explicit user approval, except `--force-with-lease` pushes, which never do.
+Don't paper over these. The repo's agent instructions (AGENTS.md/CLAUDE.md) apply: destructive operations need explicit user approval, except a `--force-with-lease` push after a rebase of your own published branch (see `resolve-merge-conflicts.md`), which needs none.
 
 ### Step 2: Gather context for the "Why"
 
@@ -472,7 +472,7 @@ What's wrong: the Summary paraphrases the diff, the Test plan has no reasoning, 
 | Using "WIP" in title instead of `--draft` | Title noise; doesn't actually mark the PR as draft | Use `gh pr create --draft` and a clean title |
 | Linking to the PR's own branch name as "context" | The branch is implicit; this is noise | Only link to artifacts that aren't already obvious from the PR |
 | Forgetting the linked GitHub issue entirely | Issue lingers open after merge with no trace back to the PR that fixed it | Resolve it in Step 2, `Closes #NNN` in Step 7, record disposition in Step 9, comment in Step 12b |
-| Drafting `Closes #NNN` in Step 7 but the final body sent to `gh pr create` drops it (edits, re-drafts, template drift) | Issue never auto-closes even though Step 2/9 correctly flagged full resolution — happened for real on gtm-sdk#609/#628 | Step 12's mechanical grep gate on the literal `--body` string, not on what Step 7 intended to write |
+| Drafting `Closes #NNN` in Step 7 but the final body sent to `gh pr create` drops it (edits, re-drafts, template drift) | Issue never auto-closes even though Step 2/9 correctly flagged full resolution — happened for real on gtm-sdk#609/#628 | Step 12's `pr-submit` helper, which checks the closing keyword in the literal body file it submits, not what Step 7 intended to write |
 
 ## Red flags (stop and rethink)
 
