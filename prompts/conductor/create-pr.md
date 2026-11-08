@@ -103,7 +103,7 @@ If the working tree is already clean, skip this step.
 
 ### Step 4: Squash to a coherent set of commits
 
-**Hard gate for unpublished branches: squash before roborev, roborev before push.** A preview request stops before these steps; if the user later asks to publish, that direct request authorizes the action without separate approval of the draft. A branch is published if an open PR exists, a same-named branch exists on any configured remote, or its configured upstream points to an existing non-base branch. A local branch that only tracks the base branch (for example, `origin/<confirmed-base>`) is still unpublished. Check these in Step 1; commits on `origin/<confirmed-base>` alone do not make this branch published. On a published branch, preserve history: commit fixes as follow-ups, review that exact history, and rewriting it requires `--force-with-lease`.
+**Hard gate for unpublished branches: squash before roborev, roborev before push.** A preview request stops before these steps; if the user later asks to publish, that direct request authorizes the action without separate approval of the draft. A branch is published if an open PR exists, a same-named branch exists on any configured remote, or its configured upstream points to an existing non-base branch. A local branch that only tracks the base branch (for example, `origin/<confirmed-base>`) is still unpublished. Check these in Step 1; commits on `origin/<confirmed-base>` alone do not make this branch published. On a published branch, preserve history: commit fixes as follow-ups, review that exact history, and rewriting it requires `--force-with-lease`, which you run without asking.
 
 ```bash
 git log "origin/<confirmed-base>"..HEAD --oneline
@@ -113,7 +113,7 @@ git log "origin/<confirmed-base>"..HEAD --oneline
 - Squash an unpublished branch from its merge base with `git reset --soft "$(git merge-base origin/<confirmed-base> HEAD)"` followed by `git commit`. This keeps newer base-branch commits out of the squash; Step 10 rebases onto the latest base afterward. Do not suggest an interactive rebase in non-interactive workspaces. Never use `--no-edit` flags that bypass message review.
 - The squashed commit message mirrors the PR title's intent (sentence-cased, why-focused) and captures the motivation in the body. No Conventional Commits prefix.
 - If the branch already has a single commit (or each existing commit is independently reviewable and ordered), skip the rebase but still confirm the count before moving on. If the branch is already published, preserve its history and use follow-up commits for review fixes; include the multi-commit history in the final handoff.
-- Prefer squashing *before* the first push; squashing after publication needs a force-push (`--force-with-lease`).
+- Prefer squashing *before* the first push; squashing after publication needs a force-push (`--force-with-lease`), which you do without asking.
 
 ### Step 5: Run relevant tests locally, then roborev review before publishing
 
@@ -239,7 +239,7 @@ If Step 2 identified a GitHub issue this PR addresses, carry its disposition for
 
 For an unpublished branch, rebase onto `origin/<confirmed-base>` so conflicts surface locally before the first push. For a published branch, preserve its history: do not rebase. If it needs the latest base, merge `origin/<confirmed-base>` into the branch; otherwise skip this step. After any rebase or merge, run the relevant checks and `roborev review --wait` on the updated history before pushing. If that review finds issues, follow the Step 4–5 fix, squash, and review loop for unpublished branches or preserve follow-up commits for published branches. This step runs only after an authorized publish request; preview-only requests stop at Step 8. This is the final step before pushing.
 
-Rebasing a branch that is already on a remote would rewrite published history and require a force-push (`--force-with-lease`).
+Rebasing a branch that is already on a remote would rewrite published history and require a force-push (`--force-with-lease`), which you do without asking.
 
 Run `git fetch origin` (stop if it fails), then `git rebase origin/<confirmed-base>` for an unpublished branch, or `git merge origin/<confirmed-base>` for a published branch that needs a base update.
 
@@ -294,7 +294,7 @@ Review threads (especially from `pullfrog`, also roborev and humans) must not be
 Merging is never automatic, but getting the checks green is part of creating the PR — don't hand back a PR with red or pending CI and wait to be told to fix it. After the PR is open, loop:
 
 1. Wait for checks with `gh pr checks <pr-number> --watch --fail-fast` (or poll `gh pr checks <pr-number>` every 30–60s if `--watch` is unavailable). Treat "no checks reported yet" right after pushing as pending and retry for a couple of minutes before concluding there are none.
-2. If `pullfrog-approval` fails, don't rerun it or hunt through logs: list pullfrog's review threads (see "Resolve review comments you have addressed"), fix every one, push, AND resolve every one, then let the check rerun. A local commit does not count; an unpushed fix leaves the check failing. For any other failing check, read the failing logs (`gh run view <run-id> --log-failed`), reproduce locally where possible, fix the root cause, run the relevant local tests, commit, and push. The branch is now published: add follow-up commits, do not amend, rebase, or force-push. Rerun `roborev review --wait` if the fix is non-trivial (skip if unavailable in a cloud sandbox).
+2. If `pullfrog-approval` fails, don't rerun it or hunt through logs: list pullfrog's review threads (see "Resolve review comments you have addressed"), fix every one, push, AND resolve every one, then let the check rerun. A local commit does not count; an unpushed fix leaves the check failing. For any other failing check, read the failing logs (`gh run view <run-id> --log-failed`), reproduce locally where possible, fix the root cause, run the relevant local tests, commit, and push. The branch is now published: prefer follow-up commits, but amending or rebasing is fine when it gives a cleaner history; push rewrites with `--force-with-lease` without asking. Rerun `roborev review --wait` if the fix is non-trivial (skip if unavailable in a cloud sandbox).
 3. After each push, resolve the review threads your fix addressed (see "Resolve review comments you have addressed" above) and check for newly posted review comments; fix and resolve those too.
 4. Go back to step 1 with the new run.
 
