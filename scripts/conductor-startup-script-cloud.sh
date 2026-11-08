@@ -666,7 +666,7 @@ trunk_stage() {
 # --- rwx --------------------------------------------------------------------
 # Pinned static release binary (RWX is not in nixpkgs/Flox; their docs
 # recommend pinning for scripted use). Reuse-if-present.
-RWX_PIN="v3.33.0"
+RWX_PIN="v3.36.1"
 
 rwx_install() {
   if command -v rwx >/dev/null 2>&1; then
@@ -677,10 +677,10 @@ rwx_install() {
   os="$(uname -s | tr '[:upper:]' '[:lower:]')"
   arch="$(uname -m | sed s/arm64/aarch64/)"
   case "${os}-${arch}" in
-  linux-x86_64) sha256="a62408976abfa709d806cf2a30d73fb995eb1b343664caae6f7cfae260e0751c" ;;
-  linux-aarch64) sha256="2e5bcdf810c9dfd719ef4b38cdee665629e9a450e421b1a5cf3becd65f4893d2" ;;
-  darwin-x86_64) sha256="3bb95c3519413aaa45c94942bebea3200f722b8891b2c30463aeb2892e9b71ee" ;;
-  darwin-aarch64) sha256="c6254fd112a3bc666ca2a57130a7a6b9e293d5952d7014a6893984402360acee" ;;
+  linux-x86_64) sha256="8a88c69fe325d0f56cb21b61768969b6d20b13a87ce751c1b6a5ac0b50b36b62" ;;
+  linux-aarch64) sha256="52b6877cb955f7ae4e3f4e8ff93751074637dddaaae43217c6f6a22a28f7a114" ;;
+  darwin-x86_64) sha256="928b08e613224584cc0635069ebe1a0c559c92effa7703cacd8222d6da53fe02" ;;
+  darwin-aarch64) sha256="6e9c6d2981d896599a15291432984d7679c275614e366612968aa4910d9ce862" ;;
   *)
     log "error: no pinned rwx asset for ${os}-${arch}"
     return 1
