@@ -182,7 +182,7 @@ Run `git fetch origin` first and stop if it fails.
 
 This workflow expects `origin` to contain the PR base branch. In fork workflows, configure the base repository as `origin` and the branch's push repository as another remote. If the base is not available at `origin/<base>`, stop and surface which remote should serve as the base; do not guess.
 
-Run `git status`, `git branch --show-current`, `git remote -v`, `git log --oneline origin/<base>..HEAD`, `git diff --stat origin/<base>...HEAD`, and `gh pr list --head <branch> --state open --json number,headRepositoryOwner,headRefName` as one parallel batch. From them, record the base, the open PR number (or none), and the push remote, ref and head (`<owner>:<branch>`) for later steps.
+Run `git status`, `git branch --show-current`, `git remote -v`, `git log --oneline origin/<base>..HEAD`, `git diff --stat origin/<base>...HEAD`, and `gh pr list --head <branch> --state open --json number,headRepositoryOwner,headRefName`, and `git rev-parse --abbrev-ref --symbolic-full-name @{upstream}` (may fail if none) as one parallel batch. Use `git ls-remote --heads <remote> <branch>` to check for same-named remote branches. From them, record the base, the open PR number (or none), and the push remote, ref and head (`<owner>:<branch>`) for later steps.
 
 Stop and surface the problem to the user if any of these is true:
 
@@ -391,7 +391,7 @@ Run `git fetch origin` (stop if it fails), then `git rebase origin/<confirmed-ba
 
 ### Step 11: Push the branch
 
-Once the rebase or merge is clean, rerun Step 1's compound target-resolution check. Copy its freshly printed `push_remote`, `push_ref`, and `push_head` values into the commands below; variables from Step 1's subshell do not persist. A direct publish request authorizes the identified task-branch target without a preview comparison. If `push_confirmation=yes`, ask the user to confirm that specific target; a general PR request does not resolve target ambiguity. Never push to the base branch. Set upstream tracking when no usable non-base upstream exists, including when the configured remote branch is stale.
+Once the rebase or merge is clean, rerun Step 1's compound target-resolution check. Re-derive `push_remote`, `push_ref`, and `push_head` using Step 1's procedure and substitute the real values into the commands below. A direct publish request authorizes the identified task-branch target without a preview comparison. If `push_confirmation=yes`, ask the user to confirm that specific target; a general PR request does not resolve target ambiguity. Never push to the base branch. Set upstream tracking when no usable non-base upstream exists, including when the configured remote branch is stale.
 
 Run `git push <push_remote> HEAD:<push_ref>`, adding `-u` when no usable non-base upstream exists. Never push to the base branch, and never run it with unfilled placeholders.
 
@@ -403,7 +403,7 @@ If Step 1 found an open PR for this branch, update it with `gh pr edit <number> 
 
 **Hard gate before running `gh pr create` or `gh pr edit`: for every same-repo GitHub issue Step 2 determined this PR fully resolves, the final body must contain a `Closes #NNN` / `Fixes #NNN` / `Resolves #NNN` line for *that specific* issue number — one PR can fully resolve more than one issue, and each needs its own closing reference, not just the first.** This is a real known failure mode, not a hypothetical: gtm-sdk#609 was fully fixed by gtm-sdk#628, but the drafted body only listed "gtm-sdk#609" under Links without a closing keyword, so GitHub never auto-closed it and it sat open until manually closed later. A "the plan said to add it" belief is not sufficient; grep the body file for each number before submitting.
 
-Write the final body to a file (real newlines, not `\n`), then check each fully-resolved issue with `grep -qiE '(closes|fixes|resolves) #NNN\b' <body-file>` and reject leftover placeholders. Then run `gh pr create --base <base> --head <push_head> --title ... --body-file <file>`, or `gh pr edit <number> --title ... --body-file <file>` if Step 1 found an open PR.
+Write the final body to a file (real newlines, not `\n`), then check each fully-resolved issue with `grep -qiE '(closes|fixes|resolves) #<number>\b' <body-file>` once per issue, substituting the real number (a literal `#NNN` is a failure) and reject any leftover `<...>`, `NNN`, or `TODO` placeholders in the title and body. Then run `gh pr create --base <base> --head <push_head> --title ... --body-file <file>`, or `gh pr edit <number> --title ... --body-file <file>` if Step 1 found an open PR.
 
 If the grep finds a missing closing keyword, **stop and fix the body** — don't proceed with a body that silently downgraded to a bare reference. If Step 2 flagged partial/cross-repo instead, do not list that issue number and don't add the keyword.
 
