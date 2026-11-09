@@ -1,0 +1,38 @@
+# Migrated from .github/workflows/test-prompts.yml
+on:
+  cli:
+    init:
+      commit-sha: ${{ event.git.sha }}
+  github:
+    push:
+      if: ${{ event.git.branch == 'main' }}
+      init:
+        commit-sha: ${{ event.git.sha }}
+    pull_request:
+      init:
+        commit-sha: ${{ event.git.sha }}
+
+base:
+  image: ubuntu:24.04
+  config: rwx/base 1.2.0
+
+tasks:
+  - key: code
+    call: git/clone 2.4.0
+    with:
+      repository: https://github.com/elviskahoro/flox-conductor-sandbox.git
+      ref: ${{ init.commit-sha }}
+      github-token: ${{ github.token }}
+
+  - key: uv
+    run: |
+      curl -LsSf https://astral.sh/uv/install.sh | sh
+      echo "$HOME/.local/bin" >> "$RWX_ENV/PATH"
+
+  - key: pytest
+    use: [code, uv]
+    run: uv run --no-project --with pytest --with typer pytest tests/
+
+  - key: prompts-drift
+    use: [code, uv]
+    run: uv run --no-project --with "tomlkit>=0.15.1" scripts/install-conductor-prompts.py --check

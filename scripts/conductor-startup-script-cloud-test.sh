@@ -166,6 +166,14 @@ dnf install -y sudo shadow-utils util-linux tar >/dev/null
 useradd -m sandbox-user
 echo "sandbox-user ALL=(ALL) NOPASSWD:ALL" >/etc/sudoers.d/sandbox-user
 chmod 440 /etc/sudoers.d/sandbox-user
+# RWX's Docker runs containers where sudo's PAM account check fails (the
+# setuid unix_chkpwd helper cannot read /etc/shadow), which would silently
+# skip the sudo-only install paths. Let the user's group read shadow, only
+# when sudo is actually broken, so the test exercises the real sudo path.
+if ! su sandbox-user -c 'sudo -n true' >/dev/null 2>&1; then
+  chgrp sandbox-user /etc/shadow
+  chmod 640 /etc/shadow
+fi
 
 # The pi stage keys on `command -v npm`: every run below expects the SKIP
 # branch except where RUN 14+ stub npm in. On a host with npm, the live
