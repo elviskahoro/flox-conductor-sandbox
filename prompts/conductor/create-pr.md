@@ -306,8 +306,7 @@ Suggest a merge only when every check is confirmed passing (`gh pr checks` shows
 gh pr merge <pr-number> --squash
 ```
 
-- Never suggest `trunk merge` until Trunk's new CLI is released; revisit then.
-- Do not log in to, configure, or call any merge-queue service. If `gh` is not authenticated, say so and stop.
+- If `gh` is not authenticated, say so and stop.
 - Never pass `--admin` or `--auto` unless the user asks for it.
 
 ## Modifiers: drafts, reviewers, labels
