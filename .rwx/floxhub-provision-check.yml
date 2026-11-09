@@ -17,7 +17,6 @@ tasks:
     with:
       repository: https://github.com/elviskahoro/flox-conductor-sandbox.git
       ref: ${{ init.commit-sha }}
-      github-token: ${{ github['elviskahoro'].token }}
 
   - key: uv
     run: |
