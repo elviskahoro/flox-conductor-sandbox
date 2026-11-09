@@ -18,7 +18,7 @@ downstream/consumed secrets, not FloxHub's own bootstrap credential here):
 If `FLOXHUB_TOKEN` is unset, this script fails fast with an error rather than
 silently proceeding unauthenticated.
 
-Set `INFISICAL_TOKEN` and `INFISICAL_PROJECT_ID` to additionally run the
+Set `DOLTHUB_DOLT_CREDENTIAL_JWK` (or `INFISICAL_TOKEN` and `INFISICAL_PROJECT_ID`) to additionally run the
 real Beads/DoltHub bootstrap and `bd ready`/`bd list`/`bd show` checks. Set
 `REQUIRE_BEADS_CHECK=1` in CI when those checks must run; the default keeps
 the five/seven-tool provisioning check usable without downstream credentials.
@@ -150,10 +150,11 @@ async def main() -> None:
     require_beads = os.environ.get("REQUIRE_BEADS_CHECK", "").strip() == "1"
     infisical_token = os.environ.get("INFISICAL_TOKEN", "").strip()
     infisical_project_id = os.environ.get("INFISICAL_PROJECT_ID", "").strip()
-    if require_beads and (not infisical_token or not infisical_project_id):
+    dolt_jwk = os.environ.get("DOLTHUB_DOLT_CREDENTIAL_JWK", "").strip()
+    if require_beads and not dolt_jwk and not (infisical_token and infisical_project_id):
         print(
-            "error: REQUIRE_BEADS_CHECK=1 requires INFISICAL_TOKEN and "
-            "INFISICAL_PROJECT_ID",
+            "error: REQUIRE_BEADS_CHECK=1 requires DOLTHUB_DOLT_CREDENTIAL_JWK "
+            "(or INFISICAL_TOKEN and INFISICAL_PROJECT_ID)",
             file=sys.stderr,
         )
         raise SystemExit(1)
@@ -173,6 +174,11 @@ async def main() -> None:
             .with_exec(PROVISION_CMD)
         )
 
+        if dolt_jwk:
+            container = container.with_secret_variable(
+                "DOLTHUB_DOLT_CREDENTIAL_JWK",
+                client.set_secret("dolthub-jwk", dolt_jwk),
+            )
         if infisical_token:
             container = container.with_secret_variable(
                 "INFISICAL_TOKEN", client.set_secret("infisical-token", infisical_token)

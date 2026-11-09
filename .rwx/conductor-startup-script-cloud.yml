@@ -1,0 +1,76 @@
+# Migrated from .github/workflows/conductor-startup-script-cloud.yml
+# No secrets, public network only: safe on every push/PR.
+on:
+  cli:
+    init:
+      commit-sha: ${{ event.git.sha }}
+  github:
+    push:
+      if: ${{ event.git.branch == 'main' }}
+      init:
+        commit-sha: ${{ event.git.sha }}
+    pull_request:
+      init:
+        commit-sha: ${{ event.git.sha }}
+
+base:
+  image: ubuntu:24.04
+  config: rwx/base 1.2.0
+
+tasks:
+  - key: code
+    call: git/clone 2.4.0
+    with:
+      repository: https://github.com/elviskahoro/flox-conductor-sandbox.git
+      ref: ${{ init.commit-sha }}
+
+  - key: uv
+    run: |
+      curl -LsSf https://astral.sh/uv/install.sh | sh
+      echo "$HOME/.local/bin" >> "$RWX_ENV/PATH"
+
+  - key: shellcheck-install
+    run: |
+      sudo apt-get update -q
+      sudo apt-get install -y -q shellcheck
+      sudo apt-get clean
+
+  - key: validate-pins
+    use: code
+    run: bash scripts/validate-pins.sh
+
+  - key: prompts-installer-self-test
+    use: [code, uv]
+    run: uv run --no-project --with "tomlkit>=0.15.1" scripts/install-conductor-prompts.py --self-test
+
+  - key: prompts-drift
+    use: [code, uv]
+    run: uv run --no-project --with "tomlkit>=0.15.1" scripts/install-conductor-prompts.py --check
+
+  - key: infisical-preflight-self-test
+    use: code
+    run: bash scripts/conductor-infisical-preflight.sh --self-test
+
+  - key: prompt-helpers-self-test
+    use: code
+    run: bash scripts/conductor-prompts/self-test.sh
+
+  - key: shellcheck
+    use: [code, shellcheck-install]
+    run: |
+      shellcheck \
+        scripts/conductor-startup-script-cloud.sh \
+        scripts/conductor-trunk-preflight.sh \
+        scripts/conductor-infisical-preflight.sh \
+        scripts/conductor-prompts/*.sh \
+        scripts/validate-pins.sh \
+        scripts/conductor-startup-script-cloud-test.sh
+
+  # Was: docker run amazonlinux:2023 (linux/amd64) with the repo mounted ro.
+  - key: container-test
+    use: code
+    docker: true
+    run: |
+      docker run --platform linux/amd64 --rm \
+        -v "$PWD":/src:ro -w /src \
+        amazonlinux:2023 bash scripts/conductor-startup-script-cloud-test.sh

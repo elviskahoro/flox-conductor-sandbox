@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "migrate-from-gha": {
+      "source": "rwx-cloud/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/rwx/skills/migrate-from-gha/SKILL.md",
+      "computedHash": "8e9a90cb54e3c4488977898a237311a0577aac05f806b40aaae33012e86a6ce7"
+    },
+    "review-gha-migration": {
+      "source": "rwx-cloud/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/rwx/skills/review-gha-migration/SKILL.md",
+      "computedHash": "5993808c784ea1305224dcc991378e28cc0063efe665410d8ce4c3729ac5f6d2"
+    },
+    "rwx": {
+      "source": "rwx-cloud/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/rwx/skills/rwx/SKILL.md",
+      "computedHash": "60fdf4f90c141805f44c188e61608981929755fc2ac74c2dd78f00b88c854251"
+    }
+  }
+}

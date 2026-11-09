@@ -29,10 +29,13 @@ error() {
 
 command -v bd >/dev/null 2>&1 || error "bd is not installed or not on PATH"
 command -v dolt >/dev/null 2>&1 || error "dolt is not installed or not on PATH"
-command -v infisical >/dev/null 2>&1 || error "infisical is not installed or not on PATH"
-
-[[ -n "${INFISICAL_TOKEN:-}" ]] || error "INFISICAL_TOKEN is not set"
-[[ -n "${INFISICAL_PROJECT_ID:-}" ]] || error "INFISICAL_PROJECT_ID is not set"
+# The Dolt credential JWK comes from DOLTHUB_DOLT_CREDENTIAL_JWK when set
+# (e.g. an RWX/CI secret); otherwise it is read from Infisical.
+if [[ -z "${DOLTHUB_DOLT_CREDENTIAL_JWK:-}" ]]; then
+  command -v infisical >/dev/null 2>&1 || error "infisical is not installed or not on PATH (or set DOLTHUB_DOLT_CREDENTIAL_JWK)"
+  [[ -n "${INFISICAL_TOKEN:-}" ]] || error "INFISICAL_TOKEN is not set (or set DOLTHUB_DOLT_CREDENTIAL_JWK)"
+  [[ -n "${INFISICAL_PROJECT_ID:-}" ]] || error "INFISICAL_PROJECT_ID is not set (or set DOLTHUB_DOLT_CREDENTIAL_JWK)"
+fi
 
 umask 077
 CREDENTIAL_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/beads-dolthub.XXXXXX")"
@@ -44,7 +47,9 @@ trap cleanup EXIT HUP INT TERM
 # Keep the secret in memory only long enough to pipe it directly into Dolt.
 # Infisical's stderr is suppressed because it may include request metadata;
 # the command's status is converted into a safe, actionable error below.
-if ! CREDENTIAL_JWK="$(infisical secrets get "${SECRET_NAME}" \
+if [[ -n "${DOLTHUB_DOLT_CREDENTIAL_JWK:-}" ]]; then
+  CREDENTIAL_JWK="${DOLTHUB_DOLT_CREDENTIAL_JWK}"
+elif ! CREDENTIAL_JWK="$(infisical secrets get "${SECRET_NAME}" \
   --env="${INFISICAL_ENV}" --projectId "${INFISICAL_PROJECT_ID}" --plain 2>/dev/null)"; then
   error "could not read Infisical secret ${SECRET_NAME}"
 fi
