@@ -178,13 +178,11 @@ A reader who skims your description should walk away with the mental model neede
 
 ### Step 1: Pre-flight checks
 
-Helper `pr-preflight` first refreshes the remote refs and stops if that fails.
+Run `git fetch origin` first and stop if it fails.
 
 This workflow expects `origin` to contain the PR base branch. In fork workflows, configure the base repository as `origin` and the branch's push repository as another remote. If the base is not available at `origin/<base>`, stop and surface which remote should serve as the base; do not guess.
 
-If `pr-preflight` exits nonzero or prints a stop condition, stop the workflow even if the other parallel checks completed.
-
-Run `git status`, `git branch --show-current`, and helper `pr-preflight` as one parallel batch. `pr-preflight` refreshes `origin`, resolves publication, base, open-PR head, and push target, prints a labeled `PR preflight:` line (record its values for later steps), then shows redacted remotes, commits beyond the base, and the diff stat. It exits nonzero with the reason on stderr for any stop condition.
+Run `git status`, `git branch --show-current`, `git remote -v`, `git log --oneline origin/<base>..HEAD`, `git diff --stat origin/<base>...HEAD`, and `gh pr list --head <branch> --state open --json number,headRepositoryOwner,headRefName` as one parallel batch. From them, record the base, the open PR number (or none), and the push remote, ref and head (`<owner>:<branch>`) for later steps.
 
 Stop and surface the problem to the user if any of these is true:
 
@@ -395,7 +393,7 @@ Run `git fetch origin` (stop if it fails), then `git rebase origin/<confirmed-ba
 
 Once the rebase or merge is clean, rerun Step 1's compound target-resolution check. Copy its freshly printed `push_remote`, `push_ref`, and `push_head` values into the commands below; variables from Step 1's subshell do not persist. A direct publish request authorizes the identified task-branch target without a preview comparison. If `push_confirmation=yes`, ask the user to confirm that specific target; a general PR request does not resolve target ambiguity. Never push to the base branch. Set upstream tracking when no usable non-base upstream exists, including when the configured remote branch is stale.
 
-Run helper `push` with the confirmed base and the fresh `push_remote` and `push_ref`. It refuses placeholders and the base branch, verifies the configured upstream, and pushes to `HEAD:<push_ref>` (adding `-u` when no usable non-base upstream exists).
+Run `git push <push_remote> HEAD:<push_ref>`, adding `-u` when no usable non-base upstream exists. Never push to the base branch, and never run it with unfilled placeholders.
 
 Confirm the push succeeded before moving on. If it fails (auth, protected branch, non-fast-forward), surface the error and stop.
 
@@ -403,11 +401,11 @@ Confirm the push succeeded before moving on. If it fails (auth, protected branch
 
 If Step 1 found an open PR for this branch, update it with `gh pr edit <number> --title ... --body ...`; do not run `gh pr create`. If no open PR exists, create one with `gh pr create --base <confirmed-base> --head <push_head>`. Draft the final body and verify its issue-closing keywords before either command. `push_head` is derived from the exact push remote and ref in Step 1; passing it explicitly avoids GitHub CLI guessing the head when multiple remotes are configured. This includes a published branch that has no open PR.
 
-**Hard gate before running `gh pr create` or `gh pr edit`: for every same-repo GitHub issue Step 2 determined this PR fully resolves, the final body must contain a `Closes #NNN` / `Fixes #NNN` / `Resolves #NNN` line for *that specific* issue number — one PR can fully resolve more than one issue, and each needs its own closing reference, not just the first.** This is a real known failure mode, not a hypothetical: gtm-sdk#609 was fully fixed by gtm-sdk#628, but the drafted body only listed "gtm-sdk#609" under Links without a closing keyword, so GitHub never auto-closed it and it sat open until manually closed later. A "the plan said to add it" belief is not sufficient; the helper checks it mechanically.
+**Hard gate before running `gh pr create` or `gh pr edit`: for every same-repo GitHub issue Step 2 determined this PR fully resolves, the final body must contain a `Closes #NNN` / `Fixes #NNN` / `Resolves #NNN` line for *that specific* issue number — one PR can fully resolve more than one issue, and each needs its own closing reference, not just the first.** This is a real known failure mode, not a hypothetical: gtm-sdk#609 was fully fixed by gtm-sdk#628, but the drafted body only listed "gtm-sdk#609" under Links without a closing keyword, so GitHub never auto-closed it and it sat open until manually closed later. A "the plan said to add it" belief is not sufficient; grep the body file for each number before submitting.
 
-Write the final body to a file (real newlines, not `\n`), then run helper `pr-submit` with: confirmed base, `push_head`, the open PR number from preflight (or `none`), the title, the body file, and every fully-resolved issue number. The helper rejects placeholders, fails if any listed issue lacks its closing keyword, and then runs `gh pr create` or `gh pr edit`.
+Write the final body to a file (real newlines, not `\n`), then check each fully-resolved issue with `grep -qiE '(closes|fixes|resolves) #NNN\b' <body-file>` and reject leftover placeholders. Then run `gh pr create --base <base> --head <push_head> --title ... --body-file <file>`, or `gh pr edit <number> --title ... --body-file <file>` if Step 1 found an open PR.
 
-If `pr-submit` fails on a missing closing keyword, **stop and fix the body** — don't bypass the helper or proceed with a body that silently downgraded to a bare reference. If Step 2 flagged partial/cross-repo instead, do not list that issue number and don't add the keyword.
+If the grep finds a missing closing keyword, **stop and fix the body** — don't proceed with a body that silently downgraded to a bare reference. If Step 2 flagged partial/cross-repo instead, do not list that issue number and don't add the keyword.
 
 Return the PR URL, followed by the Roborev outcome and a note about preserved follow-up history when the branch was published. If the user explicitly accepted findings or the review was skipped because Roborev was unavailable, disclose that status in the PR body's Risks section and in the final handoff; do not hide it in a comment unless the user requested a comment.
 
@@ -616,7 +614,7 @@ What's wrong: the Summary paraphrases the diff, the Test plan has no reasoning, 
 | Using "WIP" in title instead of `--draft` | Title noise; doesn't actually mark the PR as draft | Use `gh pr create --draft` and a clean title |
 | Linking to the PR's own branch name as "context" | The branch is implicit; this is noise | Only link to artifacts that aren't already obvious from the PR |
 | Forgetting the linked GitHub issue entirely | Issue lingers open after merge with no trace back to the PR that fixed it | Resolve it in Step 2, `Closes #NNN` in Step 7, record disposition in Step 9, comment in Step 12b |
-| Drafting `Closes #NNN` in Step 7 but the final body sent to `gh pr create` drops it (edits, re-drafts, template drift) | Issue never auto-closes even though Step 2/9 correctly flagged full resolution — happened for real on gtm-sdk#609/#628 | Step 12's `pr-submit` helper, which checks the closing keyword in the literal body file it submits, not what Step 7 intended to write |
+| Drafting `Closes #NNN` in Step 7 but the final body sent to `gh pr create` drops it (edits, re-drafts, template drift) | Issue never auto-closes even though Step 2/9 correctly flagged full resolution — happened for real on gtm-sdk#609/#628 | Step 12's grep of the literal body file being submitted, not what Step 7 intended to write |
 
 ## Red flags (stop and rethink)
 
@@ -901,7 +899,7 @@ Baseline working agreements for every session in this workspace. Task-specific p
 
 ## Prompt helpers
 
-Prompts reference named helpers instead of inlining shell. Run one with `bash <(curl -fsSL "https://raw.githubusercontent.com/elviskahoro/flox-conductor-sandbox/${CONDUCTOR_PROMPTS_REF:-main}/scripts/conductor-prompts/<name>.sh") [args]`, or `scripts/conductor-prompts/<name>.sh` directly when this repo is checked out. Helpers: `pr-preflight`, `push`, `pr-submit`, `pr-context`, `conflict-context`, `conflict-check`. If a helper can't be fetched, say so and stop on that step; don't reimplement it from memory.
+Prompts reference named helpers instead of inlining shell. Run one with `bash <(curl -fsSL "https://raw.githubusercontent.com/elviskahoro/flox-conductor-sandbox/${CONDUCTOR_PROMPTS_REF:-main}/scripts/conductor-prompts/<name>.sh") [args]`, or `scripts/conductor-prompts/<name>.sh` directly when this repo is checked out. Helpers: `pr-context`, `conflict-context`, `conflict-check`. If a helper can't be fetched, say so and stop on that step; don't reimplement it from memory.
 
 ## When to stop and ask
 

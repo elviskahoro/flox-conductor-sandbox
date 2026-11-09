@@ -92,7 +92,7 @@ Baseline working agreements for every session in this workspace. Task-specific p
 
 ## Prompt helpers
 
-Prompts reference named helpers instead of inlining shell. Run one with `bash <(curl -fsSL "https://raw.githubusercontent.com/elviskahoro/flox-conductor-sandbox/${CONDUCTOR_PROMPTS_REF:-main}/scripts/conductor-prompts/<name>.sh") [args]`, or `scripts/conductor-prompts/<name>.sh` directly when this repo is checked out. Helpers: `pr-preflight`, `push`, `pr-submit`, `pr-context`, `conflict-context`, `conflict-check`. If a helper can't be fetched, say so and stop on that step; don't reimplement it from memory.
+Prompts reference named helpers instead of inlining shell. Run one with `bash <(curl -fsSL "https://raw.githubusercontent.com/elviskahoro/flox-conductor-sandbox/${CONDUCTOR_PROMPTS_REF:-main}/scripts/conductor-prompts/<name>.sh") [args]`, or `scripts/conductor-prompts/<name>.sh` directly when this repo is checked out. Helpers: `pr-context`, `conflict-context`, `conflict-check`. If a helper can't be fetched, say so and stop on that step; don't reimplement it from memory.
 
 ## When to stop and ask
 
