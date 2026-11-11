@@ -1,0 +1,39 @@
+# Daily: report watched GitHub issues/PRs that closed in the last 24h.
+# The run FAILS when something closed (or a lookup errored); the RWX Slack
+# "run result" org notification (filter: cron runs that fail) delivers it.
+# Watchlist: .rwx/data/watched-issues.json
+on:
+  cron:
+    - key: check-closed-issues
+      schedule: '0 14 * * *' # daily 14:00 UTC
+      init:
+        since: ${{ event.cron.utc.iso8601 }}
+        commit-sha: ${{ event.git.sha }}
+  cli:
+    init:
+      since: ""
+      commit-sha: ${{ event.git.sha }}
+
+base:
+  image: ubuntu:24.04
+  config: rwx/base 1.2.0
+
+tasks:
+  - key: code
+    call: git/clone 2.4.1
+    with:
+      repository: https://github.com/elviskahoro/flox-conductor-sandbox.git
+      ref: ${{ init.commit-sha }}
+
+  - key: check
+    use: code
+    run: |
+      since="${{ init.since }}"
+      # Window = the 24h before the scheduled time (cron is daily, so windows tile).
+      # Manual runs (no cron time) look back 24h from now.
+      if [ -n "$since" ]; then
+        since=$(date -u -d "$since - 24 hours" +%Y-%m-%dT%H:%M:%SZ)
+      else
+        since=$(date -u -d "24 hours ago" +%Y-%m-%dT%H:%M:%SZ)
+      fi
+      python3 scripts/check-closed-issues.py .rwx/data/watched-issues.json "$since"
