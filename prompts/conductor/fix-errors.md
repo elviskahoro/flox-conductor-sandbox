@@ -92,7 +92,7 @@ Read the failing code and the code around it. State the cause in one sentence be
 
 - Re-run the exact command(s) that failed in Step 4 — they must pass.
 - Then run the broader suite that covers the changed files (mirror source paths under `tests/`, or run the repo's full test/lint/type commands) to catch regressions your fix introduced.
-- If a new, different error appears, loop back to Step 3 for it. Cap at 3 diagnose-fix-verify rounds; after that, stop and report what's still failing and what you learned.
+- If a new, different error appears, loop back to Step 3 for it. Keep looping until everything passes; stop only if blocked by a major architecture/refactor, interface/product decision, scope boundary, or an error you cannot make progress on after trying different approaches, and then report what is still failing and what you learned.
 
 ### Step 8: Review with roborev
 
