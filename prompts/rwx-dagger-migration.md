@@ -123,7 +123,7 @@ Gate 2: write a design note to `ci/README.md` (draft) covering the A/B/C classif
 
 Open a PR following the repo's PR conventions (run any required review tooling and fix all findings first). The description must include:
 
-- The A/B/C classification table and which option from 2.3 was chosen and why.
+- The A/B/C classification table and the caching mechanism from 2.3 as applied (tool-cache/vault setup, cache-rebuild trigger), with measurements.
 - Before/after pipeline wall time and the cache-hit matrix from Phase 4.
 - Local usage (`ci/README.md` link) and the exact commands to reproduce CI locally.
 - Renamed/removed tasks, secret/env changes, version pins, and known limitations (e.g. cold Dagger cache on first run, Docker requirement).
