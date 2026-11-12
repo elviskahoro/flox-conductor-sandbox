@@ -9,7 +9,7 @@ Agents run CI on [RWX](https://www.rwx.com) before opening a PR. Full detail: [`
 ### Authentication
 
 - Check first: `rwx whoami`. The CLI reads `--access-token`, then `$RWX_ACCESS_TOKEN`, then `~/.config/rwx/accesstoken`. The cloud startup script validates `RWX_ACCESS_TOKEN` and writes that file ([`conductor-startup-script`](skills/conductor-startup-script/SKILL.md)).
-- Tokens are scoped to one RWX organization. Injected vars are named `RWX_ACCESS_TOKEN_<OWNER>` / `RWC_ACCESS_TOKEN_<OWNER>`; list names only with `env | grep -E '^RW[XC]_ACCESS_TOKEN_.' | cut -d= -f1`. Export the one matching the repo owner as `RWX_ACCESS_TOKEN` (snippet in the skill). IDs only resolve in the owning org, so switch tokens on not-found/unauthorized.
+- Tokens are scoped to one RWX organization. Injected vars are named `RWX_ACCESS_TOKEN_<OWNER>` / `RWC_ACCESS_TOKEN_<OWNER>`; list names only with `env | grep -E '^RW[XC]_ACCESS_TOKEN_.' | cut -d= -f1`. Before the first `rwx` command in a session, export the one matching the repo owner as `RWX_ACCESS_TOKEN` (snippet in the skill). A 403 or unauthorized means the token is unset or for the wrong org: re-export the right one and retry. IDs only resolve in the owning org, so switch tokens on not-found/unauthorized.
 - Never print, log, or commit a token.
 
 ### What you can do
