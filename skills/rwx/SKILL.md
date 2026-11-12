@@ -36,6 +36,8 @@ TOKEN="$(printenv "RWX_ACCESS_TOKEN_$OWNER" || printenv "RWC_ACCESS_TOKEN_$OWNER
 rwx whoami
 ```
 
+Run this before the first `rwx` command in a session. If `rwx run` returns 403 when only `RWX_ACCESS_TOKEN_<OWNER>` vars are injected, the token is unset or belongs to the wrong org; re-run the snippet above.
+
 A run, task, or log ID only resolves under the organization that owns it. On not-found or unauthorized, switch tokens. Never print, log, or commit a token value.
 
 ## Writing and validating run definitions
