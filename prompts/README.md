@@ -1,6 +1,6 @@
 # prompts/
 
-Two kinds of content live here:
+Three kinds of content live here:
 
 - **`conductor/`** — the canonical, cross-repo **Conductor prompts**. These are
   the standardized prompts this repo owns; other repos install them into their
@@ -9,6 +9,10 @@ Two kinds of content live here:
 - **Top-level `*-handoff.md` / `*-research.md` files** — point-in-time session
   artifacts (agent handoffs, decision research) kept for reference. They are
   not installable prompts and follow no schema.
+- **Top-level reusable prompts** (e.g. `rwx-dagger-migration.md`) — durable,
+  repo-agnostic prompts you paste into an agent in another repo. Maintained here
+  as references; not installed into `[prompts]` slots and not covered by the
+  installer's drift check.
 
 ## Why this exists
 
