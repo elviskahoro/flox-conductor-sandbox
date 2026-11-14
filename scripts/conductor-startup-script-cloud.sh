@@ -1516,7 +1516,8 @@ roborev_setup() {
   fi
   if ! roborev config set --global default_agent "${agent}" >/dev/null 2>&1; then
     record WARN roborev-global-agent "could not set roborev global default_agent — repos without a .roborev.toml may fall back to codex; pass --agent pi on reviews"
-  elif [[ -n "${gmodel}" ]] && ! roborev config set --global default_model "${gmodel}" >/dev/null 2>&1; then
+  elif ! roborev config set --global default_model "${gmodel}" >/dev/null 2>&1; then
+    # An empty gmodel clears any default_model left by an earlier run.
     record WARN roborev-global-agent "global default_agent is ${agent} but default_model could not be set — pass --model on reviews of repos without a .roborev.toml"
   else
     record PASS roborev-global-agent "global default_agent set to ${agent}${gmodel:+ (default_model ${gmodel})} — repos without a .roborev.toml no longer fall back to codex"
