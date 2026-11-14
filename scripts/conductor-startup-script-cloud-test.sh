@@ -349,6 +349,31 @@ su - sandbox-user -c "
     fail \"core.hooksPath run wrote a hook into the repo-local hooks dir despite the global override\"
 " || fail "core.hooksPath guard verification failed"
 
+echo "=== RUN 3G: ROBOREV_MODEL= (empty) clears the global default_model; clear failure warns ==="
+# Set-but-empty ROBOREV_MODEL means "no model": setup must still call
+# `config set --global default_model ""` so a value from an earlier run is
+# cleared, and when that call fails the WARN must say it could not CLEAR
+# (never advise passing --model).
+rm -rf /tmp/clear-repo /tmp/roborev-stub3g
+mkdir -p /tmp/roborev-stub3g
+chmod 1777 /tmp/roborev-stub3g
+# shellcheck disable=SC2016
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; init|install-hook|uninstall-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; config) echo "$*" >> /tmp/roborev-stub3g/config-calls; [ -n "$STUB_FAIL_MODEL" ] && [ "$4" = default_model ] && exit 1; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub3g/roborev
+chmod 755 /tmp/roborev-stub3g/roborev
+su - sandbox-user -c "git init -q /tmp/clear-repo"
+RUN3G_OUTPUT="$(su - sandbox-user -c "cd /tmp/clear-repo && PATH=/tmp/roborev-stub3g:\$PATH ROBOREV_MODEL= bash ${STARTUP_SCRIPT}")" ||
+  fail "empty-ROBOREV_MODEL run exited non-zero"
+printf '%s' "${RUN3G_OUTPUT}"
+grep -qx 'config set --global default_model ' /tmp/roborev-stub3g/config-calls ||
+  fail "empty ROBOREV_MODEL did not clear the global default_model"
+case "${RUN3G_OUTPUT}" in *"could not clear the global default_model"*) fail "clear succeeded but the clear-failure WARN fired" ;; esac
+rm -f /tmp/roborev-stub3g/config-calls
+RUN3G2_OUTPUT="$(su - sandbox-user -c "cd /tmp/clear-repo && PATH=/tmp/roborev-stub3g:\$PATH ROBOREV_MODEL= STUB_FAIL_MODEL=1 bash ${STARTUP_SCRIPT}")" ||
+  fail "failing-clear run exited non-zero"
+printf '%s' "${RUN3G2_OUTPUT}"
+case "${RUN3G2_OUTPUT}" in *"could not clear the global default_model"*) ;; *) fail "failed clear did not record the clear-failure WARN" ;; esac
+case "${RUN3G2_OUTPUT}" in *"default_model could not be set"*) fail "failed clear used the non-empty-model WARN wording" ;; esac
+
 echo "=== RUN 3B: leftover roborev hook removed; nothing reinstalled ==="
 # The migration and fresh paths of the no-background-review posture, in one
 # repo-local (no core.hooksPath) run: a fake roborev post-commit hook
