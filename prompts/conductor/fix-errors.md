@@ -99,9 +99,10 @@ Read the failing code and the code around it. State the cause in one sentence be
 Roborev reviews committed history, not the working tree, and it does not run tests. So: commit first (Step 9), then:
 
 ```bash
-roborev review --wait
+roborev review --wait --agent pi --provider fireworks --model accounts/fireworks/models/glm-5p3-flash
 ```
 
+- **Always pass `--agent pi --provider fireworks --model accounts/fireworks/models/glm-5p3-flash`.** Many workspaces have no `.roborev.toml`, so roborev can't pick the agent up from config and falls back to claude-code/codex, which don't authenticate in cloud sandboxes. Pi + Fireworks needs `FIREWORKS_API_KEY` in the environment; the flags override `ROBOREV_AGENT`.
 - `--wait` is required — a bare `roborev review` only enqueues a background job and is not a verdict. Never report an enqueue as clean.
 - **Review loop:** follow the shared Roborev policy in General Preferences after committing the fix. Routine scope includes wording, missing guards or test cases, renames, and local refactors contained within the originally changed function(s) and their tests. Direct reference updates needed for a rename or call-site edits needed to fix the same finding are also in scope. Unrelated caller changes or a new shared helper are outside scope; if needed to resolve a valid finding, ask the user before a major design/refactor change or report it unresolved with reasons. Correct a direct regression from a follow-up fix batch only in files or tests changed by that batch. Do not silently expand scope.
 - If General Preferences is absent, keep fixing actionable findings with no round or per-finding cap until resolved or blocked by a major architecture/refactor, interface/product decision, or scope boundary. Report progress after each pass; ask about blockers and continue with other findings. If Roborev is unavailable, say so and ask whether to proceed.
@@ -168,6 +169,6 @@ gh pr checks                                  # what's red
 gh run list --branch <branch> --limit 5       # recent runs
 gh run view <run-id> --log-failed             # failing step output
 gh run rerun <run-id> --failed                # rerun only failed jobs (flake check)
-roborev review --wait                         # review gate (after commit)
+roborev review --wait --agent pi --provider fireworks --model accounts/fireworks/models/glm-5p3-flash                         # review gate (after commit)
 git push                                      # fast-forward only; never -f
 ```

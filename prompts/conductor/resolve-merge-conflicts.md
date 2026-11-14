@@ -142,12 +142,13 @@ Commit message guidance for the merge commit:
 
 ### Step 8: Run roborev before pushing
 
-**Hard gate: do not push until `roborev review --wait` has run on the resolved history and either reported clean or been explicitly acknowledged by the user.** Conflict resolutions are exactly where silent semantic bugs hide, so this applies even when the merge looked trivial.
+**Hard gate: do not push until `roborev review --wait --agent pi --provider fireworks --model accounts/fireworks/models/glm-5p3-flash` has run on the resolved history and either reported clean or been explicitly acknowledged by the user.** Conflict resolutions are exactly where silent semantic bugs hide, so this applies even when the merge looked trivial.
 
 ```bash
-roborev review --wait
+roborev review --wait --agent pi --provider fireworks --model accounts/fireworks/models/glm-5p3-flash
 ```
 
+- **Always pass `--agent pi --provider fireworks --model accounts/fireworks/models/glm-5p3-flash`.** Many workspaces have no `.roborev.toml`, so roborev can't pick the agent up from config and falls back to claude-code/codex, which don't authenticate in cloud sandboxes. Pi + Fireworks needs `FIREWORKS_API_KEY` in the environment; the flags override `ROBOREV_AGENT`.
 - `--wait` is **required** — a bare `roborev review` only enqueues a background job and returns before a verdict exists. An enqueue is not a pass.
 - **Review loop:** follow the shared Roborev policy in General Preferences. Scope includes any incorrectness in lines changed to resolve the conflict (such as a dropped hunk, choosing the wrong side, or a typo), any finding where the merged result is incorrect because of the interaction between base and branch changes—including semantic conflicts in lines Git merged automatically—and tests that exercise those changed or interacting behaviors, plus direct regressions from follow-up fix batches. Findings that already existed in the base branch are out of scope unless this branch's resolution changed or regressed them. Report other unrelated findings with reasons and do not silently expand scope.
 - If General Preferences is absent, keep fixing actionable findings with no round or per-finding cap until resolved or blocked by a major architecture/refactor, interface/product decision, or scope boundary. Report progress after each pass; ask about blockers and continue with other findings. If Roborev is unavailable, say so and ask whether to proceed.
