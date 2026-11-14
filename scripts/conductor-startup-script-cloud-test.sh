@@ -313,8 +313,9 @@ mkdir -p "${GLOBAL_HOOKS}" /tmp/roborev-stub
 # "$1" must stay literal — this printf emits a stub script whose own case
 # statement reads "$1", so single quotes are required, not an oversight.
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; init|install-hook|uninstall-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; init|install-hook|uninstall-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; config) echo "$*" >> /tmp/roborev-stub/config-calls; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub/roborev
 chmod 755 /tmp/roborev-stub/roborev
+chmod 1777 /tmp/roborev-stub # sandbox-user appends config-calls here
 su - sandbox-user -c "git init -q /tmp/guard-repo"
 RUN3_OUTPUT="$(su - sandbox-user -c "cd /tmp/guard-repo && PATH=/tmp/roborev-stub:\$PATH GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=${GLOBAL_HOOKS} bash ${STARTUP_SCRIPT}")" ||
   fail "run under core.hooksPath exited non-zero"
@@ -323,6 +324,12 @@ case "${RUN3_OUTPUT}" in
 *" | FAIL |"*) fail "core.hooksPath run recorded FAIL row(s)" ;;
 esac
 case "${RUN3_OUTPUT}" in *"roborev-config"*) ;; *) fail "core.hooksPath run missing the roborev-config row" ;; esac
+# The global default agent/model must be written even though the repo is
+# config-less from roborev's point of view (roborev ignores ROBOREV_AGENT).
+grep -qx 'config set --global default_agent pi' /tmp/roborev-stub/config-calls ||
+  fail "setup did not set the global default_agent"
+grep -qx 'config set --global default_model fireworks/accounts/fireworks/models/glm-5p3-flash' /tmp/roborev-stub/config-calls ||
+  fail "setup did not set the global default_model"
 case "${RUN3_OUTPUT}" in *"roborev-daemon"*) ;; *) fail "core.hooksPath run missing the roborev-daemon row" ;; esac
 case "${RUN3_OUTPUT}" in *"machine-global hooks dir"*) ;; *) fail "core.hooksPath run missing the machine-global-hooks-dir hook row" ;; esac
 su - sandbox-user -c "
