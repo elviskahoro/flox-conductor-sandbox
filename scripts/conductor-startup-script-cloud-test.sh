@@ -74,6 +74,10 @@
 #     uninstall-failed WARN), and the worst case RUN 3E's threat model
 #     implies (removes the foreign sibling AND fails -> the
 #     failed+collateral WARN naming the vanished path).
+#   - RUN 3G: a set-but-empty ROBOREV_MODEL must still call
+#     `config set --global default_model ""` (the CLI call that clears a stale value; the stub only records the call), and
+#     the clear-failure WARN is asserted separately from the non-empty
+#     model wording.
 #   - RUN 4: a stubbed-rwx run must land the token file atomically —
 #     content replaced, no accesstoken.tmp leftover.
 #   - RUN 5/6: the failure-semantics contract (roborev review finding on
@@ -313,8 +317,9 @@ mkdir -p "${GLOBAL_HOOKS}" /tmp/roborev-stub
 # "$1" must stay literal — this printf emits a stub script whose own case
 # statement reads "$1", so single quotes are required, not an oversight.
 # shellcheck disable=SC2016
-printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; init|install-hook|uninstall-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub/roborev
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; init|install-hook|uninstall-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; config) echo "$*" >> /tmp/roborev-stub/config-calls; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub/roborev
 chmod 755 /tmp/roborev-stub/roborev
+chmod 1777 /tmp/roborev-stub # sandbox-user appends config-calls here
 su - sandbox-user -c "git init -q /tmp/guard-repo"
 RUN3_OUTPUT="$(su - sandbox-user -c "cd /tmp/guard-repo && PATH=/tmp/roborev-stub:\$PATH GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=${GLOBAL_HOOKS} bash ${STARTUP_SCRIPT}")" ||
   fail "run under core.hooksPath exited non-zero"
@@ -323,6 +328,12 @@ case "${RUN3_OUTPUT}" in
 *" | FAIL |"*) fail "core.hooksPath run recorded FAIL row(s)" ;;
 esac
 case "${RUN3_OUTPUT}" in *"roborev-config"*) ;; *) fail "core.hooksPath run missing the roborev-config row" ;; esac
+# The global default agent/model must be written even though the repo is
+# config-less from roborev's point of view (roborev ignores ROBOREV_AGENT).
+grep -qx 'config set --global default_agent pi' /tmp/roborev-stub/config-calls ||
+  fail "setup did not set the global default_agent"
+grep -qx 'config set --global default_model fireworks/accounts/fireworks/models/glm-5p3-flash' /tmp/roborev-stub/config-calls ||
+  fail "setup did not set the global default_model"
 case "${RUN3_OUTPUT}" in *"roborev-daemon"*) ;; *) fail "core.hooksPath run missing the roborev-daemon row" ;; esac
 case "${RUN3_OUTPUT}" in *"machine-global hooks dir"*) ;; *) fail "core.hooksPath run missing the machine-global-hooks-dir hook row" ;; esac
 su - sandbox-user -c "
@@ -341,6 +352,31 @@ su - sandbox-user -c "
   [ ! -e /tmp/guard-repo/.git/hooks/post-commit ] ||
     fail \"core.hooksPath run wrote a hook into the repo-local hooks dir despite the global override\"
 " || fail "core.hooksPath guard verification failed"
+
+echo "=== RUN 3G: ROBOREV_MODEL= (empty) clears the global default_model; clear failure warns ==="
+# Set-but-empty ROBOREV_MODEL means "no model": setup must still call
+# `config set --global default_model ""` so a value from an earlier run is
+# cleared, and when that call fails the WARN must say it could not CLEAR
+# (never advise passing --model).
+rm -rf /tmp/clear-repo /tmp/roborev-stub3g
+mkdir -p /tmp/roborev-stub3g
+chmod 1777 /tmp/roborev-stub3g
+# shellcheck disable=SC2016
+printf '#!/bin/sh\ncase "$1" in version) echo "roborev v0.63.0-stub"; exit 0;; init|install-hook|uninstall-hook) echo "stub: $1 must never be called" >&2; exit 1;; check-agents) echo "1 passed, 0 failed, 0 skipped"; exit 0;; config) echo "$*" >> /tmp/roborev-stub3g/config-calls; [ -n "$STUB_FAIL_MODEL" ] && [ "$4" = default_model ] && exit 1; exit 0;; esac\nexit 0\n' > /tmp/roborev-stub3g/roborev
+chmod 755 /tmp/roborev-stub3g/roborev
+su - sandbox-user -c "git init -q /tmp/clear-repo"
+RUN3G_OUTPUT="$(su - sandbox-user -c "cd /tmp/clear-repo && PATH=/tmp/roborev-stub3g:\$PATH ROBOREV_MODEL= bash ${STARTUP_SCRIPT}")" ||
+  fail "empty-ROBOREV_MODEL run exited non-zero"
+printf '%s' "${RUN3G_OUTPUT}"
+grep -qx 'config set --global default_model ' /tmp/roborev-stub3g/config-calls ||
+  fail "empty ROBOREV_MODEL did not clear the global default_model"
+case "${RUN3G_OUTPUT}" in *"could not clear the global default_model"*) fail "clear succeeded but the clear-failure WARN fired" ;; esac
+rm -f /tmp/roborev-stub3g/config-calls
+RUN3G2_OUTPUT="$(su - sandbox-user -c "cd /tmp/clear-repo && PATH=/tmp/roborev-stub3g:\$PATH ROBOREV_MODEL= STUB_FAIL_MODEL=1 bash ${STARTUP_SCRIPT}")" ||
+  fail "failing-clear run exited non-zero"
+printf '%s' "${RUN3G2_OUTPUT}"
+case "${RUN3G2_OUTPUT}" in *"could not clear the global default_model"*) ;; *) fail "failed clear did not record the clear-failure WARN" ;; esac
+case "${RUN3G2_OUTPUT}" in *"default_model could not be set"*) fail "failed clear used the non-empty-model WARN wording" ;; esac
 
 echo "=== RUN 3B: leftover roborev hook removed; nothing reinstalled ==="
 # The migration and fresh paths of the no-background-review posture, in one
