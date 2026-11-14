@@ -74,6 +74,10 @@
 #     uninstall-failed WARN), and the worst case RUN 3E's threat model
 #     implies (removes the foreign sibling AND fails -> the
 #     failed+collateral WARN naming the vanished path).
+#   - RUN 3G: a set-but-empty ROBOREV_MODEL must still call
+#     `config set --global default_model ""` (clearing a stale value), and
+#     the clear-failure WARN is asserted separately from the non-empty
+#     model wording.
 #   - RUN 4: a stubbed-rwx run must land the token file atomically —
 #     content replaced, no accesstoken.tmp leftover.
 #   - RUN 5/6: the failure-semantics contract (roborev review finding on
