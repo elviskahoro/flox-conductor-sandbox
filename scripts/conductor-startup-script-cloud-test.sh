@@ -75,7 +75,7 @@
 #     implies (removes the foreign sibling AND fails -> the
 #     failed+collateral WARN naming the vanished path).
 #   - RUN 3G: a set-but-empty ROBOREV_MODEL must still call
-#     `config set --global default_model ""` (clearing a stale value), and
+#     `config set --global default_model ""` (the CLI call that clears a stale value; the stub only records the call), and
 #     the clear-failure WARN is asserted separately from the non-empty
 #     model wording.
 #   - RUN 4: a stubbed-rwx run must land the token file atomically —
