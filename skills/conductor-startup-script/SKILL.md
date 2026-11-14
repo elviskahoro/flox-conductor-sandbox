@@ -38,7 +38,7 @@ Set these in the repo's Conductor environment variables, never inline in the scr
 
 ## Reviews are on demand, never a background hook
 
-The review gate is `roborev review --wait`. The script never installs a post-commit auto-review hook, because roborev's hook can only enqueue a background job, and findings that surface after the fact get lost. Concretely:
+The review gate is `roborev review --wait --agent pi --provider fireworks --model accounts/fireworks/models/glm-5p3-flash`. The script never installs a post-commit auto-review hook, because roborev's hook can only enqueue a background job, and findings that surface after the fact get lost. Concretely:
 
 - It never runs `roborev init` (that installs hooks, and there's no flag to suppress them). It writes `.roborev.toml` directly instead.
 - It removes leftover roborev hooks.

@@ -118,7 +118,7 @@ from a removed source.
 `create-pr.md` is ported from gtm-sdk's `prompts/conductor/create-pr.md`
 (including its gtm-sdk#921 fix) with these changes so it works in any repo:
 
-- Roborev is invoked as the plain executable (`roborev review --wait`), not
+- Roborev is invoked as the plain executable (`roborev review --wait --agent pi --provider fireworks --model accounts/fireworks/models/glm-5p3-flash`), not
   the `git roborev` alias — aliases may not exist in cloud sandboxes.
 - Roborev reviews are always blocking, never fire-and-forget: a bare
   `roborev review` (or a leftover post-commit auto-review hook) only
