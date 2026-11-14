@@ -1495,6 +1495,32 @@ roborev_setup() {
     record SKIP roborev-config "roborev not installed — skipping setup (see the roborev install row above)"
     return 0
   fi
+  # roborev never reads ROBOREV_AGENT itself; without a repo .roborev.toml it
+  # falls back to the global default_agent (codex, which 401s in cloud
+  # sandboxes). Set the global default so repos with no config still review.
+  # Isolate the daemon socket FIRST: `config set --global` creates
+  # ~/.roborev/config.toml with the machine-global TCP server_addr, which
+  # would make roborev_isolate_daemon (issue #98) see it and skip.
+  roborev_isolate_daemon || record WARN roborev-global-agent "could not write server_addr to ${HOME}/.roborev/config.toml — daemon falls back to the machine-global 127.0.0.1:7373 (issue #98)"
+  local gmodel=""
+  if [[ "${agent}" == "${ROBOREV_AGENT_DEFAULT}" ]]; then gmodel="${ROBOREV_MODEL_DEFAULT}"; fi
+  if [[ -n "${ROBOREV_MODEL+x}" ]]; then
+    # Mirror the .roborev.toml path: set-but-empty means no model.
+    if [[ -z "${ROBOREV_MODEL}" ]]; then
+      gmodel=""
+    elif [[ "${ROBOREV_MODEL}" =~ ^[~a-zA-Z0-9_./:@-]+$ ]]; then
+      gmodel="${ROBOREV_MODEL}"
+    else
+      record WARN roborev-global-agent "ROBOREV_MODEL is malformed — global default_model falls back to the default; check the environment variable"
+    fi
+  fi
+  if ! roborev config set --global default_agent "${agent}" >/dev/null 2>&1; then
+    record WARN roborev-global-agent "could not set roborev global default_agent — repos without a .roborev.toml may fall back to codex; pass --agent pi on reviews"
+  elif [[ -n "${gmodel}" ]] && ! roborev config set --global default_model "${gmodel}" >/dev/null 2>&1; then
+    record WARN roborev-global-agent "global default_agent is ${agent} but default_model could not be set — pass --model on reviews of repos without a .roborev.toml"
+  else
+    record PASS roborev-global-agent "global default_agent set to ${agent}${gmodel:+ (default_model ${gmodel})} — repos without a .roborev.toml no longer fall back to codex"
+  fi
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     # Issue #101: Conductor cloud sandboxes can run setup from $HOME,
     # outside the cloned repo (and #113: possibly before the checkout

@@ -44,7 +44,7 @@ The review gate is `roborev review --wait --agent pi --provider fireworks --mode
 - It removes leftover roborev hooks.
 - It never writes into a machine-global `core.hooksPath`. It WARNs instead.
 
-A committed `.roborev.toml` is treated as the repo's own and never overwritten. In this repo, set `agent`/`model` there, not via `ROBOREV_AGENT`.
+Note: roborev does not read `ROBOREV_AGENT` itself; setup only uses it to seed `.roborev.toml` (when absent) and the global `default_agent`, so a repo without a config no longer falls back to codex. A committed `.roborev.toml` is treated as the repo's own and never overwritten. In this repo, set `agent`/`model` there, not via `ROBOREV_AGENT`.
 
 ## Entire
 
